@@ -2,9 +2,15 @@ package dev.po4yka.lenswake.di
 
 import android.app.Application
 import dev.po4yka.lenswake.alarm.AlarmManagerRecordingScheduler
+import dev.po4yka.lenswake.alarm.AlarmManagerRehearsalStopScheduler
+import dev.po4yka.lenswake.alarm.RehearsalStopTriggerCoordinator
 import dev.po4yka.lenswake.alarm.SchedulerAlarmRecoveryCoordinator
 import dev.po4yka.lenswake.application.DefaultAlarmTriggerCoordinator
+import dev.po4yka.lenswake.application.DefaultRehearsalCoordinator
+import dev.po4yka.lenswake.application.DefaultRehearsalStopTriggerCoordinator
 import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfile
+import dev.po4yka.lenswake.application.RehearsalCoordinator
+import dev.po4yka.lenswake.application.RehearsalStopWorkflow
 import dev.po4yka.lenswake.application.RuntimePreflightProbe
 import dev.po4yka.lenswake.automation.DefaultAutomationEngine
 import dev.po4yka.lenswake.automation.SelectorMatcher
@@ -27,6 +33,7 @@ import dev.po4yka.lenswake.integration.PixelCameraAccessibilityPort
 import dev.po4yka.lenswake.platform.SecurePixelCameraLauncher
 import dev.po4yka.lenswake.platform.UnavailableDeviceWakeController
 import dev.po4yka.lenswake.privileged.UnavailablePrivilegedBridge
+import kotlinx.coroutines.sync.Mutex
 
 /** Small explicit process-wide composition root; no dependency reports synthetic availability. */
 class ApplicationGraph(application: Application) {
@@ -75,6 +82,36 @@ class ApplicationGraph(application: Application) {
         pixelCamera = pixelCamera,
         clock = clock,
     )
+    private val rehearsalMutex = Mutex()
+    private val rehearsalStopBackstop = AlarmManagerRehearsalStopScheduler(
+        context = application,
+        executionRepository = executionRepository,
+        clock = clock,
+    )
+    private val rehearsalStopWorkflow = RehearsalStopWorkflow(
+        executionRepository = executionRepository,
+        environmentSnapshotRepository = environmentSnapshotRepository,
+        profileRepository = profileRepository,
+        environmentProbe = cameraEnvironmentProbe::inspect,
+        automationEngine = automationEngine,
+        backstop = rehearsalStopBackstop,
+        clock = clock,
+        mutex = rehearsalMutex,
+    )
+    val rehearsalCoordinator: RehearsalCoordinator = DefaultRehearsalCoordinator(
+        profileRepository = profileRepository,
+        executionRepository = executionRepository,
+        environmentSnapshotRepository = environmentSnapshotRepository,
+        environmentSnapshotCollector = environmentSnapshotCollector,
+        environmentProbe = cameraEnvironmentProbe::inspect,
+        automationEngine = automationEngine,
+        backstop = rehearsalStopBackstop,
+        stopWorkflow = rehearsalStopWorkflow,
+        clock = clock,
+        mutex = rehearsalMutex,
+    )
+    val rehearsalStopTriggerCoordinator: RehearsalStopTriggerCoordinator =
+        DefaultRehearsalStopTriggerCoordinator(rehearsalStopWorkflow)
 
     val alarmTriggerCoordinator = DefaultAlarmTriggerCoordinator(
         scheduleRepository = scheduleRepository,
@@ -84,5 +121,8 @@ class ApplicationGraph(application: Application) {
         automationEngine = automationEngine,
         clock = clock,
     )
-    val alarmRecoveryCoordinator = SchedulerAlarmRecoveryCoordinator(recordingScheduler)
+    val alarmRecoveryCoordinator = SchedulerAlarmRecoveryCoordinator(
+        scheduler = recordingScheduler,
+        additionalSchedulers = listOf(rehearsalStopBackstop),
+    )
 }

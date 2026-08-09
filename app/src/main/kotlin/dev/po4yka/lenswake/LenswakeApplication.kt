@@ -4,9 +4,11 @@ import android.app.Application
 import dev.po4yka.lenswake.alarm.AlarmComponentProvider
 import dev.po4yka.lenswake.alarm.AlarmRecoveryCoordinator
 import dev.po4yka.lenswake.alarm.AlarmTriggerCoordinator
+import dev.po4yka.lenswake.alarm.RehearsalStopComponentProvider
+import dev.po4yka.lenswake.alarm.RehearsalStopTriggerCoordinator
 import dev.po4yka.lenswake.di.ApplicationGraph
 
-class LenswakeApplication : Application(), AlarmComponentProvider {
+class LenswakeApplication : Application(), AlarmComponentProvider, RehearsalStopComponentProvider {
     val graph: ApplicationGraph by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         ApplicationGraph(this)
     }
@@ -16,4 +18,7 @@ class LenswakeApplication : Application(), AlarmComponentProvider {
 
     override val alarmRecoveryCoordinator: AlarmRecoveryCoordinator
         get() = graph.alarmRecoveryCoordinator
+
+    override val rehearsalStopTriggerCoordinator: RehearsalStopTriggerCoordinator
+        get() = graph.rehearsalStopTriggerCoordinator
 }
