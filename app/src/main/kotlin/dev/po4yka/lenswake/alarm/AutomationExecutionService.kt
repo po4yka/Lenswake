@@ -127,7 +127,20 @@ class AutomationExecutionService : Service() {
                 }
                 is AlarmHandlingResult.TerminalRejected -> {
                     removeFromJournal = true
-                    retryCoordinator.resolve(trigger)
+                    if (trigger.kind == AlarmKind.STOP) {
+                        val escalation = retryCoordinator.escalateTerminalStop(
+                            trigger,
+                            result.reason,
+                        )
+                        Log.e(
+                            TAG,
+                            "STOP terminal rejection requires manual confirmation; " +
+                                "markerPersisted=${escalation.markerPersisted}, " +
+                                "notification=${escalation.notification}",
+                        )
+                    } else {
+                        retryCoordinator.resolve(trigger)
+                    }
                     Log.e(
                         TAG,
                         "${trigger.kind} automation terminally rejected for ${trigger.scheduleId.value}: ${result.reason}",

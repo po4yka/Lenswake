@@ -33,6 +33,9 @@ object AlarmContract {
     private const val EXTRA_DELIVERY_ATTEMPT = "dev.po4yka.lenswake.extra.DELIVERY_ATTEMPT"
     private const val ACTION_START = "dev.po4yka.lenswake.action.START_RECORDING"
     private const val ACTION_STOP = "dev.po4yka.lenswake.action.STOP_RECORDING"
+    private const val IDENTITY_PARAMETER = "identity"
+    private const val DOMAIN_IDENTITY = "schedule"
+    private const val DELIVERY_IDENTITY = "delivery"
 
     fun intent(
         context: Context,
@@ -43,21 +46,29 @@ object AlarmContract {
             AlarmKind.START -> schedule.startAt
             AlarmKind.STOP -> schedule.stopAt
         }
-        return triggerIntent(
-            context = context,
-            trigger = AlarmTrigger(
+        return intent(
+            context,
+            AlarmTrigger(
                 kind = kind,
                 scheduleId = schedule.id,
                 scheduleUpdatedAt = schedule.updatedAt,
                 expectedAt = expectedAt,
             ),
+            DOMAIN_IDENTITY,
         )
     }
 
     fun triggerIntent(context: Context, trigger: AlarmTrigger): Intent =
+        intent(context, trigger, DELIVERY_IDENTITY)
+
+    private fun intent(
+        context: Context,
+        trigger: AlarmTrigger,
+        identity: String,
+    ): Intent =
         Intent(action(trigger.kind))
             .setComponent(ComponentName(context, AutomationExecutionService::class.java))
-            .setData(uri(trigger.scheduleId, trigger.kind))
+            .setData(uri(trigger.scheduleId, trigger.kind, identity))
             .putExtra(EXTRA_UPDATED_AT, trigger.scheduleUpdatedAt.toEpochMilli())
             .putExtra(EXTRA_EXPECTED_AT, trigger.expectedAt.toEpochMilli())
             .putExtra(EXTRA_DELIVERY_ATTEMPT, trigger.deliveryAttempt)
@@ -69,7 +80,17 @@ object AlarmContract {
     ): Intent {
         return Intent(action(kind))
             .setComponent(ComponentName(context, AutomationExecutionService::class.java))
-            .setData(uri(scheduleId, kind))
+            .setData(uri(scheduleId, kind, DOMAIN_IDENTITY))
+    }
+
+    fun deliveryIdentityIntent(
+        context: Context,
+        scheduleId: ScheduleId,
+        kind: AlarmKind,
+    ): Intent {
+        return Intent(action(kind))
+            .setComponent(ComponentName(context, AutomationExecutionService::class.java))
+            .setData(uri(scheduleId, kind, DELIVERY_IDENTITY))
     }
 
     fun parse(intent: Intent): AlarmTrigger? = when (intent.action) {
@@ -84,6 +105,9 @@ object AlarmContract {
         if (data.scheme != SCHEME || data.host != HOST) return null
         val segments = data.pathSegments
         if (segments.size != 2 || segments[1] != expectedKind.path) return null
+        if (data.getQueryParameter(IDENTITY_PARAMETER) !in setOf(DOMAIN_IDENTITY, DELIVERY_IDENTITY)) {
+            return null
+        }
         val rawScheduleId = segments[0]
         if (rawScheduleId.isBlank()) return null
         if (!intent.hasExtra(EXTRA_UPDATED_AT) || !intent.hasExtra(EXTRA_EXPECTED_AT)) return null
@@ -113,10 +137,15 @@ object AlarmContract {
         AlarmKind.STOP -> 1_002
     }
 
-    private fun uri(scheduleId: ScheduleId, kind: AlarmKind): Uri = Uri.Builder()
+    private fun uri(
+        scheduleId: ScheduleId,
+        kind: AlarmKind,
+        identity: String,
+    ): Uri = Uri.Builder()
         .scheme(SCHEME)
         .authority(HOST)
         .appendPath(scheduleId.value)
         .appendPath(kind.path)
+        .appendQueryParameter(IDENTITY_PARAMETER, identity)
         .build()
 }

@@ -13,6 +13,8 @@ import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -82,6 +84,130 @@ class AlarmContractTest {
         } finally {
             initial.cancel()
             replacement.cancel()
+        }
+    }
+
+    @Test
+    fun restoredFutureScheduleAndJournalRetryCoexistAfterClockRollback() {
+        val rolledBackNow = schedule.startAt.minusSeconds(3_600)
+        assertTrue(schedule.startAt.isAfter(rolledBackNow))
+        val futureDomainIntent = AlarmContract.intent(context, schedule, AlarmKind.START)
+        val journalTrigger = requireNotNull(AlarmContract.parse(futureDomainIntent)).copy(
+            deliveryAttempt = 1,
+        )
+        val deliveryIntent = AlarmContract.triggerIntent(context, journalTrigger)
+        val domain = PendingIntent.getForegroundService(
+            context,
+            AlarmContract.requestCode(AlarmKind.START),
+            futureDomainIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val delivery = PendingIntent.getForegroundService(
+            context,
+            AlarmContract.requestCode(AlarmKind.START),
+            deliveryIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        try {
+            assertNotEquals(futureDomainIntent.data, deliveryIntent.data)
+            assertNotEquals(domain, delivery)
+            assertEquals(schedule.startAt, AlarmContract.parse(futureDomainIntent)?.expectedAt)
+            assertEquals(schedule.startAt, AlarmContract.parse(deliveryIntent)?.expectedAt)
+
+            val domainIdentity = PendingIntent.getForegroundService(
+                context,
+                AlarmContract.requestCode(AlarmKind.START),
+                AlarmContract.identityIntent(context, schedule.id, AlarmKind.START),
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val deliveryIdentity = PendingIntent.getForegroundService(
+                context,
+                AlarmContract.requestCode(AlarmKind.START),
+                AlarmContract.deliveryIdentityIntent(context, schedule.id, AlarmKind.START),
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+            )
+            assertEquals(domain, domainIdentity)
+            assertEquals(delivery, deliveryIdentity)
+
+            requireNotNull(domainIdentity).cancel()
+            assertNull(
+                PendingIntent.getForegroundService(
+                    context,
+                    AlarmContract.requestCode(AlarmKind.START),
+                    AlarmContract.identityIntent(context, schedule.id, AlarmKind.START),
+                    PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+                ),
+            )
+            assertNotNull(
+                PendingIntent.getForegroundService(
+                    context,
+                    AlarmContract.requestCode(AlarmKind.START),
+                    AlarmContract.deliveryIdentityIntent(context, schedule.id, AlarmKind.START),
+                    PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+                ),
+            )
+        } finally {
+            domain.cancel()
+            delivery.cancel()
+        }
+    }
+
+    @Test
+    fun retryAttemptsReplaceOnlyDeliveryIdentityAndCanBeCancelledIndependently() {
+        val domain = PendingIntent.getForegroundService(
+            context,
+            AlarmContract.requestCode(AlarmKind.STOP),
+            AlarmContract.intent(context, schedule, AlarmKind.STOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val trigger = requireNotNull(
+            AlarmContract.parse(AlarmContract.intent(context, schedule, AlarmKind.STOP)),
+        )
+        val firstRetry = PendingIntent.getForegroundService(
+            context,
+            AlarmContract.requestCode(AlarmKind.STOP),
+            AlarmContract.triggerIntent(context, trigger.copy(deliveryAttempt = 1)),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val replacementRetry = PendingIntent.getForegroundService(
+            context,
+            AlarmContract.requestCode(AlarmKind.STOP),
+            AlarmContract.triggerIntent(context, trigger.copy(deliveryAttempt = 2)),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        try {
+            assertEquals(firstRetry, replacementRetry)
+            assertNotEquals(domain, replacementRetry)
+
+            requireNotNull(
+                PendingIntent.getForegroundService(
+                    context,
+                    AlarmContract.requestCode(AlarmKind.STOP),
+                    AlarmContract.deliveryIdentityIntent(context, schedule.id, AlarmKind.STOP),
+                    PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+                ),
+            ).cancel()
+
+            assertNull(
+                PendingIntent.getForegroundService(
+                    context,
+                    AlarmContract.requestCode(AlarmKind.STOP),
+                    AlarmContract.deliveryIdentityIntent(context, schedule.id, AlarmKind.STOP),
+                    PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+                ),
+            )
+            assertNotNull(
+                PendingIntent.getForegroundService(
+                    context,
+                    AlarmContract.requestCode(AlarmKind.STOP),
+                    AlarmContract.identityIntent(context, schedule.id, AlarmKind.STOP),
+                    PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+                ),
+            )
+        } finally {
+            domain.cancel()
+            firstRetry.cancel()
+            replacementRetry.cancel()
         }
     }
 

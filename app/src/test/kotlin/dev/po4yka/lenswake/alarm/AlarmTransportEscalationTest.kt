@@ -83,7 +83,28 @@ class AlarmTransportEscalationTest {
         assertTrue(coordinator.resolve(trigger))
 
         assertTrue(persistence.markers().isEmpty())
+        assertEquals(listOf(trigger), backend.cancelled)
         assertEquals(listOf(AlarmTransportEscalator.deliveryMarkerId(trigger)), notifier.dismissed)
+    }
+
+    @Test
+    fun terminalStopRejectionKeepsManualStopWarningUntilPositiveResolution() {
+        val persistence = FakeFailurePersistence()
+        val notifier = FakeFailureNotifier()
+        val backend = FakeDeliveryRetryBackend(canSchedule = true)
+        val coordinator = deliveryCoordinator(persistence, notifier, backend)
+        val trigger = trigger(kind = AlarmKind.STOP)
+
+        val result = coordinator.escalateTerminalStop(
+            trigger,
+            "The schedule was deleted before STOP delivery.",
+        )
+
+        assertTrue(result.markerPersisted)
+        assertEquals(AlarmTransportFailureCode.STOP_TERMINAL_REJECTED, persistence.single().code)
+        assertTrue(persistence.single().message.contains("stop it manually"))
+        assertTrue(notifier.dismissed.isEmpty())
+        assertEquals(listOf(trigger), backend.cancelled)
     }
 
     private fun deliveryCoordinator(
@@ -235,6 +256,7 @@ private class FakeDeliveryRetryBackend(
     val replaced = mutableListOf<AlarmTrigger>()
     val scheduled = mutableListOf<AlarmTrigger>()
     val restored = mutableListOf<AlarmTrigger>()
+    val cancelled = mutableListOf<AlarmTrigger>()
 
     override fun canScheduleExactAlarms(): Boolean = canSchedule
 
@@ -253,6 +275,11 @@ private class FakeDeliveryRetryBackend(
 
     override fun restoreJournalEntry(key: String, trigger: AlarmTrigger): Boolean {
         restored += trigger
+        return true
+    }
+
+    override fun cancel(trigger: AlarmTrigger): Boolean {
+        cancelled += trigger
         return true
     }
 }

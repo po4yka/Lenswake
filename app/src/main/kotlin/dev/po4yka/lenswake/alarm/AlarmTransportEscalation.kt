@@ -19,6 +19,7 @@ internal enum class AlarmTransportFailureCode {
     EXACT_ALARM_UNAVAILABLE,
     JOURNAL_UPDATE_FAILED,
     EXACT_ALARM_SCHEDULING_FAILED,
+    STOP_TERMINAL_REJECTED,
     RECOVERY_ATTEMPTS_EXHAUSTED,
     RECOVERY_REQUEUE_FAILED,
     RECOVERY_CAPABILITY_UNAVAILABLE,
@@ -279,6 +280,7 @@ internal interface AlarmDeliveryRetryBackend {
     fun replaceJournalEntry(key: String, trigger: AlarmTrigger): AlarmDeliveryJournal.Entry?
     fun schedule(trigger: AlarmTrigger, triggerAtEpochMillis: Long): Result<Unit>
     fun restoreJournalEntry(key: String, trigger: AlarmTrigger): Boolean
+    fun cancel(trigger: AlarmTrigger): Boolean
 }
 
 internal sealed interface AlarmDeliveryRetryResult {
@@ -328,7 +330,23 @@ internal class AlarmDeliveryRetryCoordinator(
         )
     }
 
-    fun resolve(trigger: AlarmTrigger): Boolean = escalator.resolveDelivery(trigger)
+    fun resolve(trigger: AlarmTrigger): Boolean {
+        runCatching { backend.cancel(trigger) }
+        return escalator.resolveDelivery(trigger)
+    }
+
+    fun escalateTerminalStop(
+        trigger: AlarmTrigger,
+        detail: String,
+    ): AlarmTransportEscalationResult {
+        require(trigger.kind == AlarmKind.STOP) { "Only STOP rejection needs manual-stop escalation" }
+        runCatching { backend.cancel(trigger) }
+        return escalator.escalateDelivery(
+            trigger = trigger,
+            code = AlarmTransportFailureCode.STOP_TERMINAL_REJECTED,
+            detail = detail,
+        )
+    }
 
     private fun escalate(
         trigger: AlarmTrigger,
@@ -373,4 +391,18 @@ internal class AndroidAlarmDeliveryRetryBackend(
 
     override fun restoreJournalEntry(key: String, trigger: AlarmTrigger): Boolean =
         journal.replace(key, AlarmContract.triggerIntent(context, trigger)) != null
+
+    override fun cancel(trigger: AlarmTrigger): Boolean = runCatching {
+        val pendingIntent = PendingIntent.getForegroundService(
+            context,
+            AlarmContract.requestCode(trigger.kind),
+            AlarmContract.deliveryIdentityIntent(context, trigger.scheduleId, trigger.kind),
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+        )
+        if (pendingIntent != null) {
+            alarmManager.cancel(pendingIntent)
+            pendingIntent.cancel()
+        }
+        true
+    }.getOrDefault(false)
 }
