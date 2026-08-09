@@ -1,5 +1,7 @@
 package dev.po4yka.lenswake.alarm
 
+import android.app.KeyguardManager
+import android.os.PowerManager
 import android.util.Log
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -15,6 +17,8 @@ import dev.po4yka.lenswake.core.RecordingSchedule
 import dev.po4yka.lenswake.core.RehearsalRequest
 import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.TimeLapseSpeed
+import dev.po4yka.lenswake.platform.AndroidDeviceWakeController
+import dev.po4yka.lenswake.platform.PlatformCapability
 import java.time.Duration
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
@@ -22,7 +26,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -37,6 +43,30 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class PhysicalDeviceWakeFixtureTest {
     private val application = ApplicationProvider.getApplicationContext<LenswakeApplication>()
+
+    @Test
+    fun wakeLockedDisplayOnlyWhenExplicitlyRequested(): Unit = runBlocking {
+        assumeTrue(
+            "Physical display-wake proof is disabled; pass -e physicalDeviceWakeOnly true to run it",
+            instrumentationArgument("physicalDeviceWakeOnly") == "true",
+        )
+        val powerManager = application.getSystemService(PowerManager::class.java)
+        val keyguardManager = application.getSystemService(KeyguardManager::class.java)
+
+        assertFalse("DEVICE_WAKE proof must begin with a non-interactive display", powerManager.isInteractive)
+        assertTrue("DEVICE_WAKE proof must begin with keyguard locked", keyguardManager.isDeviceLocked)
+
+        val result = AndroidDeviceWakeController(application).wakeDevice()
+
+        assertTrue("Production DEVICE_WAKE failed: $result", result is PlatformCapability.Available)
+        assertTrue("DEVICE_WAKE returned before the display became interactive", powerManager.isInteractive)
+        assertTrue("DEVICE_WAKE must not dismiss keyguard", keyguardManager.isDeviceLocked)
+        Log.i(
+            LOG_TAG,
+            "Physical DEVICE_WAKE passed " +
+                "interactive=${powerManager.isInteractive} deviceLocked=${keyguardManager.isDeviceLocked}",
+        )
+    }
 
     @Test
     fun armPersistedStartAndStopAlarmsForPhysicalDeviceWakeProof(): Unit = runBlocking {
