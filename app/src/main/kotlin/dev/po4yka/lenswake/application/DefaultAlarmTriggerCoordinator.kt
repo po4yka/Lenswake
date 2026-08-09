@@ -358,6 +358,9 @@ class DefaultAlarmTriggerCoordinator(
         is AutomationRunResult.Failed -> terminal(
             "$kind automation failed: ${result.failure.message}",
         )
+        is AutomationRunResult.StartReconciliationRequired -> retryable(
+            "$kind automation requires recording-state reconciliation: ${result.failure.message}",
+        )
         is AutomationRunResult.RevisionConflict -> retryable(
             "$kind automation lost a concurrent state transition",
         )

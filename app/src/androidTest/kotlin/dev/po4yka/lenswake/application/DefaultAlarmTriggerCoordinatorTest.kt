@@ -163,6 +163,24 @@ class DefaultAlarmTriggerCoordinatorTest {
     }
 
     @Test
+    fun uncertainRecordingStartIsRetryableForInspectOnlyReconciliation() = runBlocking {
+        val executions = FakeExecutionRepository()
+        val engine = FakeAutomationEngine(executions) { session ->
+            AutomationRunResult.StartReconciliationRequired(
+                session = session.copy(recordActionAt = startAt.plusSeconds(1)),
+                failure = AutomationFailure(
+                    AutomationFailureCode.AUTOMATION_TIMEOUT,
+                    "Record may have been dispatched",
+                ),
+            )
+        }
+
+        val result = coordinator(executions, engine).handle(startTrigger(schedule.updatedAt))
+
+        assertTrue(result is AlarmHandlingResult.Retryable)
+    }
+
+    @Test
     fun persistedEngineFailureIsTerminal() = runBlocking {
         val executions = FakeExecutionRepository()
         val engine = FakeAutomationEngine(executions) { session ->

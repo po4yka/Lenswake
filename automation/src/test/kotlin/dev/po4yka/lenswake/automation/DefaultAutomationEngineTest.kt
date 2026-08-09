@@ -76,7 +76,7 @@ class DefaultAutomationEngineTest {
     }
 
     @Test
-    fun `record dispatch without recording confirmation exhausts verification policy and fails`() = runTest {
+    fun `record dispatch without confirmation requires inspect-only reconciliation`() = runTest {
         val session = session(status = SessionStatus.PENDING)
         val repository = FakeExecutionRepository(session)
         val device = FakeDeviceControl(interactive = true)
@@ -92,11 +92,14 @@ class DefaultAutomationEngineTest {
 
         val result = engine.start(session.id)
 
-        val failed = assertInstanceOf(AutomationRunResult.Failed::class.java, result)
-        assertEquals(SessionStatus.FAILED, failed.session.status)
-        assertEquals(AutomationFailureCode.RECORDING_NOT_CONFIRMED, failed.failure.code)
-        assertNotNull(failed.session.recordActionAt)
-        assertNull(failed.session.recordingVerifiedAt)
+        val reconciliation = assertInstanceOf(
+            AutomationRunResult.StartReconciliationRequired::class.java,
+            result,
+        )
+        assertEquals(SessionStatus.FAILED, reconciliation.session.status)
+        assertEquals(AutomationFailureCode.RECORDING_NOT_CONFIRMED, reconciliation.failure.code)
+        assertNotNull(reconciliation.session.recordActionAt)
+        assertNull(reconciliation.session.recordingVerifiedAt)
         assertEquals(1, camera.calls.count { it == "startRecording" })
         assertEquals(2, camera.verificationInspections)
         assertEquals(AutomationStateName.FAILED, repository.events.last().state)
@@ -161,10 +164,13 @@ class DefaultAutomationEngineTest {
 
         val result = engine.start(session.id)
 
-        val failed = assertInstanceOf(AutomationRunResult.Failed::class.java, result)
-        assertEquals(AutomationFailureCode.AUTOMATION_TIMEOUT, failed.failure.code)
-        assertNotNull(failed.session.recordActionAt)
-        assertNull(failed.session.recordingVerifiedAt)
+        val reconciliation = assertInstanceOf(
+            AutomationRunResult.StartReconciliationRequired::class.java,
+            result,
+        )
+        assertEquals(AutomationFailureCode.AUTOMATION_TIMEOUT, reconciliation.failure.code)
+        assertNotNull(reconciliation.session.recordActionAt)
+        assertNull(reconciliation.session.recordingVerifiedAt)
 
         val recoveryCamera = FakePixelCamera(
             state = PixelCameraState.TimeLapse(
@@ -195,10 +201,13 @@ class DefaultAutomationEngineTest {
 
         val result = engine.start(session.id)
 
-        val failed = assertInstanceOf(AutomationRunResult.Failed::class.java, result)
-        assertEquals(AutomationFailureCode.RECORD_ACTION_FAILED, failed.failure.code)
-        assertNotNull(failed.session.recordActionAt)
-        assertNull(failed.session.recordingVerifiedAt)
+        val reconciliation = assertInstanceOf(
+            AutomationRunResult.StartReconciliationRequired::class.java,
+            result,
+        )
+        assertEquals(AutomationFailureCode.RECORD_ACTION_FAILED, reconciliation.failure.code)
+        assertNotNull(reconciliation.session.recordActionAt)
+        assertNull(reconciliation.session.recordingVerifiedAt)
     }
 
     @Test
@@ -239,6 +248,7 @@ class DefaultAutomationEngineTest {
 
         val succeeded = assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
         assertNotNull(succeeded.session.recordingVerifiedAt)
+        assertEquals(0, camera.calls.count { it == "launch" })
         assertEquals(0, camera.calls.count { it == "startRecording" })
     }
 
@@ -254,9 +264,13 @@ class DefaultAutomationEngineTest {
 
         val result = engine.start(session.id)
 
-        val failed = assertInstanceOf(AutomationRunResult.Failed::class.java, result)
-        assertEquals(AutomationFailureCode.RECORDING_NOT_CONFIRMED, failed.failure.code)
-        assertNotNull(failed.session.recordActionAt)
+        val reconciliation = assertInstanceOf(
+            AutomationRunResult.StartReconciliationRequired::class.java,
+            result,
+        )
+        assertEquals(AutomationFailureCode.RECORDING_NOT_CONFIRMED, reconciliation.failure.code)
+        assertNotNull(reconciliation.session.recordActionAt)
+        assertEquals(0, camera.calls.count { it == "launch" })
         assertEquals(0, camera.calls.count { it == "startRecording" })
     }
 

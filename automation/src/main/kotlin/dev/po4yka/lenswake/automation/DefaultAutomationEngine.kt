@@ -63,6 +63,17 @@ sealed interface AutomationRunResult {
         val failure: AutomationFailure,
     ) : AutomationRunResult
 
+    /**
+     * Record may have reached Pixel Camera, but its recording postcondition is still unverified.
+     *
+     * Callers must retain delivery and retry START so the engine can reconcile by observation;
+     * the write-ahead checkpoint prevents a second Record dispatch.
+     */
+    data class StartReconciliationRequired(
+        val session: ExecutionSession,
+        val failure: AutomationFailure,
+    ) : AutomationRunResult
+
     data class RevisionConflict(
         val session: ExecutionSession,
         val expectedRevision: Long,
@@ -121,13 +132,23 @@ class DefaultAutomationEngine(
         )
 
         ensureInteractive(context, AutomationStateName.WAKING_DEVICE)
-        launchAndObserveCamera(context)
         if (uncertainDispatchAtEntry) {
-            reconcileUncertainStart(context)
+            var observed = observeCamera(
+                context = context,
+                operation = AutomationOperation.INSPECT_CAMERA,
+                state = AutomationStateName.INSPECTING_CAMERA_STATE,
+                failureCode = AutomationFailureCode.CAMERA_STATE_UNKNOWN,
+                failureMessage = "Pixel Camera state could not be inspected before START reconciliation",
+            ) { it !is PixelCameraState.Unknown }
+            if (observed is PixelCameraState.NotRunning) {
+                observed = launchAndObserveCamera(context)
+            }
+            reconcileUncertainStart(context, observed)
         } else {
+            launchAndObserveCamera(context)
             convergeStart(context)
         }
-    }
+    }.classifyStartResult()
 
     override suspend fun stop(sessionId: SessionId): AutomationRunResult = execute(sessionId) { context ->
         val originalStatus = context.current.status
@@ -415,15 +436,11 @@ class DefaultAutomationEngine(
         )
     }
 
-    private suspend fun reconcileUncertainStart(context: RunContext): AutomationRunResult {
+    private suspend fun reconcileUncertainStart(
+        context: RunContext,
+        observed: PixelCameraState,
+    ): AutomationRunResult {
         val capture = context.current.capture as CaptureConfiguration.TimeLapse
-        val observed = observeCamera(
-            context = context,
-            operation = AutomationOperation.VERIFY_RECORDING,
-            state = AutomationStateName.VERIFYING_RECORDING,
-            failureCode = AutomationFailureCode.RECORDING_NOT_CONFIRMED,
-            failureMessage = "An uncertain Record dispatch could not be observed",
-        ) { it !is PixelCameraState.NotRunning && it !is PixelCameraState.Unknown }
         return if (
             observed is PixelCameraState.TimeLapse &&
             observed.recording &&
@@ -441,6 +458,13 @@ class DefaultAutomationEngine(
             )
         }
     }
+
+    private fun AutomationRunResult.classifyStartResult(): AutomationRunResult =
+        if (this is AutomationRunResult.Failed && session.hasUncertainRecordDispatch()) {
+            AutomationRunResult.StartReconciliationRequired(session, failure)
+        } else {
+            this
+        }
 
     private suspend fun markRecordingVerified(context: RunContext): AutomationRunResult.Succeeded {
         context.transition(
