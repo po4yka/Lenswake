@@ -72,6 +72,7 @@ class PhysicalDeviceWakeFixtureTest {
                 "createdAt=$createdAt sessionStartAt=$startAt sessionStopAt=$stopAt " +
                 "startDelaySeconds=$START_DELAY_SECONDS recordingWindowSeconds=$RECORDING_WINDOW_SECONDS",
         )
+        Unit
     }
 
     @Test
@@ -89,6 +90,7 @@ class PhysicalDeviceWakeFixtureTest {
         graph.recordingScheduler.cancel(FIXTURE_SCHEDULE_ID).getOrThrow()
         graph.scheduleRepository.delete(FIXTURE_SCHEDULE_ID)
         Log.i(LOG_TAG, "DEVICE_WAKE fixture removed scheduleId=${FIXTURE_SCHEDULE_ID.value}")
+        Unit
     }
 
     private fun requirePhysicalWakeArming() {
