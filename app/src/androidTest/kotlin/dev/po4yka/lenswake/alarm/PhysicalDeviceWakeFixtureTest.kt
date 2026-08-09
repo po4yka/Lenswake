@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.po4yka.lenswake.LenswakeApplication
+import dev.po4yka.lenswake.accessibility.PixelCameraAccessibilityRuntime
 import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfileResult
 import dev.po4yka.lenswake.application.RehearsalResult
 import dev.po4yka.lenswake.core.CaptureConfiguration
@@ -17,7 +18,9 @@ import dev.po4yka.lenswake.core.TimeLapseSpeed
 import java.time.Duration
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assume.assumeTrue
@@ -84,6 +87,13 @@ class PhysicalDeviceWakeFixtureTest {
     fun runPhysicalProfileRehearsalOnlyWhenExplicitlyRequested(): Unit = runBlocking {
         requirePhysicalProfileRehearsal()
         val graph = application.graph
+        val connected = withTimeoutOrNull(ACCESSIBILITY_REBIND_TIMEOUT.toMillis()) {
+            PixelCameraAccessibilityRuntime.connectionState.first { it }
+        }
+        check(connected == true) {
+            "Accessibility Service did not reconnect within ${ACCESSIBILITY_REBIND_TIMEOUT.seconds} seconds; " +
+                "enable Lenswake Accessibility Service after instrumentation starts, then retry"
+        }
         val profile = when (val install = graph.installKnownPixelCameraProfile()) {
             is InstallKnownPixelCameraProfileResult.Installed -> install.profile
             is InstallKnownPixelCameraProfileResult.AlreadyInstalled -> install.profile
@@ -164,6 +174,7 @@ class PhysicalDeviceWakeFixtureTest {
         const val FIXTURE_SCHEDULE_NAME = "Lenswake physical DEVICE_WAKE proof"
         const val START_DELAY_SECONDS = 120L
         const val RECORDING_WINDOW_SECONDS = 120L
+        val ACCESSIBILITY_REBIND_TIMEOUT: Duration = Duration.ofSeconds(30)
         val FIXTURE_SCHEDULE_ID = ScheduleId("physical-device-wake-proof-v1")
     }
 }
