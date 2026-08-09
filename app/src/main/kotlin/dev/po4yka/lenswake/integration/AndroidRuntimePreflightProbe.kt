@@ -1,10 +1,9 @@
 package dev.po4yka.lenswake.integration
 
-import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.AlarmManager
 import android.content.ComponentName
 import android.content.Context
-import android.view.accessibility.AccessibilityManager
+import android.provider.Settings
 import dev.po4yka.lenswake.accessibility.PixelCameraAccessibilityRuntime
 import dev.po4yka.lenswake.accessibility.PixelCameraAccessibilityService
 import dev.po4yka.lenswake.application.RuntimeCapabilityObservation
@@ -31,8 +30,6 @@ class AndroidRuntimePreflightProbe(
 ) : RuntimePreflightProbe {
     private val applicationContext = context.applicationContext
     private val alarmManager = applicationContext.getSystemService(AlarmManager::class.java)
-    private val accessibilityManager =
-        applicationContext.getSystemService(AccessibilityManager::class.java)
 
     override val invalidations: Flow<Unit> = PixelCameraAccessibilityRuntime.connectionState
         .map { }
@@ -136,12 +133,13 @@ class AndroidRuntimePreflightProbe(
             PixelCameraAccessibilityService::class.java,
         )
         val enabled = runCatching {
-            accessibilityManager
-                .getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
-                .any { service ->
-                    val info = service.resolveInfo.serviceInfo
-                    ComponentName.createRelative(info.packageName, info.name) == expectedComponent
-                }
+            Settings.Secure.getString(
+                applicationContext.contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+            ).orEmpty()
+                .split(':')
+                .mapNotNull(ComponentName::unflattenFromString)
+                .any { it == expectedComponent }
         }.getOrElse { error ->
             return RuntimeCapabilityObservation(
                 status = PreflightStatus.UNKNOWN,
