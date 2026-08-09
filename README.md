@@ -29,7 +29,7 @@ The repository contains a buildable Android 17 foundation split into four Gradle
 Implemented now:
 
 - independent exact START and STOP alarms with stale-trigger rejection and bounded reboot/time-change restoration;
-- direct exact-alarm handoff to a bounded, restartable foreground service with a private transport journal, typed retry decisions, and journal re-arming;
+- direct exact-alarm handoff to a bounded, restartable foreground service with a private transport journal, typed retry decisions, journal re-arming, and durable terminal failure markers;
 - persisted schedules, environment-bound automation profiles, execution sessions, structured events, and immutable execution-environment snapshots;
 - explicit START and STOP workflows that distinguish action dispatch from verified camera state;
 - write-ahead recording ownership, operation-specific timeouts, safe reconciliation after uncertain Record dispatch, and safe STOP recovery;
@@ -44,7 +44,8 @@ Not yet proven or shipped as reliable behavior:
 - waking a locked Pixel 8 Pro;
 - a calibrated selector profile for the installed Pixel Camera version;
 - locked-screen Time Lapse start/stop, Doze behavior, secure-camera background launch, and process-death recovery on the target device;
-- schedule editing, calibration, rehearsal, diagnostics export, and Shizuku integration.
+- schedule editing, calibration, rehearsal, diagnostics export, and Shizuku integration;
+- runtime notification-permission setup and UI presentation of durable alarm transport failure markers.
 
 The debug APK can be built with:
 

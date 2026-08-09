@@ -520,6 +520,13 @@ completion share one synchronized lifecycle gate, so completion of older work ca
 accepted trigger. `AlarmRecoveryService` restores future schedules and re-arms journal transport;
 it never invokes Pixel Camera or the automation engine.
 
+Delivery retry and recovery retry are both bounded and persisted before requeue. Exhaustion,
+missing exact-alarm capability, journal-update failure, or scheduling failure creates a durable
+transport-failure marker while retaining the original delivery journal for a later recovery
+opportunity. STOP markers explicitly warn that Pixel Camera may still be recording. A high-priority
+notification is attempted, but it is not authoritative because Android 17 requires a runtime
+`POST_NOTIFICATIONS` grant; permission setup and in-app marker presentation remain product work.
+
 The service is used only for bounded START/STOP workflows. Its existence does not prove that an
 Android 17 background activity launch of secure Pixel Camera is permitted; that remains a physical
 Pixel 8 Pro acceptance gate.
