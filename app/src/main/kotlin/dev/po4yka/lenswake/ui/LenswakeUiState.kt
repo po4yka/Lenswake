@@ -1,0 +1,130 @@
+package dev.po4yka.lenswake.ui
+
+import androidx.compose.runtime.Immutable
+
+@Immutable
+data class LenswakeUiState(
+    val readiness: ReadinessUiState = ReadinessUiState.Blocked(
+        title = "Setup required",
+        summary = "Scheduling is disabled until exact alarms, Accessibility, and a verified Pixel Camera profile are available.",
+    ),
+    val schedules: List<ScheduleSummaryUiState> = emptyList(),
+    val profiles: List<ProfileSummaryUiState> = emptyList(),
+    val capabilities: List<CapabilityUiState> = defaultCapabilities,
+    val diagnosticEvents: List<DiagnosticEventUiState> = emptyList(),
+    val actions: UiActionAvailability = UiActionAvailability(),
+)
+
+@Immutable
+sealed interface ReadinessUiState {
+    val title: String
+    val summary: String
+
+    @Immutable
+    data class Checking(
+        override val title: String = "Checking readiness",
+        override val summary: String = "Lenswake has not finished checking this device.",
+    ) : ReadinessUiState
+
+    @Immutable
+    data class Ready(
+        override val title: String,
+        override val summary: String,
+    ) : ReadinessUiState
+
+    @Immutable
+    data class ReadyWithWarnings(
+        override val title: String,
+        override val summary: String,
+        val warnings: List<String>,
+    ) : ReadinessUiState
+
+    @Immutable
+    data class Blocked(
+        override val title: String,
+        override val summary: String,
+    ) : ReadinessUiState
+}
+
+@Immutable
+data class CapabilityUiState(
+    val name: String,
+    val status: CapabilityStatus,
+    val detail: String,
+    val required: Boolean,
+)
+
+enum class CapabilityStatus {
+    UNKNOWN,
+    AVAILABLE,
+    BLOCKED,
+}
+
+@Immutable
+data class ScheduleSummaryUiState(
+    val id: String,
+    val title: String,
+    val timing: String,
+    val status: String,
+)
+
+@Immutable
+data class ProfileSummaryUiState(
+    val id: String,
+    val title: String,
+    val environment: String,
+    val compatibility: String,
+)
+
+@Immutable
+data class DiagnosticEventUiState(
+    val id: String,
+    val title: String,
+    val detail: String,
+    val occurredAt: String,
+)
+
+@Immutable
+data class UiActionAvailability(
+    val canCreateSchedule: Boolean = false,
+    val createScheduleUnavailableReason: String = "Schedule editing is not connected to persistence yet.",
+    val canCalibrateProfile: Boolean = false,
+    val calibrateProfileUnavailableReason: String = "Calibration requires the target Pixel Camera environment.",
+    val canRunRehearsal: Boolean = false,
+    val rehearsalUnavailableReason: String = "Rehearsal is unavailable until device readiness and a profile are verified.",
+    val canExportDiagnostics: Boolean = false,
+    val exportDiagnosticsUnavailableReason: String = "There are no diagnostic events to export.",
+)
+
+private val defaultCapabilities = listOf(
+    CapabilityUiState(
+        name = "Exact alarms",
+        status = CapabilityStatus.UNKNOWN,
+        detail = "Exact-alarm access has not been checked.",
+        required = true,
+    ),
+    CapabilityUiState(
+        name = "Lenswake Accessibility Service",
+        status = CapabilityStatus.BLOCKED,
+        detail = "The service is not enabled or has not been verified.",
+        required = true,
+    ),
+    CapabilityUiState(
+        name = "Pixel Camera profile",
+        status = CapabilityStatus.BLOCKED,
+        detail = "No verified profile is configured for this environment.",
+        required = true,
+    ),
+    CapabilityUiState(
+        name = "Physical-device rehearsal",
+        status = CapabilityStatus.BLOCKED,
+        detail = "No successful rehearsal result exists for this environment.",
+        required = true,
+    ),
+    CapabilityUiState(
+        name = "Privileged fallback",
+        status = CapabilityStatus.UNKNOWN,
+        detail = "Optional privileged capabilities have not been checked.",
+        required = false,
+    ),
+)
