@@ -35,16 +35,16 @@ class AlarmManagerRecordingSchedulerTest {
     }
 
     @Test
-    fun staleOrModifiedSnapshotIsRejectedBeforeRegistration() = runBlocking {
+    fun staleRevisionIsRejectedBeforeRegistration() = runBlocking {
         val scheduler = scheduler(
             persisted = schedule,
             capability = ExactAlarmCapability { error("Capability must not be consulted") },
         )
 
-        val failure = scheduler.scheduleStart(schedule.copy(name = "Transient edit"))
+        val failure = scheduler.scheduleStart(schedule.copy(updatedAt = schedule.updatedAt.minusMillis(1)))
             .exceptionOrNull() as SchedulingException
 
-        assertEquals(SchedulingFailureCode.STALE_SCHEDULE_SNAPSHOT, failure.code)
+        assertEquals(SchedulingFailureCode.STALE_SCHEDULE_REVISION, failure.code)
     }
 
     @Test

@@ -13,7 +13,7 @@ import java.time.Instant
 
 enum class SchedulingFailureCode {
     SCHEDULE_NOT_PERSISTED,
-    STALE_SCHEDULE_SNAPSHOT,
+    STALE_SCHEDULE_REVISION,
     EXACT_ALARM_UNAVAILABLE,
     SCHEDULE_DISABLED,
     INVALID_TIME_RANGE,
@@ -81,10 +81,10 @@ class AlarmManagerRecordingScheduler(
             code = SchedulingFailureCode.SCHEDULE_NOT_PERSISTED,
             message = "Schedule ${schedule.id.value} must be persisted before alarm registration",
         )
-        if (persisted != schedule) {
+        if (persisted.updatedAt.toEpochMilli() != schedule.updatedAt.toEpochMilli()) {
             throw SchedulingException(
-                code = SchedulingFailureCode.STALE_SCHEDULE_SNAPSHOT,
-                message = "Alarm registration rejected a transient or stale schedule snapshot",
+                code = SchedulingFailureCode.STALE_SCHEDULE_REVISION,
+                message = "Alarm registration rejected a stale schedule revision",
             )
         }
         register(persisted, kind)
