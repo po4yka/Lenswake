@@ -40,20 +40,20 @@ The current implementation uses these concrete module boundaries:
 
 ```text
 :app
-    Compose presentation, explicit ApplicationGraph, AlarmManager receivers,
+    Compose presentation, explicit ApplicationGraph, exact-alarm foreground-service handoff,
     secure-camera resolution, AccessibilityService, Android adapters
 
 :automation
     platform-neutral START/STOP convergence engines, selector matching,
-    bounded operation-specific retry policies
+    bounded operation-specific retries and timeouts, fail-closed recording ownership
 
 :core
     schedules, ExecutionSession, profiles, failures, readiness,
     repository and scheduler contracts
 
 :data
-    Room v1 database, internal entities/DAOs, domain mappings,
-    atomic session-transition plus event persistence
+    Room v2 database, internal entities/DAOs, domain mappings,
+    atomic session-transition/event persistence and immutable environment snapshots
 ```
 
 The implemented graph deliberately fails closed when the target environment has no compatible
@@ -166,7 +166,9 @@ Runtime:
 ```text
 05:30 exact alarm
         ↓
-Lenswake START receiver
+private system-exempted AutomationExecutionService
+        ↓
+persist transport checkpoint
         ↓
 load persisted schedule/session
         ↓
@@ -198,7 +200,9 @@ Lenswake becomes idle
 
 07:30 exact alarm
         ↓
-Lenswake STOP receiver
+private system-exempted AutomationExecutionService
+        ↓
+persist transport checkpoint and STOP delivery
         ↓
 load persisted active session
         ↓
@@ -487,17 +491,23 @@ where possible.
 
 ---
 
-## 6.6 Optional Execution Service
+## 6.6 Bounded Execution Service
 
-A foreground service should not be introduced by default.
-
-If Android 17 runtime behavior later proves that a short-lived service is necessary for execution continuity, it may be added as:
+The implemented exact-alarm path targets:
 
 ```text
 AutomationExecutionService
 ```
 
-but only for bounded START/STOP workflows.
+directly with `PendingIntent.getForegroundService()`. It is private, declares the
+`systemExempted` foreground-service type permitted by exact-alarm access, starts foreground
+immediately, serializes triggers, and enforces a finite per-trigger deadline. A private transport
+journal restores all accepted triggers after process recreation; Room and the coordinator still
+revalidate the domain intent and remain the source of truth.
+
+The service is used only for bounded START/STOP workflows. Its existence does not prove that an
+Android 17 background activity launch of secure Pixel Camera is permitted; that remains a physical
+Pixel 8 Pro acceptance gate.
 
 Lenswake should not maintain a permanent service during multi-hour Pixel Camera recording.
 
