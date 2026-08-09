@@ -14,13 +14,16 @@ import dev.po4yka.lenswake.core.ExecutionChange
 import dev.po4yka.lenswake.core.ExecutionRepository
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.InteractionMethod
+import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.LenswakeClock
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.SessionId
+import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import java.time.Instant
 import java.util.concurrent.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 
 interface AutomationEngine {
     suspend fun start(sessionId: SessionId): AutomationRunResult
@@ -83,7 +86,13 @@ class DefaultAutomationEngine(
 ) : AutomationEngine {
     override suspend fun start(sessionId: SessionId): AutomationRunResult = execute(sessionId) { context ->
         when (context.current.status) {
-            SessionStatus.RECORDING -> return@execute AutomationRunResult.AlreadySatisfied(context.current)
+            SessionStatus.RECORDING -> return@execute if (
+                context.current.recordActionAt != null && context.current.recordingVerifiedAt != null
+            ) {
+                AutomationRunResult.AlreadySatisfied(context.current)
+            } else {
+                rejectedState(context.current, "Recording state has no Lenswake ownership evidence")
+            }
             SessionStatus.COMPLETED,
             SessionStatus.FAILED,
             SessionStatus.CANCELLED,
@@ -94,6 +103,7 @@ class DefaultAutomationEngine(
             -> Unit
         }
 
+        validateSupportedCapture(context)
         context.profile = loadProfile(context)
 
         context.transition(
@@ -113,23 +123,40 @@ class DefaultAutomationEngine(
     }
 
     override suspend fun stop(sessionId: SessionId): AutomationRunResult = execute(sessionId) { context ->
-        val recoveringFailedStart =
-            context.current.status == SessionStatus.FAILED &&
-                context.current.recordActionAt != null &&
-                context.current.stoppedVerifiedAt == null
+        val originalStatus = context.current.status
         val originalFailure = context.current.failure
+        val hasOwnership = context.current.recordActionAt != null
+        val stopOutstanding = context.current.stoppedVerifiedAt == null
         when (context.current.status) {
             SessionStatus.COMPLETED,
             SessionStatus.CANCELLED,
             -> return@execute AutomationRunResult.AlreadyTerminal(context.current)
-            SessionStatus.FAILED -> if (!recoveringFailedStart) {
+            SessionStatus.FAILED -> if (!hasOwnership || !stopOutstanding) {
                 return@execute AutomationRunResult.AlreadyTerminal(context.current)
             }
-            SessionStatus.PENDING -> return@execute rejectedState(context.current, "Cannot stop a session that has not started")
+            SessionStatus.PENDING,
             SessionStatus.STARTING,
             SessionStatus.RECORDING,
             SessionStatus.STOPPING,
             -> Unit
+        }
+        if (!hasOwnership) {
+            return@execute rejectedState(
+                context.current,
+                "Cannot stop a recording that Lenswake did not dispatch",
+            )
+        }
+        if (!stopOutstanding) return@execute AutomationRunResult.AlreadyTerminal(context.current)
+
+        val preserveFailedOutcome =
+            originalStatus == SessionStatus.FAILED || context.current.recordingVerifiedAt == null
+        val preservedFailure = originalFailure ?: if (preserveFailedOutcome) {
+            failure(
+                AutomationFailureCode.RECORDING_NOT_CONFIRMED,
+                "A dispatched recording was never verified before safe stop recovery",
+            )
+        } else {
+            null
         }
 
         context.profile = loadProfile(context)
@@ -150,17 +177,20 @@ class DefaultAutomationEngine(
             outcome = AutomationOutcome.STARTED,
         )
         ensureInteractive(context, AutomationStateName.WAKING_IF_REQUIRED)
-        launchAndObserveCamera(context, AutomationStateName.LOCATING_PIXEL_CAMERA)
 
-        val beforeStop = observeCamera(
+        var beforeStop = observeCamera(
             context = context,
             operation = AutomationOperation.INSPECT_CAMERA,
             state = AutomationStateName.INSPECTING_RECORDING_STATE,
             failureCode = AutomationFailureCode.CAMERA_STATE_UNKNOWN,
             failureMessage = "Pixel Camera state could not be inspected before stop",
-        ) { it !is PixelCameraState.NotRunning && it !is PixelCameraState.Unknown }
+        ) { it !is PixelCameraState.Unknown }
+        if (beforeStop is PixelCameraState.NotRunning) {
+            beforeStop = launchAndObserveCamera(context, AutomationStateName.LOCATING_PIXEL_CAMERA)
+        }
 
-        if (beforeStop.isConfirmedRecording()) {
+        val capture = context.current.capture as CaptureConfiguration.TimeLapse
+        if (beforeStop.isConfirmedRecording(capture)) {
             dispatch(
                 context = context,
                 operation = AutomationOperation.STOP_RECORDING,
@@ -187,15 +217,15 @@ class DefaultAutomationEngine(
             failureMessage = "Pixel Camera did not leave the recording state",
             predicate = { it.isConfirmedStopped() },
         )
-        if (recoveringFailedStart) {
+        if (preserveFailedOutcome) {
             context.transition(
                 state = AutomationStateName.FAILED,
                 status = SessionStatus.FAILED,
                 operation = AutomationOperation.VERIFY_STOPPED,
                 outcome = AutomationOutcome.SUCCEEDED,
-                metadata = mapOf("recovery" to "late_recording_after_failed_start"),
-            ) { session, now -> session.copy(stoppedVerifiedAt = now, failure = originalFailure) }
-            AutomationRunResult.StopVerifiedAfterFailure(context.current, originalFailure)
+                metadata = mapOf("recovery" to "dispatched_but_unverified_recording"),
+            ) { session, now -> session.copy(stoppedVerifiedAt = now, failure = preservedFailure) }
+            AutomationRunResult.StopVerifiedAfterFailure(context.current, preservedFailure)
         } else {
             context.transition(
                 state = AutomationStateName.COMPLETED,
@@ -265,7 +295,9 @@ class DefaultAutomationEngine(
                 }
 
                 is PixelCameraState.TimeLapse -> when {
-                    state.recording && state.speed == capture.speed -> {
+                    state.recording &&
+                        state.speed == capture.speed &&
+                        context.current.recordActionAt != null -> {
                         context.transition(
                             state = AutomationStateName.VERIFYING_RECORDING,
                             status = SessionStatus.STARTING,
@@ -280,6 +312,14 @@ class DefaultAutomationEngine(
                         ) { session, now -> session.copy(recordingVerifiedAt = now, failure = null) }
                         return AutomationRunResult.Succeeded(context.current)
                     }
+
+                    state.recording && state.speed == capture.speed -> fail(
+                        context,
+                        failure(
+                            AutomationFailureCode.RECORDING_NOT_CONFIRMED,
+                            "Refusing to claim a recording Lenswake did not dispatch",
+                        ),
+                    )
 
                     state.recording -> fail(
                         context,
@@ -475,7 +515,10 @@ class DefaultAutomationEngine(
                 attempt = attempt,
             )
             val result = try {
-                action()
+                when (val timed = timed(operation, action)) {
+                    is TimedCall.Completed -> timed.value
+                    TimedCall.TimedOut -> ActionDispatch.Rejected(timeoutFailure(operation))
+                }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 ActionDispatch.Rejected(
@@ -526,7 +569,10 @@ class DefaultAutomationEngine(
                 attempt = attempt,
             )
             val inspection = try {
-                pixelCamera.inspect(context.profile)
+                when (val timed = timed(operation) { pixelCamera.inspect(context.profile) }) {
+                    is TimedCall.Completed -> timed.value
+                    TimedCall.TimedOut -> PortResult.Unavailable(timeoutFailure(operation))
+                }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 PortResult.Unavailable(operationFailure(failureCode, failureMessage, error))
@@ -708,17 +754,19 @@ class DefaultAutomationEngine(
                 ),
             )
 
-            ProfileCompatibility.NEEDS_REHEARSAL -> profileFailure(
-                context,
-                failure(
-                    AutomationFailureCode.PROFILE_REQUIRES_REHEARSAL,
-                    "Pixel Camera profile requires a successful rehearsal",
-                ),
-            )
-
-            ProfileCompatibility.VERIFIED,
+            ProfileCompatibility.NEEDS_REHEARSAL,
             ProfileCompatibility.PROBABLY_COMPATIBLE,
-            -> Unit
+            -> if (context.current.kind == SessionKind.SCHEDULED) {
+                profileFailure(
+                    context,
+                    failure(
+                        AutomationFailureCode.PROFILE_REQUIRES_REHEARSAL,
+                        "Unattended execution requires a verified Pixel Camera profile",
+                    ),
+                )
+            }
+
+            ProfileCompatibility.VERIFIED -> Unit
         }
         return profile
     }
@@ -740,7 +788,10 @@ class DefaultAutomationEngine(
     )
 
     private suspend fun inspectDevice(): PortResult<DeviceState> = try {
-        deviceControl.inspect()
+        when (val timed = timed(AutomationOperation.WAKE_DEVICE, deviceControl::inspect)) {
+            is TimedCall.Completed -> timed.value
+            TimedCall.TimedOut -> PortResult.Unavailable(timeoutFailure(AutomationOperation.WAKE_DEVICE))
+        }
     } catch (error: Exception) {
         if (error is CancellationException) throw error
         PortResult.Unavailable(
@@ -757,6 +808,39 @@ class DefaultAutomationEngine(
         message,
         mapOf("exception" to (error::class.qualifiedName ?: error::class.simpleName.orEmpty()).take(256)),
     )
+
+    private suspend fun <T> timed(
+        operation: AutomationOperation,
+        block: suspend () -> T,
+    ): TimedCall<T> = withTimeoutOrNull(config.timeoutFor(operation)) {
+        TimedCall.Completed(block())
+    } ?: TimedCall.TimedOut
+
+    private fun timeoutFailure(operation: AutomationOperation): AutomationFailure = failure(
+        AutomationFailureCode.AUTOMATION_TIMEOUT,
+        "Automation operation $operation exceeded its finite timeout",
+        mapOf(
+            "operation" to operation.name,
+            "timeoutMs" to config.timeoutFor(operation).inWholeMilliseconds.toString(),
+        ),
+    )
+
+    private suspend fun validateSupportedCapture(context: RunContext) {
+        val capture = context.current.capture as CaptureConfiguration.TimeLapse
+        if (capture.lens != LensSelection.REAR_MAIN || capture.zoom != null) {
+            fail(
+                context,
+                failure(
+                    AutomationFailureCode.UNSUPPORTED_CAPTURE_CONFIGURATION,
+                    "Baseline automation supports only the rear main lens without zoom",
+                    mapOf(
+                        "lens" to capture.lens.name,
+                        "zoom" to (capture.zoom?.factor?.toString() ?: "none"),
+                    ),
+                ),
+            )
+        }
+    }
 
     private fun failure(
         code: AutomationFailureCode,
@@ -780,8 +864,8 @@ class DefaultAutomationEngine(
         else -> "automation.state.${state.name.lowercase()}"
     }
 
-    private fun PixelCameraState.isConfirmedRecording(): Boolean =
-        this is PixelCameraState.TimeLapse && recording
+    private fun PixelCameraState.isConfirmedRecording(capture: CaptureConfiguration.TimeLapse): Boolean =
+        this is PixelCameraState.TimeLapse && recording && speed == capture.speed
 
     private fun PixelCameraState.isConfirmedStopped(): Boolean = when (this) {
         PixelCameraState.Photo -> true
@@ -796,4 +880,12 @@ class DefaultAutomationEngine(
     private class EngineAbort(
         val result: AutomationRunResult,
     ) : RuntimeException(null, null, false, false)
+
+    private sealed interface TimedCall<out T> {
+        data class Completed<T>(
+            val value: T,
+        ) : TimedCall<T>
+
+        data object TimedOut : TimedCall<Nothing>
+    }
 }
