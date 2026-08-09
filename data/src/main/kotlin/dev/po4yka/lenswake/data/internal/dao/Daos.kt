@@ -1,0 +1,126 @@
+package dev.po4yka.lenswake.data.internal.dao
+
+import androidx.room.Dao
+import androidx.room.Delete
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Transaction
+import androidx.room.Update
+import androidx.room.Upsert
+import dev.po4yka.lenswake.data.internal.entity.AutomationProfileEntity
+import dev.po4yka.lenswake.data.internal.entity.ExecutionEventEntity
+import dev.po4yka.lenswake.data.internal.entity.ExecutionSessionEntity
+import dev.po4yka.lenswake.data.internal.entity.ScheduleEntity
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+internal interface ScheduleDao {
+    @Query("SELECT * FROM schedules ORDER BY start_at_epoch_ms, id")
+    fun observeAll(): Flow<List<ScheduleEntity>>
+
+    @Query("SELECT * FROM schedules WHERE id = :id")
+    suspend fun get(id: String): ScheduleEntity?
+
+    @Upsert
+    suspend fun upsert(schedule: ScheduleEntity)
+
+    @Query("DELETE FROM schedules WHERE id = :id")
+    suspend fun delete(id: String)
+}
+
+@Dao
+internal interface AutomationProfileDao {
+    @Query("SELECT * FROM automation_profiles ORDER BY id")
+    fun observeAll(): Flow<List<AutomationProfileEntity>>
+
+    @Query("SELECT * FROM automation_profiles WHERE id = :id")
+    suspend fun get(id: String): AutomationProfileEntity?
+
+    @Upsert
+    suspend fun upsert(profile: AutomationProfileEntity)
+
+    @Query("DELETE FROM automation_profiles WHERE id = :id")
+    suspend fun delete(id: String)
+}
+
+internal sealed interface ExecutionCasResult {
+    data object Applied : ExecutionCasResult
+    data class Conflict(val actualRevision: Long?) : ExecutionCasResult
+}
+
+@Dao
+internal interface ExecutionDao {
+    @Query("SELECT * FROM execution_sessions ORDER BY created_at_epoch_ms DESC, id DESC")
+    fun observeAll(): Flow<List<ExecutionSessionEntity>>
+
+    @Query("SELECT * FROM execution_sessions WHERE id = :id")
+    fun observe(id: String): Flow<ExecutionSessionEntity?>
+
+    @Query("SELECT * FROM execution_events WHERE session_id = :sessionId ORDER BY sequence, id")
+    fun observeEvents(sessionId: String): Flow<List<ExecutionEventEntity>>
+
+    @Query("SELECT * FROM execution_sessions WHERE id = :id")
+    suspend fun get(id: String): ExecutionSessionEntity?
+
+    @Query("SELECT * FROM execution_sessions WHERE execution_key = :executionKey")
+    suspend fun getByExecutionKey(executionKey: String): ExecutionSessionEntity?
+
+    @Query(
+        """
+        SELECT * FROM execution_sessions
+        WHERE schedule_id = :scheduleId
+          AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED')
+        ORDER BY created_at_epoch_ms DESC, id DESC
+        LIMIT 1
+        """,
+    )
+    suspend fun findActiveForSchedule(scheduleId: String): ExecutionSessionEntity?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnoringConflict(session: ExecutionSessionEntity): Long
+
+    @Update
+    suspend fun update(session: ExecutionSessionEntity): Int
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertEvent(event: ExecutionEventEntity)
+
+    @Query("SELECT revision FROM execution_sessions WHERE id = :id")
+    suspend fun revision(id: String): Long?
+
+    @Query("SELECT COALESCE(MAX(sequence), -1) + 1 FROM execution_events WHERE session_id = :sessionId")
+    suspend fun nextEventSequence(sessionId: String): Long
+
+    @Transaction
+    suspend fun createIdempotently(session: ExecutionSessionEntity) {
+        if (insertIgnoringConflict(session) != -1L) return
+
+        val existing = getByExecutionKey(session.executionKey)
+        if (existing == session) return
+
+        throw IllegalStateException(
+            "Execution session conflicts with an existing id or execution key",
+        )
+    }
+
+    @Transaction
+    suspend fun compareAndSetWithEvent(
+        expectedRevision: Long,
+        session: ExecutionSessionEntity,
+        eventWithoutSequence: ExecutionEventEntity,
+        requestedSequence: Long?,
+    ): ExecutionCasResult {
+        val actualRevision = revision(session.id)
+        if (actualRevision != expectedRevision) {
+            return ExecutionCasResult.Conflict(actualRevision)
+        }
+
+        check(update(session) == 1) { "Execution session disappeared during transactional update" }
+        val event = eventWithoutSequence.copy(
+            sequence = requestedSequence ?: nextEventSequence(session.id),
+        )
+        insertEvent(event)
+        return ExecutionCasResult.Applied
+    }
+}
