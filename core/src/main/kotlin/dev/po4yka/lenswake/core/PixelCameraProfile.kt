@@ -3,7 +3,7 @@ package dev.po4yka.lenswake.core
 import java.time.Instant
 
 object PixelCameraSelectorSchema {
-    const val CURRENT_VERSION: Int = 1
+    const val CURRENT_VERSION: Int = 2
 }
 
 data class PixelCameraEnvironment(
@@ -154,6 +154,7 @@ data class UiSelector(
     val contentDescription: String? = null,
     val text: String? = null,
     val expectedSelected: Boolean? = null,
+    val expectedChecked: Boolean? = null,
     val expectedRegion: NormalizedBounds? = null,
     val requiresClickable: Boolean = true,
     val requiresVisible: Boolean = true,

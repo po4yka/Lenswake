@@ -4,6 +4,7 @@ import dev.po4yka.lenswake.core.AutomationAction
 import dev.po4yka.lenswake.core.NormalizedBounds
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
+import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.UiSelector
@@ -107,6 +108,33 @@ class SelectorMatcherTest {
     }
 
     @Test
+    fun `checked state constraint excludes unchecked duplicate`() {
+        val checkedSelector = selector.copy(expectedChecked = true)
+        val checkedProfile = profile(minimumScore = 100).copy(
+            targets = mapOf(
+                AutomationAction.START_RECORDING to UiSelectorSet(
+                    selectors = listOf(checkedSelector),
+                    minimumScore = 100,
+                ),
+            ),
+        )
+
+        val result = SelectorMatcher().match(
+            action = AutomationAction.START_RECORDING,
+            profile = checkedProfile,
+            nodes = listOf(
+                node(id = "unchecked", checked = false),
+                node(id = "checked", checked = true),
+            ),
+        )
+
+        val match = assertInstanceOf(SelectorMatchResult.Match::class.java, result)
+        assertEquals("checked", match.node.id)
+        assertEquals(245, match.score)
+        assertEquals(true, SelectorSignal.CHECKED_STATE in match.matchedSignals)
+    }
+
+    @Test
     fun `clickable state cannot meet threshold when configured discriminant misses`() {
         val selectorSet = UiSelectorSet(
             selectors = listOf(
@@ -148,6 +176,28 @@ class SelectorMatcherTest {
         assertInstanceOf(SelectorMatchResult.NoEligibleNodes::class.java, result)
     }
 
+    @Test
+    fun `checked state cannot identify a node without a discriminant`() {
+        val selectorSet = UiSelectorSet(
+            selectors = listOf(
+                UiSelector(
+                    packageName = CAMERA_PACKAGE,
+                    expectedChecked = true,
+                    requiresClickable = false,
+                ),
+            ),
+            minimumScore = 15,
+        )
+
+        val result = SelectorMatcher().match(
+            selectorSet = selectorSet,
+            profile = profile(minimumScore = 100),
+            nodes = listOf(node(id = "checked-state-only", checked = true)),
+        )
+
+        assertInstanceOf(SelectorMatchResult.NoEligibleNodes::class.java, result)
+    }
+
     private fun profile(minimumScore: Int) = PixelCameraProfile(
         id = ProfileId("profile"),
         environment = PixelCameraEnvironment(
@@ -162,7 +212,7 @@ class SelectorMatcherTest {
             displayHeightPx = 2992,
             densityDpi = 480,
         ),
-        selectorSchemaVersion = 1,
+        selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
         targets = mapOf(
             AutomationAction.START_RECORDING to UiSelectorSet(
                 selectors = listOf(selector),
@@ -181,6 +231,7 @@ class SelectorMatcherTest {
         text: String? = "Verified text",
         visible: Boolean = true,
         selected: Boolean = false,
+        checked: Boolean = false,
     ) = UiNodeSnapshot(
         id = id,
         packageName = packageName,
@@ -192,6 +243,8 @@ class SelectorMatcherTest {
         visible = visible,
         clickable = true,
         selected = selected,
+        checkable = true,
+        checked = checked,
         enabled = true,
     )
 

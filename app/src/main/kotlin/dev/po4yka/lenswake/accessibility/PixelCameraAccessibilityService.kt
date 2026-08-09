@@ -174,6 +174,17 @@ class PixelCameraAccessibilityService : AccessibilityService() {
             visible = isVisibleToUser,
             clickable = isClickable,
             selected = isSelected,
+            checkable = isCheckable,
+            checked = if (!isCheckable) {
+                null
+            } else {
+                when (getChecked()) {
+                    AccessibilityNodeInfo.CHECKED_STATE_TRUE -> true
+                    AccessibilityNodeInfo.CHECKED_STATE_FALSE -> false
+                    AccessibilityNodeInfo.CHECKED_STATE_PARTIAL -> null
+                    else -> null
+                }
+            },
             enabled = isEnabled,
         )
     }

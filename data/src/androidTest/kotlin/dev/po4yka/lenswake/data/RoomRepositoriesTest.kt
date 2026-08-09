@@ -35,6 +35,7 @@ import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.core.UiSelector
 import dev.po4yka.lenswake.core.UiSelectorSet
+import dev.po4yka.lenswake.data.internal.mapping.JsonColumnCodec
 import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.flow.first
@@ -44,6 +45,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -90,6 +92,15 @@ class RoomRepositoriesTest {
             restoredProfile?.stateSignals?.get(PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE),
         )
         assertEquals(
+            true,
+            restoredProfile
+                ?.stateSignals
+                ?.get(PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE)
+                ?.selectors
+                ?.single()
+                ?.expectedChecked,
+        )
+        assertEquals(
             profile.speedTargets[TimeLapseSpeed.X120],
             restoredProfile?.speedTargets?.get(TimeLapseSpeed.X120),
         )
@@ -104,6 +115,19 @@ class RoomRepositoriesTest {
         )
         assertEquals(schedule, schedules.get(schedule.id))
         assertEquals(listOf(schedule), schedules.observeSchedules().first())
+    }
+
+    @Test
+    fun previousProfileSelectorJsonSchemaIsRejected() {
+        assertThrows(IllegalArgumentException::class.java) {
+            JsonColumnCodec.decodeTargets("""{"schemaVersion":1,"targets":[]}""")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            JsonColumnCodec.decodeSpeedTargets("""{"schemaVersion":1,"targets":[]}""")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            JsonColumnCodec.decodeStateSignals("""{"schemaVersion":1,"signals":[]}""")
+        }
     }
 
     @Test
@@ -327,6 +351,7 @@ class RoomRepositoriesTest {
                         packageName = "com.google.android.GoogleCamera",
                         role = "android.widget.Button",
                         expectedSelected = true,
+                        expectedChecked = true,
                         requiresClickable = false,
                     ),
                 ),

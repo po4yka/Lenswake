@@ -17,6 +17,8 @@ data class UiNodeSnapshot(
     val visible: Boolean,
     val clickable: Boolean,
     val selected: Boolean?,
+    val checkable: Boolean = false,
+    val checked: Boolean? = null,
     val enabled: Boolean,
 ) {
     init {
@@ -38,6 +40,7 @@ enum class SelectorSignal {
     ROLE,
     CLICKABLE_STATE,
     SELECTED_STATE,
+    CHECKED_STATE,
     EXPECTED_REGION,
 }
 
@@ -126,6 +129,12 @@ class SelectorMatcher {
         if (node.packageName != selector.packageName || node.packageName != profile.environment.cameraPackage) return null
         if (selector.requiresClickable && !node.clickable) return null
         if (selector.expectedSelected != null && node.selected != selector.expectedSelected) return null
+        if (
+            selector.expectedChecked != null &&
+            (!node.checkable || node.checked != selector.expectedChecked)
+        ) {
+            return null
+        }
 
         var score = 0
         val signals = buildSet {
@@ -156,6 +165,10 @@ class SelectorMatcher {
                 score += SELECTED_STATE_SCORE
                 add(SelectorSignal.SELECTED_STATE)
             }
+            if (selector.expectedChecked != null && node.checked == selector.expectedChecked) {
+                score += CHECKED_STATE_SCORE
+                add(SelectorSignal.CHECKED_STATE)
+            }
             val expectedRegion = selector.expectedRegion
             if (expectedRegion != null && node.bounds?.centerIsInside(expectedRegion) == true) {
                 score += REGION_SCORE
@@ -179,6 +192,7 @@ class SelectorMatcher {
         const val ROLE_SCORE = 20
         const val STATE_SCORE = 10
         const val SELECTED_STATE_SCORE = 15
+        const val CHECKED_STATE_SCORE = 15
         const val REGION_SCORE = 10
     }
 }
@@ -194,5 +208,6 @@ private val SelectorSignal.isMeaningfulDiscriminant: Boolean
 
         SelectorSignal.CLICKABLE_STATE,
         SelectorSignal.SELECTED_STATE,
+        SelectorSignal.CHECKED_STATE,
         -> false
     }

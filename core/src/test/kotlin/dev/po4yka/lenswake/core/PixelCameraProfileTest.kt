@@ -14,6 +14,7 @@ class PixelCameraProfileTest {
                     packageName = "com.google.android.GoogleCamera",
                     role = "android.widget.Button",
                     expectedSelected = true,
+                    expectedChecked = true,
                 ),
             ),
             minimumScore = 30,
@@ -31,6 +32,7 @@ class PixelCameraProfileTest {
         assertEquals(recordingSelector, profile.speedTargets[TimeLapseSpeed.X30])
         assertEquals(recordingSelector, profile.stateSignals[PixelCameraStateSignal.RECORDING_ACTIVE])
         assertEquals(true, recordingSelector.selectors.single().expectedSelected)
+        assertEquals(true, recordingSelector.selectors.single().expectedChecked)
     }
 
     @Test
@@ -82,7 +84,7 @@ class PixelCameraProfileTest {
             PixelCameraProfile(
                 id = ProfileId("profile-1"),
                 environment = environment(),
-                selectorSchemaVersion = 1,
+                selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
                 stateSignals = mapOf(PixelCameraStateSignal.NOT_RECORDING to foreignSelector),
                 compatibility = ProfileCompatibility.NEEDS_REHEARSAL,
                 verifiedAt = null,
@@ -97,6 +99,7 @@ class PixelCameraProfileTest {
                 UiSelector(
                     packageName = environment().cameraPackage,
                     expectedSelected = true,
+                    expectedChecked = true,
                     requiresClickable = true,
                 ),
             ),
@@ -107,7 +110,7 @@ class PixelCameraProfileTest {
             PixelCameraProfile(
                 id = ProfileId("profile-1"),
                 environment = environment(),
-                selectorSchemaVersion = 1,
+                selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
                 targets = mapOf(AutomationAction.START_RECORDING to unsafeSelector),
                 compatibility = ProfileCompatibility.NEEDS_REHEARSAL,
                 verifiedAt = null,
@@ -130,7 +133,7 @@ class PixelCameraProfileTest {
         val profile = PixelCameraProfile(
             id = ProfileId("profile-1"),
             environment = environment(),
-            selectorSchemaVersion = 1,
+            selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
             speedTargets = mapOf(TimeLapseSpeed.X120 to regionSelector),
             compatibility = ProfileCompatibility.NEEDS_REHEARSAL,
             verifiedAt = null,

@@ -50,7 +50,7 @@ class ProfileCompatibilityTest {
         val profile = PixelCameraProfile(
             id = ProfileId.new(),
             environment = calibrated,
-            selectorSchemaVersion = 1,
+            selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
             compatibility = ProfileCompatibility.NEEDS_REHEARSAL,
             verifiedAt = Instant.parse("2026-08-09T10:00:00Z"),
         )

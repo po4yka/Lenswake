@@ -16,6 +16,7 @@ import dev.po4yka.lenswake.core.InteractionMethod
 import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
+import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.ScheduleId
@@ -807,7 +808,7 @@ class DefaultAutomationEngineTest {
             displayHeightPx = 2992,
             densityDpi = 480,
         ),
-        selectorSchemaVersion = 1,
+        selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
         compatibility = ProfileCompatibility.VERIFIED,
         verifiedAt = NOW,
     )

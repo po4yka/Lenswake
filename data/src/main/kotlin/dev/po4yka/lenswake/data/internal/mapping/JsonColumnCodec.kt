@@ -13,7 +13,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 internal object JsonColumnCodec {
-    private const val PROFILE_JSON_SCHEMA_VERSION = 1
+    private const val PROFILE_JSON_SCHEMA_VERSION = 2
     private const val MAX_DIAGNOSTIC_JSON_LENGTH = 16_384
     private const val MAX_PROFILE_JSON_LENGTH = 262_144
 
@@ -202,6 +202,7 @@ private data class SelectorPayload(
     val contentDescription: String?,
     val text: String?,
     val expectedSelected: Boolean?,
+    val expectedChecked: Boolean? = null,
     val expectedRegion: BoundsPayload?,
     val requiresClickable: Boolean,
     val requiresVisible: Boolean,
@@ -242,6 +243,7 @@ private fun UiSelector.toPayload(): SelectorPayload = SelectorPayload(
     contentDescription = contentDescription,
     text = text,
     expectedSelected = expectedSelected,
+    expectedChecked = expectedChecked,
     expectedRegion = expectedRegion?.let {
         BoundsPayload(it.left, it.top, it.right, it.bottom)
     },
@@ -256,6 +258,7 @@ private fun SelectorPayload.toDomain(): UiSelector = UiSelector(
     contentDescription = contentDescription,
     text = text,
     expectedSelected = expectedSelected,
+    expectedChecked = expectedChecked,
     expectedRegion = expectedRegion?.let {
         NormalizedBounds(it.left, it.top, it.right, it.bottom)
     },
