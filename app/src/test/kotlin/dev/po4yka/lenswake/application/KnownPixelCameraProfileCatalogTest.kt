@@ -92,11 +92,17 @@ class KnownPixelCameraProfileCatalogTest {
         assertEquals("video_supermode", video.resourceId)
         assertNull(video.contentDescription)
 
-        val timeLapse = profile.targets.getValue(AutomationAction.SELECT_TIME_LAPSE).selectors.single()
-        assertEquals("com.google.android.GoogleCamera:id/mode_chip_text", timeLapse.resourceId)
-        assertEquals("Switch to Time Lapse Mode", timeLapse.contentDescription)
-        assertEquals("Time Lapse", timeLapse.text)
-        assertFalse(timeLapse.requiresClickable)
+        val timeLapse = profile.targets.getValue(AutomationAction.SELECT_TIME_LAPSE)
+        assertEquals(2, timeLapse.selectors.size)
+        assertTrue(timeLapse.selectors.all {
+            it.resourceId == "com.google.android.GoogleCamera:id/mode_chip_text" &&
+                it.text == "Time Lapse" &&
+                !it.requiresClickable
+        })
+        assertEquals(
+            setOf("Switch to Time Lapse Mode", "Time Lapse"),
+            timeLapse.selectors.mapTo(linkedSetOf()) { it.contentDescription },
+        )
 
         val speed = profile.speedTargets.getValue(TimeLapseSpeed.X120).selectors.single()
         assertEquals("Time Lapse 120 times speed", speed.contentDescription)
@@ -124,6 +130,25 @@ class KnownPixelCameraProfileCatalogTest {
             .single()
         assertEquals("Stop time lapse", recording.contentDescription)
         assertEquals("ComposeShutter", recording.resourceId)
+
+        val notRecording = profile.stateSignals
+            .getValue(PixelCameraStateSignal.NOT_RECORDING)
+        assertEquals(160, notRecording.minimumScore)
+        assertEquals(
+            setOf("Take photo", "Start video", "Start time lapse"),
+            notRecording.selectors.mapTo(linkedSetOf()) { it.contentDescription },
+        )
+
+        listOf(
+            PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
+            PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
+            PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
+        ).forEach { signal ->
+            assertTrue(
+                profile.stateSignals.getValue(signal).selectors.single().expectedRegion != null,
+                "$signal must require the centered active-mode region",
+            )
+        }
 
         val speedSignals = profile.stateSignals
             .getValue(PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE)

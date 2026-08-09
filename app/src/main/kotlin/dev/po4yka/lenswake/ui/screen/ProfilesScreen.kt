@@ -45,22 +45,25 @@ fun ProfilesScreen(
                 onOpenSetup = onOpenSetup,
             )
         }
-        if (state.profiles.isEmpty()) {
-            item {
-                HonestEmptyState(
-                    title = "No profiles",
-                    detail = "Install a candidate only when this device exactly matches a physically observed Pixel Camera environment.",
-                    actionLabel = if (state.profileInstall is ProfileInstallUiState.Installing) {
-                        "Installing candidate profile"
-                    } else {
-                        "Install candidate profile"
-                    },
-                    actionEnabled = state.actions.canInstallCandidateProfile,
-                    unavailableReason = state.actions.installCandidateProfileUnavailableReason,
-                    onAction = onInstallCandidateProfile,
-                )
-            }
-        } else {
+        item {
+            HonestEmptyState(
+                title = if (state.profiles.isEmpty()) "No profiles" else "Catalog profile",
+                detail = if (state.profiles.isEmpty()) {
+                    "Install a candidate only when this device exactly matches a physically observed Pixel Camera environment."
+                } else {
+                    "Check the installed profile against the exact-device catalog. A changed selector definition replaces the stale candidate and requires rehearsal again."
+                },
+                actionLabel = if (state.profileInstall is ProfileInstallUiState.Installing) {
+                    "Installing candidate profile"
+                } else {
+                    "Install candidate profile"
+                },
+                actionEnabled = state.actions.canInstallCandidateProfile,
+                unavailableReason = state.actions.installCandidateProfileUnavailableReason,
+                onAction = onInstallCandidateProfile,
+            )
+        }
+        if (state.profiles.isNotEmpty()) {
             items(state.profiles.size, key = { state.profiles[it].id }) { index ->
                 val profile = state.profiles[index]
                 SummaryCard(

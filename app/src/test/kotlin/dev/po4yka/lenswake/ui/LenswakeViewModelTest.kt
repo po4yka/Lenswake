@@ -58,6 +58,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
@@ -95,7 +96,7 @@ class LenswakeViewModelTest {
         )
         assertEquals("automation.record.start_verified", state.diagnosticEvents.single().title)
         assertFalse(state.actions.canCreateSchedule)
-        assertFalse(state.actions.canInstallCandidateProfile)
+        assertTrue(state.actions.canInstallCandidateProfile)
         assertFalse(state.actions.canExportDiagnostics)
         assertEquals("Diagnostic export is not implemented yet.", state.actions.exportDiagnosticsUnavailableReason)
     }

@@ -19,6 +19,8 @@ import dev.po4yka.lenswake.core.UiSelectorSet
  * it verified: the production automation stack must still complete a rehearsal on that device.
  */
 object KnownPixelCameraProfileCatalog {
+    private val ACTIVE_MODE_REGION = NormalizedBounds(0.35f, 0.80f, 0.65f, 0.90f)
+
     val pixel8ProAndroid17Camera69481630: PixelCameraProfile = PixelCameraProfile(
         id = ProfileId(
             "google-pixel-8-pro-sdk37-cp2a-260705-006-camera-69481630-1008x2244-en-us-v2",
@@ -42,12 +44,22 @@ object KnownPixelCameraProfileCatalog {
                 resourceId = "video_supermode",
                 minimumScore = 110,
             ),
-            AutomationAction.SELECT_TIME_LAPSE to actionSelector(
-                resourceId = "$PIXEL_CAMERA_PACKAGE:id/mode_chip_text",
-                contentDescription = "Switch to Time Lapse Mode",
-                text = "Time Lapse",
+            AutomationAction.SELECT_TIME_LAPSE to UiSelectorSet(
+                selectors = listOf(
+                    cameraSelector(
+                        resourceId = "$PIXEL_CAMERA_PACKAGE:id/mode_chip_text",
+                        contentDescription = "Switch to Time Lapse Mode",
+                        text = "Time Lapse",
+                        requiresClickable = false,
+                    ),
+                    cameraSelector(
+                        resourceId = "$PIXEL_CAMERA_PACKAGE:id/mode_chip_text",
+                        contentDescription = "Time Lapse",
+                        text = "Time Lapse",
+                        requiresClickable = false,
+                    ),
+                ),
                 minimumScore = 190,
-                requiresClickable = false,
             ),
             AutomationAction.SELECT_REAR_MAIN_LENS to actionSelector(
                 resourceId = "zoom_toggle_1×",
@@ -78,20 +90,23 @@ object KnownPixelCameraProfileCatalog {
                 resourceId = "$PIXEL_CAMERA_PACKAGE:id/mode_chip_text",
                 text = "Photo",
                 expectedSelected = true,
-                minimumScore = 145,
+                expectedRegion = ACTIVE_MODE_REGION,
+                minimumScore = 155,
             ),
             PixelCameraStateSignal.VIDEO_MODE_ACTIVE to stateSelector(
                 resourceId = "$PIXEL_CAMERA_PACKAGE:id/mode_chip_text",
                 text = "Video",
                 expectedSelected = true,
-                minimumScore = 145,
+                expectedRegion = ACTIVE_MODE_REGION,
+                minimumScore = 155,
             ),
             PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE to stateSelector(
                 resourceId = "$PIXEL_CAMERA_PACKAGE:id/mode_chip_text",
                 contentDescription = "Time Lapse",
                 text = "Time Lapse",
                 expectedSelected = true,
-                minimumScore = 205,
+                expectedRegion = ACTIVE_MODE_REGION,
+                minimumScore = 215,
             ),
             PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE to UiSelectorSet(
                 selectors = listOf(
@@ -122,9 +137,21 @@ object KnownPixelCameraProfileCatalog {
                 contentDescription = "Stop time lapse",
                 minimumScore = 160,
             ),
-            PixelCameraStateSignal.NOT_RECORDING to stateSelector(
-                resourceId = "ComposeShutter",
-                contentDescription = "Start time lapse",
+            PixelCameraStateSignal.NOT_RECORDING to UiSelectorSet(
+                selectors = listOf(
+                    cameraSelector(
+                        resourceId = "ComposeShutter",
+                        contentDescription = "Take photo",
+                    ),
+                    cameraSelector(
+                        resourceId = "ComposeShutter",
+                        contentDescription = "Start video",
+                    ),
+                    cameraSelector(
+                        resourceId = "ComposeShutter",
+                        contentDescription = "Start time lapse",
+                    ),
+                ),
                 minimumScore = 160,
             ),
         ),
@@ -198,8 +225,7 @@ object KnownPixelCameraProfileCatalog {
         requiresClickable: Boolean,
     ): UiSelectorSet = UiSelectorSet(
         selectors = listOf(
-            UiSelector(
-                packageName = PIXEL_CAMERA_PACKAGE,
+            cameraSelector(
                 resourceId = resourceId,
                 contentDescription = contentDescription,
                 text = text,
@@ -210,6 +236,25 @@ object KnownPixelCameraProfileCatalog {
             ),
         ),
         minimumScore = minimumScore,
+    )
+
+    private fun cameraSelector(
+        resourceId: String? = null,
+        contentDescription: String? = null,
+        text: String? = null,
+        expectedSelected: Boolean? = null,
+        expectedChecked: Boolean? = null,
+        expectedRegion: NormalizedBounds? = null,
+        requiresClickable: Boolean = true,
+    ): UiSelector = UiSelector(
+        packageName = PIXEL_CAMERA_PACKAGE,
+        resourceId = resourceId,
+        contentDescription = contentDescription,
+        text = text,
+        expectedSelected = expectedSelected,
+        expectedChecked = expectedChecked,
+        expectedRegion = expectedRegion,
+        requiresClickable = requiresClickable,
     )
 
     private const val PIXEL_CAMERA_PACKAGE = "com.google.android.GoogleCamera"

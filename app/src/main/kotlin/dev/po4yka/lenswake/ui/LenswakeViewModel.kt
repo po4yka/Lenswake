@@ -264,13 +264,13 @@ internal object LenswakeUiStateMapper {
         profileInstall = profileInstall,
         rehearsal = rehearsal,
         actions = UiActionAvailability(
-            canInstallCandidateProfile = profiles.isEmpty() && profileInstall !is ProfileInstallUiState.Installing &&
+            canInstallCandidateProfile = profileInstall !is ProfileInstallUiState.Installing &&
                 profileInstall !is ProfileInstallUiState.Succeeded,
             installCandidateProfileUnavailableReason = when {
-                profiles.isNotEmpty() -> "A Pixel Camera profile is already installed."
                 profileInstall is ProfileInstallUiState.Installing -> "Candidate profile installation is in progress."
                 profileInstall is ProfileInstallUiState.Succeeded -> "The candidate profile was installed."
-                else -> "Candidate installation can be retried."
+                profiles.isEmpty() -> "Candidate installation can be retried."
+                else -> "The installed profile can be checked against the current catalog definition."
             },
             canRunRehearsal = canRunRehearsal(profiles, preflight, rehearsal),
             rehearsalUnavailableReason = rehearsalUnavailableReason(profiles, preflight, rehearsal),
