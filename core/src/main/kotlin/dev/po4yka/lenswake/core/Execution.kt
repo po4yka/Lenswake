@@ -140,6 +140,7 @@ enum class AutomationOutcome {
 }
 
 enum class InteractionMethod {
+    STANDARD_ANDROID_API,
     ACCESSIBILITY_ACTION,
     ACCESSIBILITY_NODE_GESTURE,
     ACCESSIBILITY_PROFILE_GESTURE,
