@@ -85,6 +85,7 @@ class DefaultAutomationEngine(
     private val sleeper: AutomationSleeper = CoroutineAutomationSleeper,
 ) : AutomationEngine {
     override suspend fun start(sessionId: SessionId): AutomationRunResult = execute(sessionId) { context ->
+        val uncertainDispatchAtEntry = context.current.hasUncertainRecordDispatch()
         when (context.current.status) {
             SessionStatus.RECORDING -> return@execute if (
                 context.current.recordActionAt != null && context.current.recordingVerifiedAt != null
@@ -94,9 +95,11 @@ class DefaultAutomationEngine(
                 rejectedState(context.current, "Recording state has no Lenswake ownership evidence")
             }
             SessionStatus.COMPLETED,
-            SessionStatus.FAILED,
             SessionStatus.CANCELLED,
             -> return@execute AutomationRunResult.AlreadyTerminal(context.current)
+            SessionStatus.FAILED -> if (!uncertainDispatchAtEntry) {
+                return@execute AutomationRunResult.AlreadyTerminal(context.current)
+            }
             SessionStatus.STOPPING -> return@execute rejectedState(context.current, "Cannot start a session while it is stopping")
             SessionStatus.PENDING,
             SessionStatus.STARTING,
@@ -119,7 +122,11 @@ class DefaultAutomationEngine(
 
         ensureInteractive(context, AutomationStateName.WAKING_DEVICE)
         launchAndObserveCamera(context)
-        convergeStart(context)
+        if (uncertainDispatchAtEntry) {
+            reconcileUncertainStart(context)
+        } else {
+            convergeStart(context)
+        }
     }
 
     override suspend fun stop(sessionId: SessionId): AutomationRunResult = execute(sessionId) { context ->
@@ -297,23 +304,14 @@ class DefaultAutomationEngine(
                 is PixelCameraState.TimeLapse -> when {
                     state.recording &&
                         state.speed == capture.speed &&
+                        state.lens == LensSelection.REAR_MAIN &&
                         context.current.recordActionAt != null -> {
-                        context.transition(
-                            state = AutomationStateName.VERIFYING_RECORDING,
-                            status = SessionStatus.STARTING,
-                            operation = AutomationOperation.VERIFY_RECORDING,
-                            outcome = AutomationOutcome.SUCCEEDED,
-                        )
-                        context.transition(
-                            state = AutomationStateName.RECORDING,
-                            status = SessionStatus.RECORDING,
-                            operation = AutomationOperation.VERIFY_RECORDING,
-                            outcome = AutomationOutcome.SUCCEEDED,
-                        ) { session, now -> session.copy(recordingVerifiedAt = now, failure = null) }
-                        return AutomationRunResult.Succeeded(context.current)
+                        return markRecordingVerified(context)
                     }
 
-                    state.recording && state.speed == capture.speed -> fail(
+                    state.recording &&
+                        state.speed == capture.speed &&
+                        state.lens == LensSelection.REAR_MAIN -> fail(
                         context,
                         failure(
                             AutomationFailureCode.RECORDING_NOT_CONFIRMED,
@@ -328,6 +326,26 @@ class DefaultAutomationEngine(
                             "Pixel Camera is already recording with a different Time Lapse speed",
                         ),
                     )
+
+                    state.lens != LensSelection.REAR_MAIN -> dispatchAndVerify(
+                        context = context,
+                        operation = AutomationOperation.SELECT_REAR_MAIN_LENS,
+                        actionState = AutomationStateName.SELECTING_REAR_MAIN_LENS,
+                        verificationState = AutomationStateName.VERIFYING_REAR_MAIN_LENS,
+                        dispatchFailure = failure(
+                            AutomationFailureCode.LENS_NOT_FOUND,
+                            "Pixel Camera could not select the rear main lens",
+                        ),
+                        verificationFailure = failure(
+                            AutomationFailureCode.LENS_NOT_VERIFIED,
+                            "Pixel Camera did not confirm the rear main lens",
+                        ),
+                        action = { pixelCamera.selectRearMainLens(context.profile) },
+                    ) {
+                        it is PixelCameraState.TimeLapse &&
+                            !it.recording &&
+                            it.lens == LensSelection.REAR_MAIN
+                    }
 
                     state.speed != capture.speed -> dispatchAndVerify(
                         context = context,
@@ -346,14 +364,16 @@ class DefaultAutomationEngine(
                     ) { it is PixelCameraState.TimeLapse && !it.recording && it.speed == capture.speed }
 
                     else -> {
-                        dispatch(
-                            context = context,
-                            operation = AutomationOperation.START_RECORDING,
-                            state = AutomationStateName.STARTING_RECORDING,
-                            defaultFailureCode = AutomationFailureCode.RECORD_ACTION_FAILED,
-                            defaultFailureMessage = "Pixel Camera rejected the record action",
-                            action = { pixelCamera.startRecording(context.profile) },
-                        ) { session, now -> session.copy(recordActionAt = now) }
+                        if (context.current.hasUncertainRecordDispatch()) {
+                            fail(
+                                context,
+                                failure(
+                                    AutomationFailureCode.RECORDING_NOT_CONFIRMED,
+                                    "An uncertain prior Record dispatch must be reconciled without redispatch",
+                                ),
+                            )
+                        }
+                        dispatchRecordingStart(context)
                         observeCamera(
                             context = context,
                             operation = AutomationOperation.VERIFY_RECORDING,
@@ -363,15 +383,10 @@ class DefaultAutomationEngine(
                         ) { observed ->
                             observed is PixelCameraState.TimeLapse &&
                                 observed.recording &&
-                                observed.speed == capture.speed
+                                observed.speed == capture.speed &&
+                                observed.lens == LensSelection.REAR_MAIN
                         }
-                        context.transition(
-                            state = AutomationStateName.RECORDING,
-                            status = SessionStatus.RECORDING,
-                            operation = AutomationOperation.VERIFY_RECORDING,
-                            outcome = AutomationOutcome.SUCCEEDED,
-                        ) { session, now -> session.copy(recordingVerifiedAt = now, failure = null) }
-                        return AutomationRunResult.Succeeded(context.current)
+                        return markRecordingVerified(context)
                     }
                 }
 
@@ -398,6 +413,49 @@ class DefaultAutomationEngine(
                 "Pixel Camera did not converge within ${config.maxConvergenceSteps} semantic transitions",
             ),
         )
+    }
+
+    private suspend fun reconcileUncertainStart(context: RunContext): AutomationRunResult {
+        val capture = context.current.capture as CaptureConfiguration.TimeLapse
+        val observed = observeCamera(
+            context = context,
+            operation = AutomationOperation.VERIFY_RECORDING,
+            state = AutomationStateName.VERIFYING_RECORDING,
+            failureCode = AutomationFailureCode.RECORDING_NOT_CONFIRMED,
+            failureMessage = "An uncertain Record dispatch could not be observed",
+        ) { it !is PixelCameraState.NotRunning && it !is PixelCameraState.Unknown }
+        return if (
+            observed is PixelCameraState.TimeLapse &&
+            observed.recording &&
+            observed.speed == capture.speed &&
+            observed.lens == LensSelection.REAR_MAIN
+        ) {
+            markRecordingVerified(context)
+        } else {
+            fail(
+                context,
+                failure(
+                    AutomationFailureCode.RECORDING_NOT_CONFIRMED,
+                    "Uncertain Record dispatch was not confirmed; checkpoint retained for STOP reconciliation",
+                ),
+            )
+        }
+    }
+
+    private suspend fun markRecordingVerified(context: RunContext): AutomationRunResult.Succeeded {
+        context.transition(
+            state = AutomationStateName.VERIFYING_RECORDING,
+            status = SessionStatus.STARTING,
+            operation = AutomationOperation.VERIFY_RECORDING,
+            outcome = AutomationOutcome.SUCCEEDED,
+        )
+        context.transition(
+            state = AutomationStateName.RECORDING,
+            status = SessionStatus.RECORDING,
+            operation = AutomationOperation.VERIFY_RECORDING,
+            outcome = AutomationOutcome.SUCCEEDED,
+        ) { session, now -> session.copy(recordingVerifiedAt = now, failure = null) }
+        return AutomationRunResult.Succeeded(context.current)
     }
 
     private suspend fun ensureInteractive(
@@ -489,6 +547,78 @@ class DefaultAutomationEngine(
             failureCode = verificationFailure.code,
             failureMessage = verificationFailure.message,
             predicate = predicate,
+        )
+    }
+
+    private suspend fun dispatchRecordingStart(context: RunContext) {
+        val operation = AutomationOperation.START_RECORDING
+        val state = AutomationStateName.STARTING_RECORDING
+        val policy = config.policyFor(operation)
+        var lastRejection: AutomationFailure? = null
+
+        for (attempt in 1..policy.maxAttempts) {
+            if (attempt > 1) {
+                retryTransition(context, operation, attempt, state)
+                sleeper.sleep(policy.delayBeforeAttempt(attempt))
+            }
+
+            context.transition(
+                state = state,
+                operation = operation,
+                outcome = AutomationOutcome.STARTED,
+                attempt = attempt,
+                metadata = mapOf("dispatchCheckpoint" to "write_ahead"),
+            ) { session, now -> session.copy(recordActionAt = session.recordActionAt ?: now) }
+
+            val invocation = try {
+                timed(operation) { pixelCamera.startRecording(context.profile) }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                fail(
+                    context,
+                    operationFailure(
+                        AutomationFailureCode.RECORD_ACTION_FAILED,
+                        "Record dispatch threw after a possible external side effect",
+                        error,
+                    ),
+                )
+            }
+
+            when (invocation) {
+                TimedCall.TimedOut -> fail(context, timeoutFailure(operation))
+                is TimedCall.Completed -> when (val dispatch = invocation.value) {
+                    is ActionDispatch.Dispatched -> {
+                        context.transition(
+                            state = state,
+                            operation = operation,
+                            outcome = AutomationOutcome.DISPATCHED,
+                            method = dispatch.method,
+                            attempt = attempt,
+                        )
+                        return
+                    }
+
+                    is ActionDispatch.Rejected -> {
+                        lastRejection = dispatch.failure
+                        context.transition(
+                            state = state,
+                            operation = operation,
+                            outcome = AutomationOutcome.FAILED,
+                            attempt = attempt,
+                            failure = dispatch.failure,
+                            metadata = mapOf("dispatchCheckpoint" to "cleared_definitive_rejection"),
+                        ) { session, _ -> session.copy(recordActionAt = null) }
+                    }
+                }
+            }
+        }
+
+        fail(
+            context,
+            lastRejection ?: failure(
+                AutomationFailureCode.RECORD_ACTION_FAILED,
+                "Pixel Camera definitively rejected the Record action",
+            ),
         )
     }
 
@@ -865,7 +995,10 @@ class DefaultAutomationEngine(
     }
 
     private fun PixelCameraState.isConfirmedRecording(capture: CaptureConfiguration.TimeLapse): Boolean =
-        this is PixelCameraState.TimeLapse && recording && speed == capture.speed
+        this is PixelCameraState.TimeLapse &&
+            recording &&
+            speed == capture.speed &&
+            lens == LensSelection.REAR_MAIN
 
     private fun PixelCameraState.isConfirmedStopped(): Boolean = when (this) {
         PixelCameraState.Photo -> true
@@ -876,6 +1009,9 @@ class DefaultAutomationEngine(
         PixelCameraState.RecordingUnknownMode,
         -> false
     }
+
+    private fun ExecutionSession.hasUncertainRecordDispatch(): Boolean =
+        recordActionAt != null && recordingVerifiedAt == null && stoppedVerifiedAt == null
 
     private class EngineAbort(
         val result: AutomationRunResult,

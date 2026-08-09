@@ -2,6 +2,10 @@ package dev.po4yka.lenswake.core
 
 import java.time.Instant
 
+object PixelCameraSelectorSchema {
+    const val CURRENT_VERSION: Int = 1
+}
+
 data class PixelCameraEnvironment(
     val deviceManufacturer: String,
     val deviceModel: String,
@@ -78,6 +82,9 @@ data class PixelCameraProfile(
 ) {
     init {
         require(selectorSchemaVersion > 0) { "Selector schema version must be positive" }
+        require(compatibility != ProfileCompatibility.VERIFIED || verifiedAt != null) {
+            "A verified profile requires a verification timestamp"
+        }
         require(
             (targets.values + speedTargets.values + stateSignals.values)
                 .flatMap(UiSelectorSet::selectors)
@@ -95,6 +102,9 @@ data class PixelCameraProfile(
     }
 
     fun compatibilityFor(currentEnvironment: PixelCameraEnvironment): ProfileCompatibility {
+        if (selectorSchemaVersion != PixelCameraSelectorSchema.CURRENT_VERSION) {
+            return ProfileCompatibility.INCOMPATIBLE
+        }
         val environmentCompatibility = ProfileCompatibilityEvaluator.evaluate(environment, currentEnvironment)
         return if (compatibility.ordinal >= environmentCompatibility.ordinal) {
             compatibility
@@ -108,6 +118,7 @@ enum class AutomationAction {
     SELECT_VIDEO,
     SELECT_TIME_LAPSE,
     SELECT_TIME_LAPSE_SPEED,
+    SELECT_REAR_MAIN_LENS,
     START_RECORDING,
     STOP_RECORDING,
 }
@@ -121,6 +132,7 @@ enum class PixelCameraStateSignal {
     TIME_LAPSE_SPEED_X10_ACTIVE,
     TIME_LAPSE_SPEED_X30_ACTIVE,
     TIME_LAPSE_SPEED_X120_ACTIVE,
+    REAR_MAIN_LENS_ACTIVE,
     RECORDING_ACTIVE,
     NOT_RECORDING,
 }

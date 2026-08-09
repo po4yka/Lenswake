@@ -14,7 +14,10 @@ import dev.po4yka.lenswake.core.AutomationAction
 import dev.po4yka.lenswake.core.AutomationFailure
 import dev.po4yka.lenswake.core.AutomationFailureCode
 import dev.po4yka.lenswake.core.InteractionMethod
+import dev.po4yka.lenswake.core.LensSelection
+import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
+import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
 import dev.po4yka.lenswake.core.PixelCameraStateSignal
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.TimeLapseSpeed
@@ -29,14 +32,26 @@ import dev.po4yka.lenswake.platform.SecurePixelCameraLauncher
  * It contains no Pixel Camera selectors. Both actions and observable state are entirely defined by
  * the persisted profile. Dispatch acceptance is returned separately from state verification.
  */
-class PixelCameraAccessibilityPort(
-    private val launcher: SecurePixelCameraLauncher,
+class PixelCameraAccessibilityPort internal constructor(
+    private val cameraLauncher: () -> CameraLaunchDispatch,
     private val selectorMatcher: SelectorMatcher,
-    private val environmentProbe: AndroidPixelCameraEnvironmentProbe,
+    private val environmentProbe: () -> PortResult<PixelCameraEnvironment>,
+    private val accessibilityGateway: PixelCameraAccessibilityGateway,
 ) : PixelCameraPort {
+    constructor(
+        launcher: SecurePixelCameraLauncher,
+        selectorMatcher: SelectorMatcher,
+        environmentProbe: AndroidPixelCameraEnvironmentProbe,
+    ) : this(
+        cameraLauncher = launcher::dispatch,
+        selectorMatcher = selectorMatcher,
+        environmentProbe = environmentProbe::inspect,
+        accessibilityGateway = RuntimePixelCameraAccessibilityGateway,
+    )
+
     override suspend fun inspect(profile: PixelCameraProfile): PortResult<PixelCameraState> {
         validateProfile(profile)?.let { return PortResult.Unavailable(it) }
-        return when (val snapshot = PixelCameraAccessibilityRuntime.snapshot()) {
+        return when (val snapshot = accessibilityGateway.snapshot()) {
             AccessibilitySnapshotResult.ServiceDisconnected -> PortResult.Unavailable(
                 failure(
                     AutomationFailureCode.ACCESSIBILITY_DISABLED,
@@ -65,7 +80,7 @@ class PixelCameraAccessibilityPort(
 
     override suspend fun launchSecureCamera(profile: PixelCameraProfile): ActionDispatch {
         validateProfile(profile)?.let { return ActionDispatch.Rejected(it) }
-        return when (val result = launcher.dispatch()) {
+        return when (val result = cameraLauncher()) {
             is CameraLaunchDispatch.Dispatched -> ActionDispatch.Dispatched(
                 InteractionMethod.STANDARD_ANDROID_API,
             )
@@ -102,6 +117,9 @@ class PixelCameraAccessibilityPort(
         profile: PixelCameraProfile,
     ): ActionDispatch = dispatch(AutomationAction.SELECT_TIME_LAPSE_SPEED, profile, speed)
 
+    override suspend fun selectRearMainLens(profile: PixelCameraProfile): ActionDispatch =
+        dispatch(AutomationAction.SELECT_REAR_MAIN_LENS, profile)
+
     override suspend fun startRecording(profile: PixelCameraProfile): ActionDispatch =
         dispatch(AutomationAction.START_RECORDING, profile)
 
@@ -114,7 +132,7 @@ class PixelCameraAccessibilityPort(
         speed: TimeLapseSpeed? = null,
     ): ActionDispatch {
         validateProfile(profile)?.let { return ActionDispatch.Rejected(it) }
-        val snapshot = when (val result = PixelCameraAccessibilityRuntime.snapshot()) {
+        val snapshot = when (val result = accessibilityGateway.snapshot()) {
             is AccessibilitySnapshotResult.Available -> result
             AccessibilitySnapshotResult.ServiceDisconnected -> return ActionDispatch.Rejected(
                 failure(
@@ -174,7 +192,7 @@ class PixelCameraAccessibilityPort(
             -> return ActionDispatch.Rejected(missingActionFailure(action))
         }
 
-        return when (PixelCameraAccessibilityRuntime.dispatchClick(nodePath)) {
+        return when (accessibilityGateway.dispatchClick(nodePath)) {
             AccessibilityDispatchResult.SemanticActionDispatched -> ActionDispatch.Dispatched(
                 InteractionMethod.ACCESSIBILITY_ACTION,
             )
@@ -202,6 +220,7 @@ class PixelCameraAccessibilityPort(
             PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
             PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
             PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
+            PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
             PixelCameraStateSignal.RECORDING_ACTIVE,
             PixelCameraStateSignal.NOT_RECORDING,
         )
@@ -281,6 +300,11 @@ class PixelCameraAccessibilityPort(
             PixelCameraState.TimeLapse(
                 speed = activeSpeeds.singleOrNull(),
                 recording = recording,
+                lens = if (PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE in active) {
+                    LensSelection.REAR_MAIN
+                } else {
+                    null
+                },
             ),
         )
     }
@@ -303,17 +327,27 @@ class PixelCameraAccessibilityPort(
                 message = "The profile does not target the supported Pixel Camera package",
             )
         }
-        val currentEnvironment = when (val result = environmentProbe.inspect()) {
+        if (profile.selectorSchemaVersion != PixelCameraSelectorSchema.CURRENT_VERSION) {
+            return AutomationFailure(
+                code = AutomationFailureCode.PROFILE_INCOMPATIBLE,
+                message = "The profile selector schema is not supported by this Lenswake build",
+                context = mapOf(
+                    "profileSchema" to profile.selectorSchemaVersion.toString(),
+                    "supportedSchema" to PixelCameraSelectorSchema.CURRENT_VERSION.toString(),
+                ),
+            )
+        }
+        val currentEnvironment = when (val result = environmentProbe()) {
             is PortResult.Observed -> result.value
             is PortResult.Unavailable -> return result.failure
         }
         return when (profile.compatibilityFor(currentEnvironment)) {
-            ProfileCompatibility.VERIFIED,
+            ProfileCompatibility.VERIFIED -> null
             ProfileCompatibility.PROBABLY_COMPATIBLE,
-            -> null
-            ProfileCompatibility.NEEDS_REHEARSAL -> AutomationFailure(
+            ProfileCompatibility.NEEDS_REHEARSAL,
+            -> AutomationFailure(
                 code = AutomationFailureCode.PROFILE_REQUIRES_REHEARSAL,
-                message = "The current Pixel Camera environment differs from the calibrated profile",
+                message = "Scheduled automation requires a profile verified for the current environment",
             )
             ProfileCompatibility.INCOMPATIBLE -> AutomationFailure(
                 code = AutomationFailureCode.PROFILE_INCOMPATIBLE,
@@ -327,6 +361,7 @@ class PixelCameraAccessibilityPort(
             AutomationAction.SELECT_VIDEO -> AutomationFailureCode.VIDEO_MODE_NOT_FOUND
             AutomationAction.SELECT_TIME_LAPSE -> AutomationFailureCode.TIME_LAPSE_MODE_NOT_FOUND
             AutomationAction.SELECT_TIME_LAPSE_SPEED -> AutomationFailureCode.TIME_LAPSE_SPEED_NOT_FOUND
+            AutomationAction.SELECT_REAR_MAIN_LENS -> AutomationFailureCode.LENS_NOT_FOUND
             AutomationAction.START_RECORDING -> AutomationFailureCode.RECORD_CONTROL_NOT_FOUND
             AutomationAction.STOP_RECORDING -> AutomationFailureCode.STOP_CONTROL_NOT_FOUND
         },
@@ -345,4 +380,17 @@ class PixelCameraAccessibilityPort(
             PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE to TimeLapseSpeed.X120,
         )
     }
+}
+
+internal interface PixelCameraAccessibilityGateway {
+    suspend fun snapshot(): AccessibilitySnapshotResult
+
+    suspend fun dispatchClick(nodePath: String): AccessibilityDispatchResult
+}
+
+private object RuntimePixelCameraAccessibilityGateway : PixelCameraAccessibilityGateway {
+    override suspend fun snapshot(): AccessibilitySnapshotResult = PixelCameraAccessibilityRuntime.snapshot()
+
+    override suspend fun dispatchClick(nodePath: String): AccessibilityDispatchResult =
+        PixelCameraAccessibilityRuntime.dispatchClick(nodePath)
 }

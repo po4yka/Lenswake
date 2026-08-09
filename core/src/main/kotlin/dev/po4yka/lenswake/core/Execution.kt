@@ -16,6 +16,14 @@ data class ExecutionSession(
     val alarmStopDeliveredAt: Instant? = null,
     val status: SessionStatus,
     val currentAutomationState: AutomationStateName? = null,
+    /**
+     * Write-ahead checkpoint persisted before invoking the external Record action.
+     *
+     * A value means dispatch may have occurred; it is ownership evidence for reconciliation, not
+     * proof that Pixel Camera accepted the action or started recording. Only
+     * [recordingVerifiedAt] proves the recording postcondition. A definitive rejected dispatch may
+     * clear this marker, while timeout, exception, or cancellation must preserve it.
+     */
     val recordActionAt: Instant? = null,
     val recordingVerifiedAt: Instant? = null,
     val stopActionAt: Instant? = null,
@@ -98,6 +106,8 @@ enum class AutomationStateName {
     VERIFYING_VIDEO,
     SELECTING_TIME_LAPSE,
     VERIFYING_TIME_LAPSE,
+    SELECTING_REAR_MAIN_LENS,
+    VERIFYING_REAR_MAIN_LENS,
     SELECTING_SPEED,
     VERIFYING_SPEED,
     STARTING_RECORDING,
@@ -123,6 +133,7 @@ enum class AutomationOperation {
     INSPECT_CAMERA,
     SELECT_VIDEO,
     SELECT_TIME_LAPSE,
+    SELECT_REAR_MAIN_LENS,
     SELECT_TIME_LAPSE_SPEED,
     START_RECORDING,
     STOP_RECORDING,

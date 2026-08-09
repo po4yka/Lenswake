@@ -23,6 +23,7 @@ import dev.po4yka.lenswake.core.NormalizedBounds
 import dev.po4yka.lenswake.core.NormalizedPoint
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
+import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
 import dev.po4yka.lenswake.core.PixelCameraStateSignal
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
@@ -80,6 +81,14 @@ class RoomRepositoriesTest {
 
         val restoredProfile = profiles.get(profile.id)
         assertEquals(profile, restoredProfile)
+        assertEquals(
+            profile.targets[AutomationAction.SELECT_REAR_MAIN_LENS],
+            restoredProfile?.targets?.get(AutomationAction.SELECT_REAR_MAIN_LENS),
+        )
+        assertEquals(
+            profile.stateSignals[PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE],
+            restoredProfile?.stateSignals?.get(PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE),
+        )
         assertEquals(
             profile.speedTargets[TimeLapseSpeed.X120],
             restoredProfile?.speedTargets?.get(TimeLapseSpeed.X120),
@@ -277,7 +286,7 @@ class RoomRepositoriesTest {
             displayHeightPx = 2_992,
             densityDpi = 480,
         ),
-        selectorSchemaVersion = 1,
+        selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
         targets = mapOf(
             AutomationAction.START_RECORDING to UiSelectorSet(
                 selectors = listOf(
@@ -288,6 +297,16 @@ class RoomRepositoriesTest {
                     ),
                 ),
                 minimumScore = 100,
+            ),
+            AutomationAction.SELECT_REAR_MAIN_LENS to UiSelectorSet(
+                selectors = listOf(
+                    UiSelector(
+                        packageName = "com.google.android.GoogleCamera",
+                        role = "android.widget.Button",
+                        expectedRegion = NormalizedBounds(0f, 0.5f, 0.5f, 1f),
+                    ),
+                ),
+                minimumScore = 20,
             ),
         ),
         speedTargets = mapOf(
@@ -302,6 +321,17 @@ class RoomRepositoriesTest {
             ),
         ),
         stateSignals = mapOf(
+            PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE to UiSelectorSet(
+                selectors = listOf(
+                    UiSelector(
+                        packageName = "com.google.android.GoogleCamera",
+                        role = "android.widget.Button",
+                        expectedSelected = true,
+                        requiresClickable = false,
+                    ),
+                ),
+                minimumScore = 20,
+            ),
             PixelCameraStateSignal.RECORDING_ACTIVE to UiSelectorSet(
                 selectors = listOf(
                     UiSelector(

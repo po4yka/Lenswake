@@ -21,7 +21,7 @@ class PixelCameraProfileTest {
         val profile = PixelCameraProfile(
             id = ProfileId("profile-1"),
             environment = environment(),
-            selectorSchemaVersion = 1,
+            selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
             speedTargets = mapOf(TimeLapseSpeed.X30 to recordingSelector),
             stateSignals = mapOf(PixelCameraStateSignal.RECORDING_ACTIVE to recordingSelector),
             compatibility = ProfileCompatibility.NEEDS_REHEARSAL,
@@ -38,6 +38,32 @@ class PixelCameraProfileTest {
         assertThrows(IllegalArgumentException::class.java) {
             UiSelector(packageName = " ")
         }
+    }
+
+    @Test
+    fun `verified profile requires verification timestamp`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            PixelCameraProfile(
+                id = ProfileId("profile-1"),
+                environment = environment(),
+                selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
+                compatibility = ProfileCompatibility.VERIFIED,
+                verifiedAt = null,
+            )
+        }
+    }
+
+    @Test
+    fun `unsupported selector schema is fail closed`() {
+        val profile = PixelCameraProfile(
+            id = ProfileId("profile-1"),
+            environment = environment(),
+            selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION + 1,
+            compatibility = ProfileCompatibility.VERIFIED,
+            verifiedAt = Instant.parse("2026-08-09T10:00:00Z"),
+        )
+
+        assertEquals(ProfileCompatibility.INCOMPATIBLE, profile.compatibilityFor(environment()))
     }
 
     @Test

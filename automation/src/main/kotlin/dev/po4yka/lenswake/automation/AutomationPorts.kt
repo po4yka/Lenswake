@@ -2,6 +2,7 @@ package dev.po4yka.lenswake.automation
 
 import dev.po4yka.lenswake.core.AutomationFailure
 import dev.po4yka.lenswake.core.InteractionMethod
+import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import kotlinx.coroutines.delay
@@ -25,6 +26,7 @@ sealed interface PixelCameraState {
     data class TimeLapse(
         val speed: TimeLapseSpeed?,
         val recording: Boolean,
+        val lens: LensSelection? = null,
     ) : PixelCameraState
 
     data object RecordingUnknownMode : PixelCameraState
@@ -69,6 +71,8 @@ interface PixelCameraPort {
         speed: TimeLapseSpeed,
         profile: PixelCameraProfile,
     ): ActionDispatch
+
+    suspend fun selectRearMainLens(profile: PixelCameraProfile): ActionDispatch
 
     suspend fun startRecording(profile: PixelCameraProfile): ActionDispatch
 

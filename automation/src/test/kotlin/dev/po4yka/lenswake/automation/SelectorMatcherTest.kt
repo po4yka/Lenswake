@@ -8,6 +8,7 @@ import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.UiSelector
 import dev.po4yka.lenswake.core.UiSelectorSet
+import java.time.Instant
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Test
@@ -169,7 +170,7 @@ class SelectorMatcherTest {
             ),
         ),
         compatibility = ProfileCompatibility.VERIFIED,
-        verifiedAt = null,
+        verifiedAt = Instant.parse("2026-08-09T10:00:00Z"),
     )
 
     private fun node(
