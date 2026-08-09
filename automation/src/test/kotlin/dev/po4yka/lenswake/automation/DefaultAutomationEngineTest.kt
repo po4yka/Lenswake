@@ -444,20 +444,31 @@ class DefaultAutomationEngineTest {
     }
 
     @Test
-    fun `stop rejects hidden-mode recording without verified ownership`() = runTest {
+    fun `stop recovers hidden-mode recording after write-ahead dispatch without promoting success`() = runTest {
         val session = session(status = SessionStatus.STARTING).copy(
             currentAutomationState = AutomationStateName.VERIFYING_RECORDING,
             recordActionAt = NOW.minusSeconds(60),
         )
         val repository = FakeExecutionRepository(session)
-        val camera = FakePixelCamera(state = PixelCameraState.RecordingUnknownMode)
+        val camera = FakePixelCamera(
+            state = PixelCameraState.RecordingUnknownMode,
+            stateAfterStop = PixelCameraState.TimeLapse(
+                TimeLapseSpeed.X120,
+                recording = false,
+                lens = LensSelection.REAR_MAIN,
+            ),
+        )
         val engine = engine(repository, FakeDeviceControl(interactive = true), camera)
 
         val result = engine.stop(session.id)
 
-        val failed = assertInstanceOf(AutomationRunResult.Failed::class.java, result)
-        assertEquals(AutomationFailureCode.STOP_NOT_CONFIRMED, failed.failure.code)
-        assertEquals(0, camera.calls.count { it == "stopRecording" })
+        val recovered = assertInstanceOf(AutomationRunResult.StopVerifiedAfterFailure::class.java, result)
+        assertEquals(SessionStatus.FAILED, recovered.session.status)
+        assertEquals(AutomationFailureCode.RECORDING_NOT_CONFIRMED, recovered.session.failure?.code)
+        assertNull(recovered.session.recordingVerifiedAt)
+        assertNotNull(recovered.session.stopActionAt)
+        assertNotNull(recovered.session.stoppedVerifiedAt)
+        assertEquals(1, camera.calls.count { it == "stopRecording" })
     }
 
     @Test

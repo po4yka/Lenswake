@@ -218,10 +218,11 @@ class DefaultAutomationEngine(
         }
 
         val capture = context.current.capture as CaptureConfiguration.TimeLapse
-        val verifiedOwnedRecordingWithHiddenMode =
-            beforeStop is PixelCameraState.RecordingUnknownMode &&
-                context.current.recordingVerifiedAt != null
-        if (beforeStop.isConfirmedRecording(capture) || verifiedOwnedRecordingWithHiddenMode) {
+        // RecordingUnknownMode means the profile matched its recording control while Pixel Camera
+        // hid mode/speed/lens controls. The write-ahead recordActionAt checkpoint is the ownership
+        // boundary: STOP is safe, but a missing recordingVerifiedAt keeps the execution failed.
+        val ownedRecordingWithHiddenControls = beforeStop is PixelCameraState.RecordingUnknownMode
+        if (beforeStop.isConfirmedRecording(capture) || ownedRecordingWithHiddenControls) {
             dispatchRecordingStop(context)
         } else if (!beforeStop.isConfirmedStopped()) {
             fail(
