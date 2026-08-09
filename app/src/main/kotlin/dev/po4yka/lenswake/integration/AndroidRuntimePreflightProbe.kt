@@ -7,16 +7,14 @@ import android.content.Context
 import android.view.accessibility.AccessibilityManager
 import dev.po4yka.lenswake.accessibility.PixelCameraAccessibilityRuntime
 import dev.po4yka.lenswake.accessibility.PixelCameraAccessibilityService
+import dev.po4yka.lenswake.application.RuntimeCapabilityObservation
+import dev.po4yka.lenswake.application.RuntimePreflightEvaluator
+import dev.po4yka.lenswake.application.RuntimePreflightObservation
 import dev.po4yka.lenswake.application.RuntimePreflightProbe
 import dev.po4yka.lenswake.automation.PortResult
-import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
-import dev.po4yka.lenswake.core.PreflightCheck
-import dev.po4yka.lenswake.core.PreflightCheckType
 import dev.po4yka.lenswake.core.PreflightReport
-import dev.po4yka.lenswake.core.PreflightSeverity
 import dev.po4yka.lenswake.core.PreflightStatus
-import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.platform.PlatformCapability
 import dev.po4yka.lenswake.platform.SecurePixelCameraResolver
 import kotlinx.coroutines.flow.Flow
@@ -28,6 +26,7 @@ class AndroidRuntimePreflightProbe(
     context: Context,
     private val cameraEnvironmentProbe: AndroidPixelCameraEnvironmentProbe,
     private val secureCameraResolver: SecurePixelCameraResolver = SecurePixelCameraResolver(context),
+    private val evaluator: RuntimePreflightEvaluator = RuntimePreflightEvaluator(),
 ) : RuntimePreflightProbe {
     private val applicationContext = context.applicationContext
     private val alarmManager = applicationContext.getSystemService(AlarmManager::class.java)
@@ -49,12 +48,10 @@ class AndroidRuntimePreflightProbe(
             else -> PreflightStatus.FAILED
         }
 
-        return PreflightReport(
-            checks = listOf(
-                exactAlarmCheck(),
-                PreflightCheck(
-                    type = PreflightCheckType.PIXEL_CAMERA_INSTALLED,
-                    severity = PreflightSeverity.BLOCKING,
+        return evaluator.evaluate(
+            observation = RuntimePreflightObservation(
+                exactAlarms = exactAlarmObservation(),
+                pixelCameraInstalled = RuntimeCapabilityObservation(
                     status = cameraStatus,
                     message = currentEnvironment?.let {
                         "Pixel Camera ${it.cameraVersionCode} is installed on ${it.deviceModel}."
@@ -62,32 +59,18 @@ class AndroidRuntimePreflightProbe(
                         "Pixel Camera availability could not be checked: ${it.javaClass.simpleName}."
                     } ?: "Pixel Camera availability could not be determined.",
                 ),
-                secureCameraCheck(),
-                accessibilityEnabledCheck(),
-                accessibilityConnectedCheck(),
-                profileAvailableCheck(profiles),
-                profileCompatibilityCheck(profiles, currentEnvironment),
-                PreflightCheck(
-                    type = PreflightCheckType.REHEARSAL_CURRENT,
-                    severity = PreflightSeverity.BLOCKING,
-                    status = PreflightStatus.UNKNOWN,
-                    message = "No successful rehearsal is recorded for the current environment.",
-                ),
-                PreflightCheck(
-                    type = PreflightCheckType.PRIVILEGED_FALLBACK,
-                    severity = PreflightSeverity.WARNING,
-                    status = PreflightStatus.UNKNOWN,
-                    message = "Optional privileged fallback has not been configured or verified.",
-                ),
+                cameraEnvironment = currentEnvironment,
+                secureCameraResolves = secureCameraObservation(),
+                accessibilityEnabled = accessibilityEnabledObservation(),
+                accessibilityConnected = accessibilityConnectedObservation(),
             ),
+            profiles = profiles,
         )
     }
 
-    private fun exactAlarmCheck(): PreflightCheck = runCatching {
+    private fun exactAlarmObservation(): RuntimeCapabilityObservation = runCatching {
         val available = alarmManager.canScheduleExactAlarms()
-        PreflightCheck(
-            type = PreflightCheckType.EXACT_ALARMS,
-            severity = PreflightSeverity.BLOCKING,
+        RuntimeCapabilityObservation(
             status = if (available) PreflightStatus.PASSED else PreflightStatus.FAILED,
             message = if (available) {
                 "Android currently allows Lenswake to schedule exact alarms."
@@ -96,44 +79,37 @@ class AndroidRuntimePreflightProbe(
             },
         )
     }.getOrElse { error ->
-        PreflightCheck(
-            type = PreflightCheckType.EXACT_ALARMS,
-            severity = PreflightSeverity.BLOCKING,
+        RuntimeCapabilityObservation(
             status = PreflightStatus.UNKNOWN,
             message = "Exact-alarm access could not be checked: ${error.javaClass.simpleName}.",
         )
     }
 
-    private fun secureCameraCheck(): PreflightCheck = runCatching(secureCameraResolver::resolve)
-        .fold(
-            onSuccess = { result ->
-                when (result) {
-                    is PlatformCapability.Available -> PreflightCheck(
-                        type = PreflightCheckType.SECURE_CAMERA_RESOLVES,
-                        severity = PreflightSeverity.BLOCKING,
-                        status = PreflightStatus.PASSED,
-                        message = "Secure camera resolves to ${result.value.component.flattenToShortString()}.",
-                    )
+    private fun secureCameraObservation(): RuntimeCapabilityObservation =
+        runCatching(secureCameraResolver::resolve)
+            .fold(
+                onSuccess = { result ->
+                    when (result) {
+                        is PlatformCapability.Available -> RuntimeCapabilityObservation(
+                            status = PreflightStatus.PASSED,
+                            message = "Secure camera resolves to ${result.value.component.flattenToShortString()}.",
+                        )
 
-                    is PlatformCapability.Unavailable -> PreflightCheck(
-                        type = PreflightCheckType.SECURE_CAMERA_RESOLVES,
-                        severity = PreflightSeverity.BLOCKING,
-                        status = PreflightStatus.FAILED,
-                        message = result.detail,
+                        is PlatformCapability.Unavailable -> RuntimeCapabilityObservation(
+                            status = PreflightStatus.FAILED,
+                            message = result.detail,
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    RuntimeCapabilityObservation(
+                        status = PreflightStatus.UNKNOWN,
+                        message = "Secure camera resolution could not be checked: ${error.javaClass.simpleName}.",
                     )
-                }
-            },
-            onFailure = { error ->
-                PreflightCheck(
-                    type = PreflightCheckType.SECURE_CAMERA_RESOLVES,
-                    severity = PreflightSeverity.BLOCKING,
-                    status = PreflightStatus.UNKNOWN,
-                    message = "Secure camera resolution could not be checked: ${error.javaClass.simpleName}.",
-                )
-            },
-        )
+                },
+            )
 
-    private fun accessibilityEnabledCheck(): PreflightCheck {
+    private fun accessibilityEnabledObservation(): RuntimeCapabilityObservation {
         val expectedComponent = ComponentName(
             applicationContext,
             PixelCameraAccessibilityService::class.java,
@@ -146,16 +122,12 @@ class AndroidRuntimePreflightProbe(
                     ComponentName(info.packageName, info.name) == expectedComponent
                 }
         }.getOrElse { error ->
-            return PreflightCheck(
-                type = PreflightCheckType.ACCESSIBILITY_ENABLED,
-                severity = PreflightSeverity.BLOCKING,
+            return RuntimeCapabilityObservation(
                 status = PreflightStatus.UNKNOWN,
                 message = "Accessibility status could not be checked: ${error.javaClass.simpleName}.",
             )
         }
-        return PreflightCheck(
-            type = PreflightCheckType.ACCESSIBILITY_ENABLED,
-            severity = PreflightSeverity.BLOCKING,
+        return RuntimeCapabilityObservation(
             status = if (enabled) PreflightStatus.PASSED else PreflightStatus.FAILED,
             message = if (enabled) {
                 "Lenswake Accessibility Service is enabled in system settings."
@@ -165,11 +137,9 @@ class AndroidRuntimePreflightProbe(
         )
     }
 
-    private fun accessibilityConnectedCheck(): PreflightCheck {
+    private fun accessibilityConnectedObservation(): RuntimeCapabilityObservation {
         val connected = PixelCameraAccessibilityRuntime.isConnected
-        return PreflightCheck(
-            type = PreflightCheckType.ACCESSIBILITY_CONNECTED,
-            severity = PreflightSeverity.BLOCKING,
+        return RuntimeCapabilityObservation(
             status = if (connected) PreflightStatus.PASSED else PreflightStatus.FAILED,
             message = if (connected) {
                 "Lenswake Accessibility Service is connected to this process."
@@ -178,58 +148,4 @@ class AndroidRuntimePreflightProbe(
             },
         )
     }
-
-    private fun profileAvailableCheck(profiles: List<PixelCameraProfile>): PreflightCheck {
-        return PreflightCheck(
-            type = PreflightCheckType.PROFILE_AVAILABLE,
-            severity = PreflightSeverity.BLOCKING,
-            status = if (profiles.isNotEmpty()) PreflightStatus.PASSED else PreflightStatus.FAILED,
-            message = if (profiles.isEmpty()) {
-                "No Pixel Camera profile is persisted."
-            } else {
-                "${profiles.size} Pixel Camera profile(s) are persisted."
-            },
-        )
-    }
-
-    private fun profileCompatibilityCheck(
-        profiles: List<PixelCameraProfile>,
-        currentEnvironment: PixelCameraEnvironment?,
-    ): PreflightCheck {
-        if (currentEnvironment == null) {
-            return PreflightCheck(
-                type = PreflightCheckType.PROFILE_COMPATIBILITY,
-                severity = PreflightSeverity.BLOCKING,
-                status = PreflightStatus.UNKNOWN,
-                message = "Profile compatibility cannot be checked without the current camera environment.",
-            )
-        }
-        val compatibilities = profiles
-            .filter { it.targetsCurrentDeviceFamily(currentEnvironment) }
-            .map { it.compatibilityFor(currentEnvironment) }
-        val best = compatibilities.minByOrNull(ProfileCompatibility::ordinal)
-        return PreflightCheck(
-            type = PreflightCheckType.PROFILE_COMPATIBILITY,
-            severity = PreflightSeverity.BLOCKING,
-            status = if (best == ProfileCompatibility.VERIFIED) {
-                PreflightStatus.PASSED
-            } else {
-                PreflightStatus.FAILED
-            },
-            message = when (best) {
-                ProfileCompatibility.VERIFIED -> "A profile is verified for the current environment."
-                ProfileCompatibility.PROBABLY_COMPATIBLE -> "The closest profile requires a current-device rehearsal."
-                ProfileCompatibility.NEEDS_REHEARSAL -> "The Pixel Camera environment changed; rehearsal is required."
-                ProfileCompatibility.INCOMPATIBLE -> "Available profiles are incompatible with the current environment."
-                null -> "No compatible profile is available for the current environment."
-            },
-        )
-    }
-
-    private fun PixelCameraProfile.targetsCurrentDeviceFamily(
-        current: PixelCameraEnvironment,
-    ): Boolean =
-        environment.deviceManufacturer == current.deviceManufacturer &&
-            environment.deviceModel == current.deviceModel &&
-            environment.cameraPackage == current.cameraPackage
 }

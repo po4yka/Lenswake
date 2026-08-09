@@ -35,8 +35,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -122,6 +125,43 @@ class LenswakeViewModelTest {
         }
     }
 
+    @Test
+    fun refreshAndProbeInvalidationRecomputeRuntimeReadiness() = runTest {
+        val probe = MutablePreflightProbe(blockedPreflight())
+        val viewModel = LenswakeViewModel(
+            FakeScheduleRepository(),
+            FakeProfileRepository(),
+            FakeExecutionRepository(),
+            probe,
+        )
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.state.collect()
+        }
+
+        val accessibilityName = "Lenswake Accessibility Service"
+        viewModel.state.first {
+            it.capabilities.any { capability ->
+                capability.name == accessibilityName && capability.status == CapabilityStatus.BLOCKED
+            }
+        }
+
+        probe.report = blockedPreflight(accessibilityStatus = PreflightStatus.PASSED)
+        probe.invalidate()
+        viewModel.state.first {
+            it.capabilities.any { capability ->
+                capability.name == accessibilityName && capability.status == CapabilityStatus.AVAILABLE
+            }
+        }
+
+        probe.report = blockedPreflight(accessibilityStatus = PreflightStatus.FAILED)
+        viewModel.refreshPreflight()
+        viewModel.state.first {
+            it.capabilities.any { capability ->
+                capability.name == accessibilityName && capability.status == CapabilityStatus.BLOCKED
+            }
+        }
+    }
+
     private class FakeScheduleRepository : ScheduleRepository {
         private val schedules = MutableStateFlow<List<RecordingSchedule>>(emptyList())
 
@@ -177,6 +217,19 @@ class LenswakeViewModelTest {
         fun publish(event: AutomationEvent) {
             val stream = events.getOrPut(event.sessionId) { MutableStateFlow(emptyList()) }
             stream.value = stream.value + event
+        }
+    }
+
+    private class MutablePreflightProbe(
+        var report: PreflightReport,
+    ) : RuntimePreflightProbe {
+        private val changes = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        override val invalidations: Flow<Unit> = changes
+
+        override fun inspect(profiles: List<PixelCameraProfile>): PreflightReport = report
+
+        fun invalidate() {
+            check(changes.tryEmit(Unit)) { "Preflight invalidation was not delivered" }
         }
     }
 
@@ -244,7 +297,9 @@ class LenswakeViewModelTest {
             outcome = AutomationOutcome.SUCCEEDED,
         )
 
-        fun blockedPreflight() = PreflightReport(
+        fun blockedPreflight(
+            accessibilityStatus: PreflightStatus = PreflightStatus.FAILED,
+        ) = PreflightReport(
             checks = listOf(
                 PreflightCheck(
                     type = PreflightCheckType.EXACT_ALARMS,
@@ -255,7 +310,7 @@ class LenswakeViewModelTest {
                 PreflightCheck(
                     type = PreflightCheckType.ACCESSIBILITY_ENABLED,
                     severity = PreflightSeverity.BLOCKING,
-                    status = PreflightStatus.FAILED,
+                    status = accessibilityStatus,
                     message = "Accessibility is disabled.",
                 ),
                 PreflightCheck(
