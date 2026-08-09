@@ -51,14 +51,6 @@ sealed interface AccessibilityDispatchResult {
  * never persists an AccessibilityNodeInfo or a UI tree.
  */
 class PixelCameraAccessibilityService : AccessibilityService() {
-    override fun onCreate() {
-        super.onCreate()
-        // Android may recreate the bound service after an abrupt process death without delivering
-        // onServiceConnected again. Register the live instance as soon as it exists so alarm-driven
-        // recovery can use the accessibility boundary in the replacement process.
-        PixelCameraAccessibilityRuntime.attach(this)
-    }
-
     override fun onServiceConnected() {
         super.onServiceConnected()
         PixelCameraAccessibilityRuntime.attach(this)
