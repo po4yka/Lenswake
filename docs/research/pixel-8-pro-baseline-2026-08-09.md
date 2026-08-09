@@ -18,6 +18,8 @@ Pixel Camera package:    com.google.android.GoogleCamera
 Pixel Camera version:    10.4.117.936816638.14 (versionCode 69481630)
 Lenswake baseline:       1a153da
 Durable rehearsal code: 17dcb4a
+DEVICE_WAKE code:       364d73c
+Physical wake fixture:  f2dcf3b
 Lenswake version:        0.1.0 debug
 ```
 
@@ -44,6 +46,7 @@ Exact-alarm special access:          granted through Android Settings UI
 Lenswake Accessibility Service:      enabled through Android Settings UI
 Accessibility runtime connection:    connected
 POST_NOTIFICATIONS:                  granted through package manager
+USE_FULL_SCREEN_INTENT AppOp:        allowed for the sideloaded alarm application
 ```
 
 The existing Bitwarden Accessibility Service remained enabled. No lock-screen credential, camera
@@ -78,6 +81,17 @@ adb -s "$PIXEL_SERIAL" shell am start \
   -a android.media.action.STILL_IMAGE_CAMERA_SECURE \
   -p com.google.android.GoogleCamera \
   -c android.intent.category.DEFAULT
+
+adb -s "$PIXEL_SERIAL" shell input keyevent KEYCODE_SLEEP
+adb -s "$PIXEL_SERIAL" shell dumpsys battery unplug
+adb -s "$PIXEL_SERIAL" shell cmd deviceidle force-idle
+adb -s "$PIXEL_SERIAL" shell am instrument -w \
+  -e physicalDeviceWakeOnly true \
+  -e class \
+  'dev.po4yka.lenswake.alarm.PhysicalDeviceWakeFixtureTest#wakeLockedDisplayOnlyWhenExplicitlyRequested' \
+  dev.po4yka.lenswake.test/androidx.test.runner.AndroidJUnitRunner
+adb -s "$PIXEL_SERIAL" shell cmd deviceidle unforce
+adb -s "$PIXEL_SERIAL" shell dumpsys battery reset
 ```
 
 ## Results
@@ -197,6 +211,53 @@ cleanup stopped the Lenswake-owned recording but did not manufacture successful 
 or promote a profile. The safety deadline is conservative (START budget + requested duration +
 margin), so a process-death cleanup may occur later than the requested ten-second rehearsal.
 
+## Locked-display DEVICE_WAKE proof
+
+The first durable alarm transport experiment used an Activity `PendingIntent`. Android 17 delivered
+the exact RTC alarm in forced deep idle but rejected the background Activity launch. Activity task
+manager reported `BAL_BLOCK`: the app opted the pending-intent creator into background launch, but
+the AlarmManager system sender did not provide the required sender opt-in. This transport was
+therefore removed rather than treated as a device-specific exception.
+
+The production design now keeps START, STOP, rehearsal STOP, retry, and rearm alarms service-bound.
+`AutomationExecutionService` journals and validates the durable alarm before automation begins.
+Only the `DEVICE_WAKE` operation posts a local, silent, high-importance alarm notification whose
+immutable full-screen intent targets a private, bounded gateway Activity. The gateway uses
+`setShowWhenLocked(true)` and `setTurnScreenOn(true)`; it does not dismiss keyguard, acquire a wake
+lock, forward alarm work, or own recording. The controller reports success only after
+`PowerManager.isInteractive` becomes true and cancels the notification on every terminal path.
+
+The corrective service transport was also observed receiving its exact alarm from forced deep idle.
+That schedule then failed closed before `DEVICE_WAKE` because reinstalling the development APK had
+removed the previously verified Room profile. The coordinator correctly rejected the unattended
+START with `Unattended execution requires a verified Pixel Camera profile`; it did not start a
+recording under an unverified profile.
+
+The wake primitive itself was subsequently exercised through the guarded production-controller
+instrumentation fixture. Its asserted initial state was:
+
+```text
+PowerManager wakefulness: Dozing
+Device idle state:         IDLE / OVERRIDE
+Keyguard deviceLocked:     true
+```
+
+The one-test run passed in 0.319 seconds. Its production log and post-run system state were:
+
+```text
+Physical DEVICE_WAKE passed interactive=true deviceLocked=true
+PowerManager wakefulness: Awake
+Keyguard deviceLocked:     true
+Wake notification channel: importance HIGH, sound null, vibration disabled
+```
+
+This proves the `DEVICE_WAKE` postcondition on the target Pixel while preserving the locked
+security state. An earlier production rehearsal additionally showed the wake path followed by the
+dynamically resolved secure Pixel Camera Activity while `deviceLocked=1`; that rehearsal then
+failed safely at `SELECT_TIME_LAPSE_SPEED`. Repeating it produced the same selector failure, so the
+profile/selectors remain a separate automation-calibration issue and were not weakened to obtain a
+green wake result.
+
 ## Observed Pixel Camera selectors
 
 All selectors below were observed on the environment recorded above. They are not claimed to be
@@ -242,12 +303,11 @@ remained failed even though its safety cleanup succeeded.
 
 The following remain deliberately unverified:
 
-1. exact-alarm delivery while screen-off, locked, and in Doze;
-2. verified device wake for unattended locked-screen execution;
-3. reboot recovery on the physical device;
-4. notification-less escalation behavior;
-5. optional Shizuku capability on Android 17.
+1. one continuous exact-alarm-to-recording START/STOP run while screen-off, locked, and in Doze;
+2. reboot recovery on the physical device;
+3. notification-less escalation behavior;
+4. optional Shizuku capability on Android 17.
 
-The manual calibration proves Pixel Camera behavior and selectors for this exact environment. It
-does not yet prove that an alarm-driven Lenswake execution can complete the same sequence while the
-screen is off and the keyguard is locked.
+Exact-alarm service delivery from forced deep idle and locked-display `DEVICE_WAKE` are each
+physically verified. The remaining continuous E2E gap is the current profile rehearsal failure at
+the time-lapse speed selector, not the wake primitive.
