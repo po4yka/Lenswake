@@ -6,10 +6,15 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.po4yka.lenswake.LenswakeApplication
 import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfileResult
+import dev.po4yka.lenswake.application.RehearsalResult
 import dev.po4yka.lenswake.core.CaptureConfiguration
+import dev.po4yka.lenswake.core.LensSelection
+import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.RecordingSchedule
+import dev.po4yka.lenswake.core.RehearsalRequest
 import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.TimeLapseSpeed
+import java.time.Duration
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.runBlocking
@@ -31,7 +36,7 @@ class PhysicalDeviceWakeFixtureTest {
     private val application = ApplicationProvider.getApplicationContext<LenswakeApplication>()
 
     @Test
-    fun armPersistedStartAndStopAlarmsForPhysicalDeviceWakeProof() = runBlocking {
+    fun armPersistedStartAndStopAlarmsForPhysicalDeviceWakeProof(): Unit = runBlocking {
         requirePhysicalWakeArming()
         val graph = application.graph
         val profile = when (val install = graph.installKnownPixelCameraProfile()) {
@@ -76,7 +81,51 @@ class PhysicalDeviceWakeFixtureTest {
     }
 
     @Test
-    fun cleanupPersistedPhysicalDeviceWakeFixtureOnlyWhenExplicitlyRequested() = runBlocking {
+    fun runPhysicalProfileRehearsalOnlyWhenExplicitlyRequested(): Unit = runBlocking {
+        requirePhysicalProfileRehearsal()
+        val graph = application.graph
+        val profile = when (val install = graph.installKnownPixelCameraProfile()) {
+            is InstallKnownPixelCameraProfileResult.Installed -> install.profile
+            is InstallKnownPixelCameraProfileResult.AlreadyInstalled -> install.profile
+            else -> error("Physical rehearsal requires an exact known Pixel Camera profile: $install")
+        }
+        val result = graph.rehearsalCoordinator.run(
+            RehearsalRequest(
+                profileId = profile.id,
+                capture = CaptureConfiguration.TimeLapse(
+                    speed = TimeLapseSpeed.X120,
+                    lens = LensSelection.REAR_MAIN,
+                ),
+                recordingDuration = Duration.ofSeconds(10),
+            ),
+        )
+        val completed = result as? RehearsalResult.Completed
+            ?: error("Physical profile rehearsal did not pass: $result")
+        val persistedProfile = checkNotNull(graph.profileRepository.get(profile.id)) {
+            "Physical rehearsal removed its profile unexpectedly"
+        }
+
+        assertEquals(ProfileCompatibility.VERIFIED, completed.verifiedProfile.compatibility)
+        assertEquals(ProfileCompatibility.VERIFIED, persistedProfile.compatibility)
+        assertEquals(completed.verifiedProfile, persistedProfile)
+        assertEquals(completed.session.profileId, persistedProfile.id)
+        assertNotNull("Passed rehearsal must verify recording", completed.session.recordingVerifiedAt)
+        assertNotNull("Passed rehearsal must verify stop", completed.session.stoppedVerifiedAt)
+        Log.i(
+            LOG_TAG,
+            "Physical profile rehearsal passed " +
+                "sessionId=${completed.session.id.value} profileId=${persistedProfile.id.value} " +
+                "profileCompatibility=${persistedProfile.compatibility} " +
+                "profileVerifiedAt=${persistedProfile.verifiedAt} " +
+                "sessionExpectedStartAt=${completed.session.expectedStartAt} " +
+                "sessionExpectedStopAt=${completed.session.expectedStopAt} " +
+                "recordingVerifiedAt=${completed.session.recordingVerifiedAt} " +
+                "stoppedVerifiedAt=${completed.session.stoppedVerifiedAt}",
+        )
+    }
+
+    @Test
+    fun cleanupPersistedPhysicalDeviceWakeFixtureOnlyWhenExplicitlyRequested(): Unit = runBlocking {
         assumeTrue(
             "Refusing to remove physical DEVICE_WAKE fixture without physicalWakeCleanup=true",
             instrumentationArgument("physicalWakeCleanup") == "true",
@@ -97,6 +146,13 @@ class PhysicalDeviceWakeFixtureTest {
         assumeTrue(
             "Physical DEVICE_WAKE fixture is disabled; pass -e physicalWake true to arm it",
             instrumentationArgument("physicalWake") == "true",
+        )
+    }
+
+    private fun requirePhysicalProfileRehearsal() {
+        assumeTrue(
+            "Physical profile rehearsal is disabled; pass -e physicalProfileRehearsal true to run it",
+            instrumentationArgument("physicalProfileRehearsal") == "true",
         )
     }
 
