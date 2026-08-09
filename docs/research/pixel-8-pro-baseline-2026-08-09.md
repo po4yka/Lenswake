@@ -16,7 +16,7 @@ Build fingerprint:       google/husky/husky:17/CP2A.260705.006/15641320:user/rel
 Display:                 1008 x 2244 px, 360 dpi
 Pixel Camera package:    com.google.android.GoogleCamera
 Pixel Camera version:    10.4.117.936816638.14 (versionCode 69481630)
-Lenswake commit:         047a4937c8b1
+Lenswake commit:         c16891aba311
 Lenswake version:        0.1.0 debug
 ```
 
@@ -81,8 +81,10 @@ adb -s "$PIXEL_SERIAL" shell am start \
 
 ## Results
 
-- Room and data instrumentation: 7/7 passed on Pixel 8 Pro / Android 17.
-- App instrumentation: 35/35 passed on Pixel 8 Pro / Android 17 at the final code state.
+- Room and data instrumentation: 7/7 passed on Pixel 8 Pro / Android 17 after the selector
+  schema-v2 checked-state change.
+- App instrumentation: 35/35 passed for the baseline; the focused late-collector preflight suite
+  then passed 2/2 on the physical Pixel after the Android 17 race fix.
 - Local JVM tests, Android-test compilation, `lintDebug`, and `assembleDebug` passed.
 - The debug APK installed and `MainActivity` activated successfully.
 - The installed `base.apk` was pulled back and compared byte-for-byte with the local artifact.
@@ -96,7 +98,7 @@ adb -s "$PIXEL_SERIAL" shell am start \
 
 ```text
 SHA-256:
-84858973ae8ec8f08e7e6740d71669dabfbfc06d65157fd3ff89fcfcbac43384
+c45a0cccb0516eb78abbb1304e8b5403f8b95157e63f2b37136ebea36f7eb8c1
 
 cmp result:
 identical
