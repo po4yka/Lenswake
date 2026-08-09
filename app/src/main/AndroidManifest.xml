@@ -1,7 +1,50 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <queries>
+        <package android:name="com.google.android.GoogleCamera" />
+    </queries>
+
     <application
         android:allowBackup="false"
         android:label="Lenswake"
-        android:supportsRtl="true" />
+        android:supportsRtl="true">
+
+        <receiver
+            android:name=".alarm.StartAlarmReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".alarm.StopAlarmReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".alarm.AlarmRecoveryReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <service
+            android:name=".accessibility.PixelCameraAccessibilityService"
+            android:exported="true"
+            android:label="Lenswake Pixel Camera automation"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service" />
+        </service>
+    </application>
 </manifest>
