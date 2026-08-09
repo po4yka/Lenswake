@@ -17,6 +17,8 @@ import dev.po4yka.lenswake.core.RecordingSchedule
 import dev.po4yka.lenswake.core.ScheduleReadiness
 import dev.po4yka.lenswake.core.ScheduleRepository
 import dev.po4yka.lenswake.application.RuntimePreflightProbe
+import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfile
+import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfileResult
 import dev.po4yka.lenswake.di.ApplicationGraph
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -30,6 +32,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -38,8 +41,10 @@ class LenswakeViewModel(
     profileRepository: AutomationProfileRepository,
     executionRepository: ExecutionRepository,
     private val runtimePreflightProbe: RuntimePreflightProbe,
+    private val installKnownPixelCameraProfile: InstallKnownPixelCameraProfile,
 ) : ViewModel() {
     private val preflightRefresh = MutableStateFlow(0L)
+    private val profileInstall = MutableStateFlow<ProfileInstallUiState>(ProfileInstallUiState.Idle)
     private val profiles = profileRepository.observeProfiles()
     private val preflightInvalidations = merge(
         preflightRefresh.map { Unit },
@@ -74,8 +79,15 @@ class LenswakeViewModel(
         combine(profiles, preflightInvalidations) { currentProfiles, _ ->
             runtimePreflightProbe.inspect(currentProfiles)
         },
-    ) { schedules, currentProfiles, events, preflight ->
-        LenswakeUiStateMapper.map(schedules, currentProfiles, events, preflight)
+        profileInstall,
+    ) { schedules, currentProfiles, events, preflight, currentProfileInstall ->
+        LenswakeUiStateMapper.map(
+            schedules = schedules,
+            profiles = currentProfiles,
+            events = events,
+            preflight = preflight,
+            profileInstall = currentProfileInstall,
+        )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
@@ -86,17 +98,28 @@ class LenswakeViewModel(
         preflightRefresh.value += 1
     }
 
+    fun installCandidateProfile() {
+        if (profileInstall.value == ProfileInstallUiState.Installing) return
+
+        profileInstall.value = ProfileInstallUiState.Installing
+        viewModelScope.launch {
+            profileInstall.value = installKnownPixelCameraProfile().toUiState()
+        }
+    }
+
     class Factory(
         private val scheduleRepository: ScheduleRepository,
         private val profileRepository: AutomationProfileRepository,
         private val executionRepository: ExecutionRepository,
         private val runtimePreflightProbe: RuntimePreflightProbe,
+        private val installKnownPixelCameraProfile: InstallKnownPixelCameraProfile,
     ) : ViewModelProvider.Factory {
         constructor(graph: ApplicationGraph) : this(
             scheduleRepository = graph.scheduleRepository,
             profileRepository = graph.profileRepository,
             executionRepository = graph.executionRepository,
             runtimePreflightProbe = graph.runtimePreflightProbe,
+            installKnownPixelCameraProfile = graph.installKnownPixelCameraProfile,
         )
 
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -109,6 +132,7 @@ class LenswakeViewModel(
                 profileRepository = profileRepository,
                 executionRepository = executionRepository,
                 runtimePreflightProbe = runtimePreflightProbe,
+                installKnownPixelCameraProfile = installKnownPixelCameraProfile,
             ) as T
         }
     }
@@ -118,6 +142,33 @@ class LenswakeViewModel(
         const val MAX_VISIBLE_EVENTS = 50
         const val STOP_TIMEOUT_MILLIS = 5_000L
     }
+}
+
+private fun InstallKnownPixelCameraProfileResult.toUiState(): ProfileInstallUiState = when (this) {
+    is InstallKnownPixelCameraProfileResult.Installed -> ProfileInstallUiState.Succeeded(
+        message = if (replacedExisting) {
+            "Candidate profile replaced the previous catalog definition. A production rehearsal is still required."
+        } else {
+            "Candidate profile installed. A production rehearsal is still required."
+        },
+    )
+
+    is InstallKnownPixelCameraProfileResult.AlreadyInstalled -> ProfileInstallUiState.Succeeded(
+        message = "The candidate profile is already installed. A production rehearsal is still required.",
+    )
+
+    is InstallKnownPixelCameraProfileResult.UnsupportedEnvironment -> ProfileInstallUiState.Failed(
+        message = "No candidate profile matches ${environment.deviceModel}, Android SDK ${environment.androidSdk}, " +
+            "Pixel Camera ${environment.cameraVersionCode}, and ${environment.localeTag}.",
+    )
+
+    is InstallKnownPixelCameraProfileResult.EnvironmentUnavailable -> ProfileInstallUiState.Failed(
+        message = "The Pixel Camera environment could not be inspected: ${failure.code.name} — ${failure.message}",
+    )
+
+    is InstallKnownPixelCameraProfileResult.PersistenceFailure -> ProfileInstallUiState.Failed(
+        message = "Candidate profile persistence failed during ${stage.name.lowercase()}: $detail.",
+    )
 }
 
 internal object LenswakeUiStateMapper {
@@ -132,6 +183,7 @@ internal object LenswakeUiStateMapper {
         profiles: List<PixelCameraProfile>,
         events: List<AutomationEvent>,
         preflight: PreflightReport,
+        profileInstall: ProfileInstallUiState = ProfileInstallUiState.Idle,
     ): LenswakeUiState = LenswakeUiState(
         readiness = readiness(preflight),
         schedules = schedules
@@ -142,7 +194,16 @@ internal object LenswakeUiStateMapper {
             .map(::profileSummary),
         capabilities = preflight.checks.map(::capability),
         diagnosticEvents = events.map(::eventSummary),
+        profileInstall = profileInstall,
         actions = UiActionAvailability(
+            canInstallCandidateProfile = profiles.isEmpty() && profileInstall !is ProfileInstallUiState.Installing &&
+                profileInstall !is ProfileInstallUiState.Succeeded,
+            installCandidateProfileUnavailableReason = when {
+                profiles.isNotEmpty() -> "A Pixel Camera profile is already installed."
+                profileInstall is ProfileInstallUiState.Installing -> "Candidate profile installation is in progress."
+                profileInstall is ProfileInstallUiState.Succeeded -> "The candidate profile was installed."
+                else -> "Candidate installation can be retried."
+            },
             canExportDiagnostics = false,
             exportDiagnosticsUnavailableReason = if (events.isEmpty()) {
                 "There are no diagnostic events to export."

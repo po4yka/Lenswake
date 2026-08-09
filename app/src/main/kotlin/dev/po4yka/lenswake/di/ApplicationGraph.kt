@@ -4,6 +4,7 @@ import android.app.Application
 import dev.po4yka.lenswake.alarm.AlarmManagerRecordingScheduler
 import dev.po4yka.lenswake.alarm.SchedulerAlarmRecoveryCoordinator
 import dev.po4yka.lenswake.application.DefaultAlarmTriggerCoordinator
+import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfile
 import dev.po4yka.lenswake.application.RuntimePreflightProbe
 import dev.po4yka.lenswake.automation.DefaultAutomationEngine
 import dev.po4yka.lenswake.automation.SelectorMatcher
@@ -44,6 +45,10 @@ class ApplicationGraph(application: Application) {
 
     private val unavailablePrivilegedBridge = UnavailablePrivilegedBridge()
     private val cameraEnvironmentProbe = AndroidPixelCameraEnvironmentProbe(application)
+    val installKnownPixelCameraProfile = InstallKnownPixelCameraProfile(
+        environmentProbe = cameraEnvironmentProbe::inspect,
+        profileRepository = profileRepository,
+    )
     val runtimePreflightProbe: RuntimePreflightProbe = AndroidRuntimePreflightProbe(
         context = application,
         cameraEnvironmentProbe = cameraEnvironmentProbe,

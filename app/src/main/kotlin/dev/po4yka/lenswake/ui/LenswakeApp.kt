@@ -59,12 +59,18 @@ fun LenswakeApp() {
         onPauseOrDispose { }
     }
     val state by viewModel.state.collectAsStateWithLifecycle()
-    LenswakeApp(state = state)
+    LenswakeApp(
+        state = state,
+        onInstallCandidateProfile = viewModel::installCandidateProfile,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LenswakeApp(state: LenswakeUiState) {
+fun LenswakeApp(
+    state: LenswakeUiState,
+    onInstallCandidateProfile: () -> Unit = {},
+) {
     val backStack = rememberNavBackStack(SchedulesRoute)
     val currentDestination = backStack.lastOrNull()
 
@@ -104,6 +110,7 @@ fun LenswakeApp(state: LenswakeUiState) {
                         state = state,
                         contentPadding = contentPadding,
                         onOpenSetup = { backStack.add(SetupRoute) },
+                        onInstallCandidateProfile = onInstallCandidateProfile,
                     )
                 }
                 entry<DiagnosticsRoute> {

@@ -7,25 +7,31 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import dev.po4yka.lenswake.ui.theme.LenswakeTheme
-import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertEquals
 
 class LenswakeAppTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    @Before
-    fun setContent() {
+    private fun setContent(
+        state: LenswakeUiState = LenswakeUiState(),
+        onInstallCandidateProfile: () -> Unit = {},
+    ) {
         composeRule.setContent {
             LenswakeTheme {
-                LenswakeApp(state = LenswakeUiState())
+                LenswakeApp(
+                    state = state,
+                    onInstallCandidateProfile = onInstallCandidateProfile,
+                )
             }
         }
     }
 
     @Test
     fun freshInstallationShowsBlockedHonestScheduleState() {
+        setContent()
         composeRule.onNodeWithText("Setup required").assertExists()
         composeRule.onNodeWithText("No schedules").assertExists()
         composeRule.onNodeWithText("Create schedule").assertIsNotEnabled()
@@ -34,8 +40,9 @@ class LenswakeAppTest {
 
     @Test
     fun navigationExposesProfilesDiagnosticsAndSetupRoutes() {
+        setContent()
         composeRule.onNodeWithText("Profiles").performClick()
-        composeRule.onNodeWithText("No verified profiles").assertExists()
+        composeRule.onNodeWithText("No profiles").assertExists()
 
         composeRule.onNodeWithText("Diagnostics").performClick()
         composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(9)
@@ -44,5 +51,36 @@ class LenswakeAppTest {
         composeRule.onNodeWithText("Schedules").performClick()
         composeRule.onNodeWithText("Review setup").performClick()
         composeRule.onNodeWithText("Readiness checks").assertExists()
+    }
+
+    @Test
+    fun profilesRouteDispatchesCandidateInstallAndKeepsRehearsalDisabled() {
+        var installRequests = 0
+        setContent(
+            state = LenswakeUiState(
+                actions = UiActionAvailability(canInstallCandidateProfile = true),
+            ),
+            onInstallCandidateProfile = { installRequests += 1 },
+        )
+
+        composeRule.onNodeWithText("Profiles").performClick()
+        composeRule.onNodeWithText("Install candidate profile").performClick()
+        composeRule.runOnIdle { assertEquals(1, installRequests) }
+        composeRule.onNodeWithText("Run rehearsal").assertIsNotEnabled()
+    }
+
+    @Test
+    fun profilesRouteRendersPersistentInstallFailure() {
+        setContent(
+            state = LenswakeUiState(
+                profileInstall = ProfileInstallUiState.Failed("The environment does not match."),
+                actions = UiActionAvailability(canInstallCandidateProfile = true),
+            ),
+        )
+
+        composeRule.onNodeWithText("Profiles").performClick()
+        composeRule.onNodeWithText("Candidate profile installation failed").assertExists()
+        composeRule.onNodeWithText("The environment does not match.").assertExists()
+        composeRule.onNodeWithText("Run rehearsal").assertIsNotEnabled()
     }
 }

@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.po4yka.lenswake.ui.LenswakeUiState
+import dev.po4yka.lenswake.ui.ProfileInstallUiState
 import dev.po4yka.lenswake.ui.component.HonestEmptyState
 import dev.po4yka.lenswake.ui.component.ReadinessCard
 import dev.po4yka.lenswake.ui.component.ScreenHeader
@@ -18,6 +19,7 @@ fun ProfilesScreen(
     state: LenswakeUiState,
     contentPadding: PaddingValues,
     onOpenSetup: () -> Unit,
+    onInstallCandidateProfile: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -44,22 +46,16 @@ fun ProfilesScreen(
         if (state.profiles.isEmpty()) {
             item {
                 HonestEmptyState(
-                    title = "No verified profiles",
-                    detail = "No selector profile has been calibrated for this device, Android build, Pixel Camera version, locale, and display.",
-                    actionLabel = "Calibrate profile",
-                    actionEnabled = state.actions.canCalibrateProfile,
-                    unavailableReason = state.actions.calibrateProfileUnavailableReason,
-                    onAction = {},
-                )
-            }
-            item {
-                HonestEmptyState(
-                    title = "Rehearsal not run",
-                    detail = "A production-path rehearsal is required before unattended automation can be trusted.",
-                    actionLabel = "Run rehearsal",
-                    actionEnabled = state.actions.canRunRehearsal,
-                    unavailableReason = state.actions.rehearsalUnavailableReason,
-                    onAction = {},
+                    title = "No profiles",
+                    detail = "Install a candidate only when this device exactly matches a physically observed Pixel Camera environment.",
+                    actionLabel = if (state.profileInstall is ProfileInstallUiState.Installing) {
+                        "Installing candidate profile"
+                    } else {
+                        "Install candidate profile"
+                    },
+                    actionEnabled = state.actions.canInstallCandidateProfile,
+                    unavailableReason = state.actions.installCandidateProfileUnavailableReason,
+                    onAction = onInstallCandidateProfile,
                 )
             }
         } else {
@@ -71,6 +67,42 @@ fun ProfilesScreen(
                     status = profile.compatibility,
                 )
             }
+        }
+        when (val install = state.profileInstall) {
+            ProfileInstallUiState.Idle -> Unit
+            ProfileInstallUiState.Installing -> item {
+                SummaryCard(
+                    title = "Installing candidate profile",
+                    detail = "Lenswake is inspecting the current Pixel Camera environment and persisting an exact catalog match.",
+                    status = "Installing",
+                )
+            }
+
+            is ProfileInstallUiState.Succeeded -> item {
+                SummaryCard(
+                    title = "Candidate profile installed",
+                    detail = install.message,
+                    status = "Needs rehearsal",
+                )
+            }
+
+            is ProfileInstallUiState.Failed -> item {
+                SummaryCard(
+                    title = "Candidate profile installation failed",
+                    detail = install.message,
+                    status = "Failed",
+                )
+            }
+        }
+        item {
+            HonestEmptyState(
+                title = "Production rehearsal not run",
+                detail = "A production-path rehearsal is required before unattended automation can be trusted.",
+                actionLabel = "Run rehearsal",
+                actionEnabled = false,
+                unavailableReason = state.actions.rehearsalUnavailableReason,
+                onAction = {},
+            )
         }
     }
 }

@@ -29,6 +29,9 @@ import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.application.RuntimePreflightProbe
+import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfile
+import dev.po4yka.lenswake.application.KnownPixelCameraProfileCatalog
+import dev.po4yka.lenswake.automation.PortResult
 import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
@@ -87,6 +90,7 @@ class LenswakeViewModelTest {
         )
         assertEquals("automation.record.start_verified", state.diagnosticEvents.single().title)
         assertFalse(state.actions.canCreateSchedule)
+        assertFalse(state.actions.canInstallCandidateProfile)
         assertFalse(state.actions.canExportDiagnostics)
         assertEquals("Diagnostic export is not implemented yet.", state.actions.exportDiagnosticsUnavailableReason)
     }
@@ -101,6 +105,7 @@ class LenswakeViewModelTest {
             profiles,
             executions,
             RuntimePreflightProbe { blockedPreflight() },
+            installUseCase(profiles),
         )
 
         try {
@@ -133,6 +138,7 @@ class LenswakeViewModelTest {
             FakeProfileRepository(),
             FakeExecutionRepository(),
             probe,
+            installUseCase(FakeProfileRepository()),
         )
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             viewModel.state.collect()
@@ -160,6 +166,66 @@ class LenswakeViewModelTest {
                 capability.name == accessibilityName && capability.status == CapabilityStatus.BLOCKED
             }
         }
+    }
+
+    @Test
+    fun installCandidateProfilePersistsCatalogCandidateAndExposesRehearsalRequirement() = runTest {
+        val profiles = FakeProfileRepository()
+        val viewModel = LenswakeViewModel(
+            FakeScheduleRepository(),
+            profiles,
+            FakeExecutionRepository(),
+            RuntimePreflightProbe { blockedPreflight() },
+            installUseCase(profiles),
+        )
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.state.collect()
+        }
+
+        assertEquals(ProfileInstallUiState.Idle, viewModel.state.first().profileInstall)
+        assertEquals(true, viewModel.state.first().actions.canInstallCandidateProfile)
+
+        viewModel.installCandidateProfile()
+
+        val installed = viewModel.state.first {
+            it.profileInstall is ProfileInstallUiState.Succeeded && it.profiles.size == 1
+        }
+        assertEquals("Needs rehearsal", installed.profiles.single().compatibility)
+        assertFalse(installed.actions.canInstallCandidateProfile)
+        assertEquals(
+            "Candidate profile installed. A production rehearsal is still required.",
+            (installed.profileInstall as ProfileInstallUiState.Succeeded).message,
+        )
+    }
+
+    @Test
+    fun installCandidateProfileKeepsFailureVisibleAndAllowsRetry() = runTest {
+        val profiles = FakeProfileRepository()
+        val unsupported = KnownPixelCameraProfileCatalog.pixel8ProAndroid17Camera69481630.environment.copy(
+            cameraVersionCode = Long.MAX_VALUE,
+        )
+        val viewModel = LenswakeViewModel(
+            FakeScheduleRepository(),
+            profiles,
+            FakeExecutionRepository(),
+            RuntimePreflightProbe { blockedPreflight() },
+            InstallKnownPixelCameraProfile(
+                environmentProbe = { PortResult.Observed(unsupported) },
+                profileRepository = profiles,
+            ),
+        )
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.state.collect()
+        }
+
+        viewModel.installCandidateProfile()
+
+        val failed = viewModel.state.first { it.profileInstall is ProfileInstallUiState.Failed }
+        assertEquals(true, failed.actions.canInstallCandidateProfile)
+        assertEquals(
+            "No candidate profile matches Pixel 8 Pro, Android SDK 37, Pixel Camera ${Long.MAX_VALUE}, and ${unsupported.localeTag}.",
+            (failed.profileInstall as ProfileInstallUiState.Failed).message,
+        )
     }
 
     private class FakeScheduleRepository : ScheduleRepository {
@@ -320,6 +386,15 @@ class LenswakeViewModelTest {
                     message = "A current profile is required.",
                 ),
             ),
+        )
+
+        fun installUseCase(repository: AutomationProfileRepository) = InstallKnownPixelCameraProfile(
+            environmentProbe = {
+                PortResult.Observed(
+                    KnownPixelCameraProfileCatalog.pixel8ProAndroid17Camera69481630.environment,
+                )
+            },
+            profileRepository = repository,
         )
     }
 }

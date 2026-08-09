@@ -12,8 +12,28 @@ data class LenswakeUiState(
     val profiles: List<ProfileSummaryUiState> = emptyList(),
     val capabilities: List<CapabilityUiState> = defaultCapabilities,
     val diagnosticEvents: List<DiagnosticEventUiState> = emptyList(),
+    val profileInstall: ProfileInstallUiState = ProfileInstallUiState.Idle,
     val actions: UiActionAvailability = UiActionAvailability(),
 )
+
+@Immutable
+sealed interface ProfileInstallUiState {
+    @Immutable
+    data object Idle : ProfileInstallUiState
+
+    @Immutable
+    data object Installing : ProfileInstallUiState
+
+    @Immutable
+    data class Succeeded(
+        val message: String,
+    ) : ProfileInstallUiState
+
+    @Immutable
+    data class Failed(
+        val message: String,
+    ) : ProfileInstallUiState
+}
 
 @Immutable
 sealed interface ReadinessUiState {
@@ -88,10 +108,11 @@ data class DiagnosticEventUiState(
 data class UiActionAvailability(
     val canCreateSchedule: Boolean = false,
     val createScheduleUnavailableReason: String = "Schedule editing is not connected to persistence yet.",
-    val canCalibrateProfile: Boolean = false,
-    val calibrateProfileUnavailableReason: String = "Calibration requires the target Pixel Camera environment.",
+    val canInstallCandidateProfile: Boolean = false,
+    val installCandidateProfileUnavailableReason: String = "Candidate profile availability has not been checked.",
     val canRunRehearsal: Boolean = false,
-    val rehearsalUnavailableReason: String = "Rehearsal is unavailable until device readiness and a profile are verified.",
+    val rehearsalUnavailableReason: String =
+        "Production rehearsal is unavailable until its durable stop backstop and coordinator are implemented.",
     val canExportDiagnostics: Boolean = false,
     val exportDiagnosticsUnavailableReason: String = "There are no diagnostic events to export.",
 )
