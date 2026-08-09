@@ -5,6 +5,7 @@ import dev.po4yka.lenswake.core.GestureProfile
 import dev.po4yka.lenswake.core.NormalizedBounds
 import dev.po4yka.lenswake.core.NormalizedPoint
 import dev.po4yka.lenswake.core.PixelCameraStateSignal
+import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.core.UiSelector
 import dev.po4yka.lenswake.core.UiSelectorSet
 import kotlinx.serialization.Serializable
@@ -63,6 +64,40 @@ internal object JsonColumnCodec {
         }
         return payload.targets.associate { target ->
             enumValueOf<AutomationAction>(target.action) to UiSelectorSet(
+                selectors = target.selectors.map { it.toDomain() },
+                minimumScore = target.minimumScore,
+            )
+        }
+    }
+
+    fun encodeSpeedTargets(speedTargets: Map<TimeLapseSpeed, UiSelectorSet>): String {
+        val payload = SpeedTargetsPayload(
+            schemaVersion = PROFILE_JSON_SCHEMA_VERSION,
+            targets = speedTargets.entries
+                .sortedBy { it.key.name }
+                .map { (speed, set) ->
+                    SpeedTargetPayload(
+                        speed = speed.name,
+                        minimumScore = set.minimumScore,
+                        selectors = set.selectors.map { it.toPayload() },
+                    )
+                },
+        )
+        return json.encodeToString(payload).bounded(MAX_PROFILE_JSON_LENGTH, "profile speed targets")
+    }
+
+    fun decodeSpeedTargets(encoded: String): Map<TimeLapseSpeed, UiSelectorSet> {
+        val payload = json.decodeFromString<SpeedTargetsPayload>(
+            encoded.bounded(MAX_PROFILE_JSON_LENGTH, "profile speed targets"),
+        )
+        require(payload.schemaVersion == PROFILE_JSON_SCHEMA_VERSION) {
+            "Unsupported profile speed targets JSON schema version: ${payload.schemaVersion}"
+        }
+        require(payload.targets.map { it.speed }.distinct().size == payload.targets.size) {
+            "Persisted profile speed targets contain duplicate speed keys"
+        }
+        return payload.targets.associate { target ->
+            enumValueOf<TimeLapseSpeed>(target.speed) to UiSelectorSet(
                 selectors = target.selectors.map { it.toDomain() },
                 minimumScore = target.minimumScore,
             )
@@ -142,6 +177,19 @@ private data class TargetsPayload(
 @Serializable
 private data class TargetPayload(
     val action: String,
+    val minimumScore: Int,
+    val selectors: List<SelectorPayload>,
+)
+
+@Serializable
+private data class SpeedTargetsPayload(
+    val schemaVersion: Int,
+    val targets: List<SpeedTargetPayload>,
+)
+
+@Serializable
+private data class SpeedTargetPayload(
+    val speed: String,
     val minimumScore: Int,
     val selectors: List<SelectorPayload>,
 )

@@ -77,6 +77,10 @@ class RoomRepositoriesTest {
         val restoredProfile = profiles.get(profile.id)
         assertEquals(profile, restoredProfile)
         assertEquals(
+            profile.speedTargets[TimeLapseSpeed.X120],
+            restoredProfile?.speedTargets?.get(TimeLapseSpeed.X120),
+        )
+        assertEquals(
             true,
             restoredProfile
                 ?.stateSignals
@@ -208,6 +212,17 @@ class RoomRepositoriesTest {
                     ),
                 ),
                 minimumScore = 100,
+            ),
+        ),
+        speedTargets = mapOf(
+            TimeLapseSpeed.X120 to UiSelectorSet(
+                selectors = listOf(
+                    UiSelector(
+                        packageName = "com.google.android.GoogleCamera",
+                        role = "android.widget.Button",
+                    ),
+                ),
+                minimumScore = 20,
             ),
         ),
         stateSignals = mapOf(

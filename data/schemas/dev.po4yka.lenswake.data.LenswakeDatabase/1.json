@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "ba7bf13e5c425d0d4538ad7eadd5dc0e",
+    "identityHash": "e27efd0b672bc8f411bf0a43f8528327",
     "entities": [
       {
         "tableName": "schedules",
@@ -119,7 +119,7 @@
       },
       {
         "tableName": "automation_profiles",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `device_manufacturer` TEXT NOT NULL, `device_model` TEXT NOT NULL, `android_sdk` INTEGER NOT NULL, `android_build_fingerprint` TEXT, `camera_package` TEXT NOT NULL, `camera_version_code` INTEGER NOT NULL, `locale_tag` TEXT NOT NULL, `display_width_px` INTEGER NOT NULL, `display_height_px` INTEGER NOT NULL, `density_dpi` INTEGER NOT NULL, `selector_schema_version` INTEGER NOT NULL, `targets_json` TEXT NOT NULL, `state_signals_json` TEXT NOT NULL, `fallback_gestures_json` TEXT NOT NULL, `compatibility` TEXT NOT NULL, `verified_at_epoch_ms` INTEGER, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `device_manufacturer` TEXT NOT NULL, `device_model` TEXT NOT NULL, `android_sdk` INTEGER NOT NULL, `android_build_fingerprint` TEXT, `camera_package` TEXT NOT NULL, `camera_version_code` INTEGER NOT NULL, `locale_tag` TEXT NOT NULL, `display_width_px` INTEGER NOT NULL, `display_height_px` INTEGER NOT NULL, `density_dpi` INTEGER NOT NULL, `selector_schema_version` INTEGER NOT NULL, `targets_json` TEXT NOT NULL, `speed_targets_json` TEXT NOT NULL, `state_signals_json` TEXT NOT NULL, `fallback_gestures_json` TEXT NOT NULL, `compatibility` TEXT NOT NULL, `verified_at_epoch_ms` INTEGER, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -195,6 +195,12 @@
           {
             "fieldPath": "targetsJson",
             "columnName": "targets_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "speedTargetsJson",
+            "columnName": "speed_targets_json",
             "affinity": "TEXT",
             "notNull": true
           },
@@ -550,7 +556,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ba7bf13e5c425d0d4538ad7eadd5dc0e')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'e27efd0b672bc8f411bf0a43f8528327')"
     ]
   }
 }

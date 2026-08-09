@@ -70,6 +70,7 @@ data class PixelCameraProfile(
     val environment: PixelCameraEnvironment,
     val selectorSchemaVersion: Int,
     val targets: Map<AutomationAction, UiSelectorSet> = emptyMap(),
+    val speedTargets: Map<TimeLapseSpeed, UiSelectorSet> = emptyMap(),
     val stateSignals: Map<PixelCameraStateSignal, UiSelectorSet> = emptyMap(),
     val fallbackGestures: Map<AutomationAction, GestureProfile> = emptyMap(),
     val compatibility: ProfileCompatibility,
@@ -78,7 +79,7 @@ data class PixelCameraProfile(
     init {
         require(selectorSchemaVersion > 0) { "Selector schema version must be positive" }
         require(
-            (targets.values + stateSignals.values)
+            (targets.values + speedTargets.values + stateSignals.values)
                 .flatMap(UiSelectorSet::selectors)
                 .all { it.packageName == environment.cameraPackage },
         ) {

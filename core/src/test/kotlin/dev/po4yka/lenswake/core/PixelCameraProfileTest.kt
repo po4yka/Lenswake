@@ -22,11 +22,13 @@ class PixelCameraProfileTest {
             id = ProfileId("profile-1"),
             environment = environment(),
             selectorSchemaVersion = 1,
+            speedTargets = mapOf(TimeLapseSpeed.X30 to recordingSelector),
             stateSignals = mapOf(PixelCameraStateSignal.RECORDING_ACTIVE to recordingSelector),
             compatibility = ProfileCompatibility.NEEDS_REHEARSAL,
             verifiedAt = null,
         )
 
+        assertEquals(recordingSelector, profile.speedTargets[TimeLapseSpeed.X30])
         assertEquals(recordingSelector, profile.stateSignals[PixelCameraStateSignal.RECORDING_ACTIVE])
         assertEquals(true, recordingSelector.selectors.single().expectedSelected)
     }
