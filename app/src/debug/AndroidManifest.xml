@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Compose's debug-only test host must remain visible when the physical test device is locked. -->
+    <application>
+        <activity
+            android:name="androidx.activity.ComponentActivity"
+            android:showWhenLocked="true" />
+    </application>
+
+</manifest>
