@@ -70,12 +70,20 @@ data class PixelCameraProfile(
     val environment: PixelCameraEnvironment,
     val selectorSchemaVersion: Int,
     val targets: Map<AutomationAction, UiSelectorSet> = emptyMap(),
+    val stateSignals: Map<PixelCameraStateSignal, UiSelectorSet> = emptyMap(),
     val fallbackGestures: Map<AutomationAction, GestureProfile> = emptyMap(),
     val compatibility: ProfileCompatibility,
     val verifiedAt: Instant?,
 ) {
     init {
         require(selectorSchemaVersion > 0) { "Selector schema version must be positive" }
+        require(
+            (targets.values + stateSignals.values)
+                .flatMap(UiSelectorSet::selectors)
+                .all { it.packageName == environment.cameraPackage },
+        ) {
+            "Profile selectors must be scoped to the calibrated camera package"
+        }
     }
 
     fun compatibilityFor(currentEnvironment: PixelCameraEnvironment): ProfileCompatibility {
@@ -96,6 +104,19 @@ enum class AutomationAction {
     STOP_RECORDING,
 }
 
+enum class PixelCameraStateSignal {
+    PHOTO_MODE_ACTIVE,
+    VIDEO_MODE_ACTIVE,
+    TIME_LAPSE_MODE_ACTIVE,
+    TIME_LAPSE_SPEED_AUTO_ACTIVE,
+    TIME_LAPSE_SPEED_X5_ACTIVE,
+    TIME_LAPSE_SPEED_X10_ACTIVE,
+    TIME_LAPSE_SPEED_X30_ACTIVE,
+    TIME_LAPSE_SPEED_X120_ACTIVE,
+    RECORDING_ACTIVE,
+    NOT_RECORDING,
+}
+
 data class UiSelectorSet(
     val selectors: List<UiSelector>,
     val minimumScore: Int,
@@ -112,10 +133,15 @@ data class UiSelector(
     val role: String? = null,
     val contentDescription: String? = null,
     val text: String? = null,
+    val expectedSelected: Boolean? = null,
     val expectedRegion: NormalizedBounds? = null,
     val requiresClickable: Boolean = true,
     val requiresVisible: Boolean = true,
-)
+) {
+    init {
+        require(packageName.isNotBlank()) { "Selector package name must not be blank" }
+    }
+}
 
 data class GestureProfile(
     val point: NormalizedPoint,

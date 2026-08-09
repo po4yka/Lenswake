@@ -19,6 +19,7 @@ import dev.po4yka.lenswake.core.NormalizedBounds
 import dev.po4yka.lenswake.core.NormalizedPoint
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
+import dev.po4yka.lenswake.core.PixelCameraStateSignal
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.RecordingSchedule
@@ -73,7 +74,17 @@ class RoomRepositoriesTest {
         profiles.save(profile)
         schedules.save(schedule)
 
-        assertEquals(profile, profiles.get(profile.id))
+        val restoredProfile = profiles.get(profile.id)
+        assertEquals(profile, restoredProfile)
+        assertEquals(
+            true,
+            restoredProfile
+                ?.stateSignals
+                ?.get(PixelCameraStateSignal.RECORDING_ACTIVE)
+                ?.selectors
+                ?.single()
+                ?.expectedSelected,
+        )
         assertEquals(schedule, schedules.get(schedule.id))
         assertEquals(listOf(schedule), schedules.observeSchedules().first())
     }
@@ -197,6 +208,30 @@ class RoomRepositoriesTest {
                     ),
                 ),
                 minimumScore = 100,
+            ),
+        ),
+        stateSignals = mapOf(
+            PixelCameraStateSignal.RECORDING_ACTIVE to UiSelectorSet(
+                selectors = listOf(
+                    UiSelector(
+                        packageName = "com.google.android.GoogleCamera",
+                        role = "android.widget.Button",
+                        expectedSelected = true,
+                        requiresClickable = false,
+                    ),
+                ),
+                minimumScore = 20,
+            ),
+            PixelCameraStateSignal.NOT_RECORDING to UiSelectorSet(
+                selectors = listOf(
+                    UiSelector(
+                        packageName = "com.google.android.GoogleCamera",
+                        role = "android.widget.Button",
+                        expectedSelected = false,
+                        requiresClickable = false,
+                    ),
+                ),
+                minimumScore = 20,
             ),
         ),
         fallbackGestures = mapOf(

@@ -34,6 +34,8 @@ internal data class AutomationProfileEntity(
     val selectorSchemaVersion: Int,
     @ColumnInfo(name = "targets_json")
     val targetsJson: String,
+    @ColumnInfo(name = "state_signals_json")
+    val stateSignalsJson: String,
     @ColumnInfo(name = "fallback_gestures_json")
     val fallbackGesturesJson: String,
     val compatibility: String,

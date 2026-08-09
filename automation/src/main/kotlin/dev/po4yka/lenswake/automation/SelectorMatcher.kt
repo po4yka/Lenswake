@@ -4,6 +4,7 @@ import dev.po4yka.lenswake.core.AutomationAction
 import dev.po4yka.lenswake.core.NormalizedBounds
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.UiSelector
+import dev.po4yka.lenswake.core.UiSelectorSet
 
 data class UiNodeSnapshot(
     val id: String,
@@ -36,6 +37,7 @@ enum class SelectorSignal {
     TEXT,
     ROLE,
     CLICKABLE_STATE,
+    SELECTED_STATE,
     EXPECTED_REGION,
 }
 
@@ -70,6 +72,14 @@ class SelectorMatcher {
         nodes: List<UiNodeSnapshot>,
     ): SelectorMatchResult {
         val selectorSet = profile.targets[action] ?: return SelectorMatchResult.TargetNotConfigured
+        return match(selectorSet, profile, nodes)
+    }
+
+    fun match(
+        selectorSet: UiSelectorSet,
+        profile: PixelCameraProfile,
+        nodes: List<UiNodeSnapshot>,
+    ): SelectorMatchResult {
         val candidatesByNode = buildMap<String, SelectorCandidate> {
             nodes.forEach { node ->
                 selectorSet.selectors.forEachIndexed { index, selector ->
@@ -115,6 +125,7 @@ class SelectorMatcher {
         if (!node.visible || !node.enabled) return null
         if (node.packageName != selector.packageName || node.packageName != profile.environment.cameraPackage) return null
         if (selector.requiresClickable && !node.clickable) return null
+        if (selector.expectedSelected != null && node.selected != selector.expectedSelected) return null
 
         var score = 0
         val signals = buildSet {
@@ -141,6 +152,10 @@ class SelectorMatcher {
                 score += STATE_SCORE
                 add(SelectorSignal.CLICKABLE_STATE)
             }
+            if (selector.expectedSelected != null && node.selected == selector.expectedSelected) {
+                score += SELECTED_STATE_SCORE
+                add(SelectorSignal.SELECTED_STATE)
+            }
             val expectedRegion = selector.expectedRegion
             if (expectedRegion != null && node.bounds?.centerIsInside(expectedRegion) == true) {
                 score += REGION_SCORE
@@ -162,6 +177,7 @@ class SelectorMatcher {
         const val TEXT_SCORE = 30
         const val ROLE_SCORE = 20
         const val STATE_SCORE = 10
+        const val SELECTED_STATE_SCORE = 15
         const val REGION_SCORE = 10
     }
 }

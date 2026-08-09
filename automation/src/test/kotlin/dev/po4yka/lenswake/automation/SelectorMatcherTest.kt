@@ -79,6 +79,32 @@ class SelectorMatcherTest {
         assertEquals(230, ambiguous.score)
     }
 
+    @Test
+    fun `selected state constraint excludes inactive duplicate`() {
+        val selectedSelector = selector.copy(expectedSelected = true)
+        val selectedProfile = profile(minimumScore = 100).copy(
+            targets = mapOf(
+                AutomationAction.START_RECORDING to UiSelectorSet(
+                    selectors = listOf(selectedSelector),
+                    minimumScore = 100,
+                ),
+            ),
+        )
+
+        val result = SelectorMatcher().match(
+            action = AutomationAction.START_RECORDING,
+            profile = selectedProfile,
+            nodes = listOf(
+                node(id = "inactive", selected = false),
+                node(id = "active", selected = true),
+            ),
+        )
+
+        val match = assertInstanceOf(SelectorMatchResult.Match::class.java, result)
+        assertEquals("active", match.node.id)
+        assertEquals(245, match.score)
+    }
+
     private fun profile(minimumScore: Int) = PixelCameraProfile(
         id = ProfileId("profile"),
         environment = PixelCameraEnvironment(
@@ -111,6 +137,7 @@ class SelectorMatcherTest {
         role: String? = "android.widget.Button",
         text: String? = "Verified text",
         visible: Boolean = true,
+        selected: Boolean = false,
     ) = UiNodeSnapshot(
         id = id,
         packageName = packageName,
@@ -121,7 +148,7 @@ class SelectorMatcherTest {
         bounds = bounds,
         visible = visible,
         clickable = true,
-        selected = false,
+        selected = selected,
         enabled = true,
     )
 

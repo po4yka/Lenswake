@@ -4,6 +4,7 @@ import dev.po4yka.lenswake.core.AutomationAction
 import dev.po4yka.lenswake.core.GestureProfile
 import dev.po4yka.lenswake.core.NormalizedBounds
 import dev.po4yka.lenswake.core.NormalizedPoint
+import dev.po4yka.lenswake.core.PixelCameraStateSignal
 import dev.po4yka.lenswake.core.UiSelector
 import dev.po4yka.lenswake.core.UiSelectorSet
 import kotlinx.serialization.Serializable
@@ -11,6 +12,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 internal object JsonColumnCodec {
+    private const val PROFILE_JSON_SCHEMA_VERSION = 1
     private const val MAX_DIAGNOSTIC_JSON_LENGTH = 16_384
     private const val MAX_PROFILE_JSON_LENGTH = 262_144
 
@@ -34,27 +36,72 @@ internal object JsonColumnCodec {
         )
 
     fun encodeTargets(targets: Map<AutomationAction, UiSelectorSet>): String {
-        val payload = targets.entries
-            .sortedBy { it.key.name }
-            .map { (action, set) ->
-                TargetPayload(
-                    action = action.name,
-                    minimumScore = set.minimumScore,
-                    selectors = set.selectors.map { it.toPayload() },
-                )
-            }
+        val payload = TargetsPayload(
+            schemaVersion = PROFILE_JSON_SCHEMA_VERSION,
+            targets = targets.entries
+                .sortedBy { it.key.name }
+                .map { (action, set) ->
+                    TargetPayload(
+                        action = action.name,
+                        minimumScore = set.minimumScore,
+                        selectors = set.selectors.map { it.toPayload() },
+                    )
+                },
+        )
         return json.encodeToString(payload).bounded(MAX_PROFILE_JSON_LENGTH, "profile targets")
     }
 
-    fun decodeTargets(encoded: String): Map<AutomationAction, UiSelectorSet> =
-        json.decodeFromString<List<TargetPayload>>(
+    fun decodeTargets(encoded: String): Map<AutomationAction, UiSelectorSet> {
+        val payload = json.decodeFromString<TargetsPayload>(
             encoded.bounded(MAX_PROFILE_JSON_LENGTH, "profile targets"),
-        ).associate { payload ->
-            enumValueOf<AutomationAction>(payload.action) to UiSelectorSet(
-                selectors = payload.selectors.map { it.toDomain() },
-                minimumScore = payload.minimumScore,
+        )
+        require(payload.schemaVersion == PROFILE_JSON_SCHEMA_VERSION) {
+            "Unsupported profile targets JSON schema version: ${payload.schemaVersion}"
+        }
+        require(payload.targets.map { it.action }.distinct().size == payload.targets.size) {
+            "Persisted profile targets contain duplicate action keys"
+        }
+        return payload.targets.associate { target ->
+            enumValueOf<AutomationAction>(target.action) to UiSelectorSet(
+                selectors = target.selectors.map { it.toDomain() },
+                minimumScore = target.minimumScore,
             )
         }
+    }
+
+    fun encodeStateSignals(stateSignals: Map<PixelCameraStateSignal, UiSelectorSet>): String {
+        val payload = StateSignalsPayload(
+            schemaVersion = PROFILE_JSON_SCHEMA_VERSION,
+            signals = stateSignals.entries
+                .sortedBy { it.key.name }
+                .map { (signal, set) ->
+                    StateSignalPayload(
+                        signal = signal.name,
+                        minimumScore = set.minimumScore,
+                        selectors = set.selectors.map { it.toPayload() },
+                    )
+                },
+        )
+        return json.encodeToString(payload).bounded(MAX_PROFILE_JSON_LENGTH, "profile state signals")
+    }
+
+    fun decodeStateSignals(encoded: String): Map<PixelCameraStateSignal, UiSelectorSet> {
+        val payload = json.decodeFromString<StateSignalsPayload>(
+            encoded.bounded(MAX_PROFILE_JSON_LENGTH, "profile state signals"),
+        )
+        require(payload.schemaVersion == PROFILE_JSON_SCHEMA_VERSION) {
+            "Unsupported profile state signals JSON schema version: ${payload.schemaVersion}"
+        }
+        require(payload.signals.map { it.signal }.distinct().size == payload.signals.size) {
+            "Persisted profile state signals contain duplicate signal keys"
+        }
+        return payload.signals.associate { signalPayload ->
+            enumValueOf<PixelCameraStateSignal>(signalPayload.signal) to UiSelectorSet(
+                selectors = signalPayload.selectors.map { it.toDomain() },
+                minimumScore = signalPayload.minimumScore,
+            )
+        }
+    }
 
     fun encodeGestures(gestures: Map<AutomationAction, GestureProfile>): String {
         val payload = gestures.entries
@@ -87,6 +134,12 @@ internal object JsonColumnCodec {
 }
 
 @Serializable
+private data class TargetsPayload(
+    val schemaVersion: Int,
+    val targets: List<TargetPayload>,
+)
+
+@Serializable
 private data class TargetPayload(
     val action: String,
     val minimumScore: Int,
@@ -100,9 +153,23 @@ private data class SelectorPayload(
     val role: String?,
     val contentDescription: String?,
     val text: String?,
+    val expectedSelected: Boolean?,
     val expectedRegion: BoundsPayload?,
     val requiresClickable: Boolean,
     val requiresVisible: Boolean,
+)
+
+@Serializable
+private data class StateSignalsPayload(
+    val schemaVersion: Int,
+    val signals: List<StateSignalPayload>,
+)
+
+@Serializable
+private data class StateSignalPayload(
+    val signal: String,
+    val minimumScore: Int,
+    val selectors: List<SelectorPayload>,
 )
 
 @Serializable
@@ -126,6 +193,7 @@ private fun UiSelector.toPayload(): SelectorPayload = SelectorPayload(
     role = role,
     contentDescription = contentDescription,
     text = text,
+    expectedSelected = expectedSelected,
     expectedRegion = expectedRegion?.let {
         BoundsPayload(it.left, it.top, it.right, it.bottom)
     },
@@ -139,6 +207,7 @@ private fun SelectorPayload.toDomain(): UiSelector = UiSelector(
     role = role,
     contentDescription = contentDescription,
     text = text,
+    expectedSelected = expectedSelected,
     expectedRegion = expectedRegion?.let {
         NormalizedBounds(it.left, it.top, it.right, it.bottom)
     },
