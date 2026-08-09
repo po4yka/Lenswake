@@ -3,8 +3,6 @@ package dev.po4yka.lenswake.alarm
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.AlarmManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -39,15 +37,21 @@ class AutomationExecutionService : Service() {
     private val queuedKeys = ConcurrentHashMap.newKeySet<String>()
     private val lifecycleGate = AlarmServiceLifecycleGate()
     private lateinit var notificationManager: NotificationManager
-    private lateinit var alarmManager: AlarmManager
     private lateinit var journal: AlarmDeliveryJournal
+    private lateinit var retryCoordinator: AlarmDeliveryRetryCoordinator
     private var journalRestored = false
 
     override fun onCreate() {
         super.onCreate()
         notificationManager = getSystemService(NotificationManager::class.java)
-        alarmManager = getSystemService(AlarmManager::class.java)
         journal = AlarmDeliveryJournal(this)
+        retryCoordinator = AlarmDeliveryRetryCoordinator(
+            backend = AndroidAlarmDeliveryRetryBackend(this, journal),
+            escalator = AlarmTransportEscalator(
+                persistence = SharedPreferencesAlarmTransportFailurePersistence(this),
+                notifier = AndroidAlarmTransportFailureNotifier(this),
+            ),
+        )
         createNotificationChannel()
         startForeground(
             NOTIFICATION_ID,
@@ -103,7 +107,7 @@ class AutomationExecutionService : Service() {
         var removeFromJournal = false
         if (remainingDeadline <= 0) {
             Log.e(TAG, "${trigger.kind} alarm expired while waiting for serialized execution")
-            scheduleRetry(queued)
+            scheduleRetry(queued, "Alarm expired while waiting for serialized execution.")
             complete(queued, removeFromJournal)
             return
         }
@@ -115,6 +119,7 @@ class AutomationExecutionService : Service() {
             }) {
                 AlarmHandlingResult.Accepted -> {
                     removeFromJournal = true
+                    retryCoordinator.resolve(trigger)
                     Log.i(
                         TAG,
                         "${trigger.kind} automation completed for ${trigger.scheduleId.value}",
@@ -122,13 +127,14 @@ class AutomationExecutionService : Service() {
                 }
                 is AlarmHandlingResult.TerminalRejected -> {
                     removeFromJournal = true
+                    retryCoordinator.resolve(trigger)
                     Log.e(
                         TAG,
                         "${trigger.kind} automation terminally rejected for ${trigger.scheduleId.value}: ${result.reason}",
                     )
                 }
                 is AlarmHandlingResult.Retryable -> {
-                    scheduleRetry(queued)
+                    scheduleRetry(queued, result.reason)
                     Log.e(
                         TAG,
                         "${trigger.kind} automation needs reconciliation for ${trigger.scheduleId.value}: ${result.reason}",
@@ -137,7 +143,7 @@ class AutomationExecutionService : Service() {
                 }
             }
         } catch (error: TimeoutCancellationException) {
-            scheduleRetry(queued)
+            scheduleRetry(queued, "Automation exceeded its finite service deadline.")
             Log.e(
                 TAG,
                 "${trigger.kind} automation exceeded the finite foreground-service deadline",
@@ -146,7 +152,7 @@ class AutomationExecutionService : Service() {
         } catch (error: CancellationException) {
             throw error
         } catch (error: RuntimeException) {
-            scheduleRetry(queued)
+            scheduleRetry(queued, "Unhandled foreground-service failure: ${error.message.orEmpty()}")
             Log.e(TAG, "Unhandled ${trigger.kind} foreground-service failure", error)
         } finally {
             complete(queued, removeFromJournal)
@@ -176,58 +182,15 @@ class AutomationExecutionService : Service() {
         }
     }
 
-    private fun scheduleRetry(queued: QueuedTrigger) {
-        val trigger = queued.entry.trigger
-        if (trigger.deliveryAttempt >= MAX_RECONCILIATION_ATTEMPTS) {
-            Log.e(
+    private fun scheduleRetry(queued: QueuedTrigger, detail: String) {
+        when (val result = retryCoordinator.scheduleRetry(queued.entry, detail)) {
+            AlarmDeliveryRetryResult.Scheduled -> Unit
+            is AlarmDeliveryRetryResult.Escalated -> Log.e(
                 TAG,
-                "${trigger.kind} exhausted durable reconciliation attempts; journal entry retained",
+                "${queued.entry.trigger.kind} transport escalation ${result.code}; " +
+                    "markerPersisted=${result.result.markerPersisted}, " +
+                    "notification=${result.result.notification}; journal entry retained",
             )
-            return
-        }
-        if (!alarmManager.canScheduleExactAlarms()) {
-            Log.e(TAG, "Cannot schedule durable reconciliation because exact alarms are unavailable")
-            return
-        }
-        val retryTrigger = trigger.copy(deliveryAttempt = trigger.deliveryAttempt + 1)
-        val retryIntent = AlarmContract.triggerIntent(this, retryTrigger)
-        val retryEntry = journal.replace(queued.entry.key, retryIntent)
-        if (retryEntry == null) {
-            Log.e(TAG, "Could not persist the reconciliation trigger before exact scheduling")
-            return
-        }
-        val pendingIntent = PendingIntent.getForegroundService(
-            this,
-            AlarmContract.requestCode(trigger.kind),
-            retryIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        try {
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                System.currentTimeMillis() + RECONCILIATION_DELAY_MILLIS,
-                pendingIntent,
-            )
-        } catch (error: SecurityException) {
-            Log.e(TAG, "Android rejected the durable reconciliation exact alarm", error)
-            restoreOriginalJournalEntry(retryEntry, trigger)
-        } catch (error: RuntimeException) {
-            Log.e(TAG, "Durable reconciliation exact alarm failed", error)
-            restoreOriginalJournalEntry(retryEntry, trigger)
-        }
-    }
-
-    private fun restoreOriginalJournalEntry(
-        retryEntry: AlarmDeliveryJournal.Entry,
-        originalTrigger: AlarmTrigger,
-    ) {
-        if (
-            journal.replace(
-                retryEntry.key,
-                AlarmContract.triggerIntent(this, originalTrigger),
-            ) == null
-        ) {
-            Log.e(TAG, "Could not restore the original journal entry after retry scheduling failed")
         }
     }
 
@@ -263,7 +226,5 @@ class AutomationExecutionService : Service() {
         const val CHANNEL_ID = "scheduled_automation"
         const val NOTIFICATION_ID = 1_001
         const val EXECUTION_DEADLINE_MILLIS = 120_000L
-        const val RECONCILIATION_DELAY_MILLIS = 30_000L
-        const val MAX_RECONCILIATION_ATTEMPTS = 2
     }
 }

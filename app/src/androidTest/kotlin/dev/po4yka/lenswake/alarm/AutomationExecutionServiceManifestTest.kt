@@ -46,7 +46,7 @@ class AutomationExecutionServiceManifestTest {
     }
 
     @Test
-    fun manifestDeclaresBothForegroundServicePermissions() {
+    fun manifestDeclaresForegroundServiceAndNotificationPermissions() {
         val packageInfo = context.packageManager.getPackageInfo(
             context.packageName,
             PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong()),
@@ -55,6 +55,7 @@ class AutomationExecutionServiceManifestTest {
 
         assertTrue(Manifest.permission.FOREGROUND_SERVICE in permissions)
         assertTrue(Manifest.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED in permissions)
+        assertTrue(Manifest.permission.POST_NOTIFICATIONS in permissions)
     }
 
     @Test
