@@ -74,6 +74,30 @@ class DefaultAutomationEngineTest {
         assertEquals(AutomationStateName.START_TRIGGERED, repository.events.first().state)
         assertEquals(AutomationStateName.RECORDING, repository.events.last().state)
         assertEquals(setOf(ProfileId("profile")), camera.receivedProfiles.map { it.id }.toSet())
+        assertEquals(setOf(ProfileUse.Kind.UNATTENDED), camera.receivedProfileUses.map { it.kind }.toSet())
+    }
+
+    @Test
+    fun `rehearsal session supplies rehearsal profile use for the complete start flow`() = runTest {
+        val session = session(status = SessionStatus.PENDING, kind = SessionKind.REHEARSAL)
+        val repository = FakeExecutionRepository(session)
+        val device = FakeDeviceControl(interactive = true)
+        val camera = FakePixelCamera(state = readyToRecordState())
+        val engine = engine(
+            repository = repository,
+            device = device,
+            camera = camera,
+            profile = profile().copy(compatibility = ProfileCompatibility.NEEDS_REHEARSAL),
+        )
+
+        val result = engine.start(session.id)
+
+        assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        assertTrue(camera.receivedProfileUses.isNotEmpty())
+        assertEquals(
+            setOf(ProfileUse.Kind.REHEARSAL),
+            camera.receivedProfileUses.map { it.kind }.toSet(),
+        )
     }
 
     @Test
@@ -648,6 +672,27 @@ class DefaultAutomationEngineTest {
     }
 
     @Test
+    fun `scheduled execution rejects a profile requiring rehearsal before device or camera mutation`() = runTest {
+        val session = session(status = SessionStatus.PENDING)
+        val repository = FakeExecutionRepository(session)
+        val device = FakeDeviceControl(interactive = false)
+        val camera = FakePixelCamera(PixelCameraState.NotRunning)
+        val engine = engine(
+            repository,
+            device,
+            camera,
+            profile = profile().copy(compatibility = ProfileCompatibility.NEEDS_REHEARSAL),
+        )
+
+        val result = engine.start(session.id)
+
+        val failed = assertInstanceOf(AutomationRunResult.Failed::class.java, result)
+        assertEquals(AutomationFailureCode.PROFILE_REQUIRES_REHEARSAL, failed.failure.code)
+        assertEquals(emptyList<String>(), device.calls + camera.calls)
+        assertEquals(emptyList<ProfileUse>(), camera.receivedProfileUses)
+    }
+
+    @Test
     fun `unsupported lens fails before device or camera action`() = runTest {
         val capture = CaptureConfiguration.TimeLapse(
             speed = TimeLapseSpeed.X120,
@@ -779,12 +824,13 @@ class DefaultAutomationEngineTest {
             speed = TimeLapseSpeed.X120,
             lens = LensSelection.REAR_MAIN,
         ),
+        kind: SessionKind = SessionKind.SCHEDULED,
     ) = ExecutionSession(
         id = SessionId("session"),
-        executionKey = "schedule:session",
-        kind = SessionKind.SCHEDULED,
-        scheduleId = ScheduleId("schedule"),
-        scheduleName = "Sunrise",
+        executionKey = "${kind.name.lowercase()}:session",
+        kind = kind,
+        scheduleId = if (kind == SessionKind.SCHEDULED) ScheduleId("schedule") else null,
+        scheduleName = if (kind == SessionKind.SCHEDULED) "Sunrise" else null,
         profileId = ProfileId("profile"),
         capture = capture,
         expectedStartAt = Instant.parse("2026-08-10T01:00:00Z"),
@@ -850,11 +896,13 @@ class DefaultAutomationEngineTest {
         val trace = mutableListOf<String>()
         var verificationInspections = 0
         var stopVerificationInspections = 0
-        val receivedProfiles = mutableListOf<PixelCameraProfile>()
+        val receivedProfileUses = mutableListOf<ProfileUse>()
+        val receivedProfiles: List<PixelCameraProfile>
+            get() = receivedProfileUses.map(ProfileUse::profile)
         var lensWasRearMainWhenRecordStarted: Boolean = false
 
-        override suspend fun inspect(profile: PixelCameraProfile): PortResult<PixelCameraState> {
-            receivedProfiles += profile
+        override suspend fun inspect(profileUse: ProfileUse): PortResult<PixelCameraState> {
+            receivedProfileUses += profileUse
             trace += "inspect"
             if (calls.lastOrNull() == "startRecording" && state is PixelCameraState.TimeLapse && !(state as PixelCameraState.TimeLapse).recording) {
                 verificationInspections += 1
@@ -865,8 +913,8 @@ class DefaultAutomationEngineTest {
             return PortResult.Observed(state)
         }
 
-        override suspend fun launchSecureCamera(profile: PixelCameraProfile): ActionDispatch {
-            receivedProfiles += profile
+        override suspend fun launchSecureCamera(profileUse: ProfileUse): ActionDispatch {
+            receivedProfileUses += profileUse
             calls += "launch"
             trace += "launch"
             if (cancelLaunch) throw CancellationException("cancelled by caller")
@@ -875,15 +923,15 @@ class DefaultAutomationEngineTest {
             return dispatched()
         }
 
-        override suspend fun selectVideo(profile: PixelCameraProfile): ActionDispatch {
-            receivedProfiles += profile
+        override suspend fun selectVideo(profileUse: ProfileUse): ActionDispatch {
+            receivedProfileUses += profileUse
             calls += "selectVideo"
             state = PixelCameraState.Video(recording = false)
             return dispatched()
         }
 
-        override suspend fun selectTimeLapse(profile: PixelCameraProfile): ActionDispatch {
-            receivedProfiles += profile
+        override suspend fun selectTimeLapse(profileUse: ProfileUse): ActionDispatch {
+            receivedProfileUses += profileUse
             calls += "selectTimeLapse"
             state = PixelCameraState.TimeLapse(speed = null, recording = false, lens = null)
             return dispatched()
@@ -891,17 +939,17 @@ class DefaultAutomationEngineTest {
 
         override suspend fun selectTimeLapseSpeed(
             speed: TimeLapseSpeed,
-            profile: PixelCameraProfile,
+            profileUse: ProfileUse,
         ): ActionDispatch {
-            receivedProfiles += profile
+            receivedProfileUses += profileUse
             calls += "selectSpeed:$speed"
             val current = state as PixelCameraState.TimeLapse
             state = current.copy(speed = speed)
             return dispatched()
         }
 
-        override suspend fun selectRearMainLens(profile: PixelCameraProfile): ActionDispatch {
-            receivedProfiles += profile
+        override suspend fun selectRearMainLens(profileUse: ProfileUse): ActionDispatch {
+            receivedProfileUses += profileUse
             calls += "selectRearMainLens"
             if (confirmLens) {
                 val current = state as PixelCameraState.TimeLapse
@@ -910,8 +958,8 @@ class DefaultAutomationEngineTest {
             return dispatched()
         }
 
-        override suspend fun startRecording(profile: PixelCameraProfile): ActionDispatch {
-            receivedProfiles += profile
+        override suspend fun startRecording(profileUse: ProfileUse): ActionDispatch {
+            receivedProfileUses += profileUse
             calls += "startRecording"
             onStartRecording?.invoke()
             startException?.let { throw it }
@@ -925,8 +973,8 @@ class DefaultAutomationEngineTest {
             return dispatched()
         }
 
-        override suspend fun stopRecording(profile: PixelCameraProfile): ActionDispatch {
-            receivedProfiles += profile
+        override suspend fun stopRecording(profileUse: ProfileUse): ActionDispatch {
+            receivedProfileUses += profileUse
             calls += "stopRecording"
             if (confirmStop) {
                 val current = state as PixelCameraState.TimeLapse

@@ -16,7 +16,6 @@ import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.InteractionMethod
 import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.LenswakeClock
-import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
@@ -118,7 +117,7 @@ class DefaultAutomationEngine(
         }
 
         validateSupportedCapture(context)
-        context.profile = loadProfile(context)
+        context.profileUse = loadProfileUse(context)
 
         context.transition(
             state = AutomationStateName.START_TRIGGERED,
@@ -187,7 +186,7 @@ class DefaultAutomationEngine(
             null
         }
 
-        context.profile = loadProfile(context)
+        context.profileUse = loadProfileUse(context)
 
         context.transition(
             state = AutomationStateName.STOP_TRIGGERED,
@@ -225,7 +224,7 @@ class DefaultAutomationEngine(
                 state = AutomationStateName.STOPPING_RECORDING,
                 defaultFailureCode = AutomationFailureCode.STOP_ACTION_FAILED,
                 defaultFailureMessage = "Pixel Camera rejected the stop action",
-                action = { pixelCamera.stopRecording(context.profile) },
+                action = { pixelCamera.stopRecording(context.profileUse) },
             ) { session, now -> session.copy(stopActionAt = now) }
         } else if (!beforeStop.isConfirmedStopped()) {
             fail(
@@ -291,7 +290,7 @@ class DefaultAutomationEngine(
                             AutomationFailureCode.VIDEO_MODE_NOT_VERIFIED,
                             "Pixel Camera did not confirm Video mode",
                         ),
-                        action = { pixelCamera.selectVideo(context.profile) },
+                        action = { pixelCamera.selectVideo(context.profileUse) },
                     ) { it is PixelCameraState.Video && !it.recording }
                 }
 
@@ -318,7 +317,7 @@ class DefaultAutomationEngine(
                             AutomationFailureCode.TIME_LAPSE_MODE_NOT_VERIFIED,
                             "Pixel Camera did not confirm Time Lapse mode",
                         ),
-                        action = { pixelCamera.selectTimeLapse(context.profile) },
+                        action = { pixelCamera.selectTimeLapse(context.profileUse) },
                     ) { it is PixelCameraState.TimeLapse && !it.recording }
                 }
 
@@ -361,7 +360,7 @@ class DefaultAutomationEngine(
                             AutomationFailureCode.LENS_NOT_VERIFIED,
                             "Pixel Camera did not confirm the rear main lens",
                         ),
-                        action = { pixelCamera.selectRearMainLens(context.profile) },
+                        action = { pixelCamera.selectRearMainLens(context.profileUse) },
                     ) {
                         it is PixelCameraState.TimeLapse &&
                             !it.recording &&
@@ -381,7 +380,7 @@ class DefaultAutomationEngine(
                             AutomationFailureCode.TIME_LAPSE_SPEED_NOT_VERIFIED,
                             "Pixel Camera did not confirm the requested Time Lapse speed",
                         ),
-                        action = { pixelCamera.selectTimeLapseSpeed(capture.speed, context.profile) },
+                        action = { pixelCamera.selectTimeLapseSpeed(capture.speed, context.profileUse) },
                     ) { it is PixelCameraState.TimeLapse && !it.recording && it.speed == capture.speed }
 
                     else -> {
@@ -531,7 +530,7 @@ class DefaultAutomationEngine(
             state = launchState,
             defaultFailureCode = AutomationFailureCode.PIXEL_CAMERA_LAUNCH_FAILED,
             defaultFailureMessage = "Secure Pixel Camera launch was rejected",
-            action = { pixelCamera.launchSecureCamera(context.profile) },
+            action = { pixelCamera.launchSecureCamera(context.profileUse) },
         )
         return observeCamera(
             context = context,
@@ -595,7 +594,7 @@ class DefaultAutomationEngine(
             ) { session, now -> session.copy(recordActionAt = session.recordActionAt ?: now) }
 
             val invocation = try {
-                timed(operation) { pixelCamera.startRecording(context.profile) }
+                timed(operation) { pixelCamera.startRecording(context.profileUse) }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 fail(
@@ -723,7 +722,7 @@ class DefaultAutomationEngine(
                 attempt = attempt,
             )
             val inspection = try {
-                when (val timed = timed(operation) { pixelCamera.inspect(context.profile) }) {
+                when (val timed = timed(operation) { pixelCamera.inspect(context.profileUse) }) {
                     is TimedCall.Completed -> timed.value
                     TimedCall.TimedOut -> PortResult.Unavailable(timeoutFailure(operation))
                 }
@@ -800,7 +799,7 @@ class DefaultAutomationEngine(
     private inner class RunContext(
         var current: ExecutionSession,
     ) {
-        lateinit var profile: PixelCameraProfile
+        lateinit var profileUse: ProfileUse
 
         suspend fun transition(
             state: AutomationStateName,
@@ -880,7 +879,7 @@ class DefaultAutomationEngine(
             failure(AutomationFailureCode.SESSION_STATE_CONFLICT, message),
         )
 
-    private suspend fun loadProfile(context: RunContext): PixelCameraProfile {
+    private suspend fun loadProfileUse(context: RunContext): ProfileUse {
         val profile = try {
             profileRepository.get(context.current.profileId)
         } catch (error: Exception) {
@@ -922,7 +921,13 @@ class DefaultAutomationEngine(
 
             ProfileCompatibility.VERIFIED -> Unit
         }
-        return profile
+        return ProfileUse(
+            profile = profile,
+            kind = when (context.current.kind) {
+                SessionKind.SCHEDULED -> ProfileUse.Kind.UNATTENDED
+                SessionKind.REHEARSAL -> ProfileUse.Kind.REHEARSAL
+            },
+        )
     }
 
     private suspend fun profileFailure(

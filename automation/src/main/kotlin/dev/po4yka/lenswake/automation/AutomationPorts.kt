@@ -58,25 +58,41 @@ interface DeviceControlPort {
     suspend fun wake(): ActionDispatch
 }
 
+/**
+ * A persisted Pixel Camera profile together with the execution policy that may consume it.
+ *
+ * Keeping the policy beside the profile prevents infrastructure adapters from accidentally
+ * treating a rehearsal candidate as safe for unattended automation.
+ */
+data class ProfileUse(
+    val profile: PixelCameraProfile,
+    val kind: Kind,
+) {
+    enum class Kind {
+        UNATTENDED,
+        REHEARSAL,
+    }
+}
+
 interface PixelCameraPort {
-    suspend fun inspect(profile: PixelCameraProfile): PortResult<PixelCameraState>
+    suspend fun inspect(profileUse: ProfileUse): PortResult<PixelCameraState>
 
-    suspend fun launchSecureCamera(profile: PixelCameraProfile): ActionDispatch
+    suspend fun launchSecureCamera(profileUse: ProfileUse): ActionDispatch
 
-    suspend fun selectVideo(profile: PixelCameraProfile): ActionDispatch
+    suspend fun selectVideo(profileUse: ProfileUse): ActionDispatch
 
-    suspend fun selectTimeLapse(profile: PixelCameraProfile): ActionDispatch
+    suspend fun selectTimeLapse(profileUse: ProfileUse): ActionDispatch
 
     suspend fun selectTimeLapseSpeed(
         speed: TimeLapseSpeed,
-        profile: PixelCameraProfile,
+        profileUse: ProfileUse,
     ): ActionDispatch
 
-    suspend fun selectRearMainLens(profile: PixelCameraProfile): ActionDispatch
+    suspend fun selectRearMainLens(profileUse: ProfileUse): ActionDispatch
 
-    suspend fun startRecording(profile: PixelCameraProfile): ActionDispatch
+    suspend fun startRecording(profileUse: ProfileUse): ActionDispatch
 
-    suspend fun stopRecording(profile: PixelCameraProfile): ActionDispatch
+    suspend fun stopRecording(profileUse: ProfileUse): ActionDispatch
 }
 
 fun interface AutomationSleeper {

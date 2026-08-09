@@ -5,6 +5,7 @@ import dev.po4yka.lenswake.accessibility.AccessibilitySnapshotResult
 import dev.po4yka.lenswake.automation.ActionDispatch
 import dev.po4yka.lenswake.automation.PixelCameraState
 import dev.po4yka.lenswake.automation.PortResult
+import dev.po4yka.lenswake.automation.ProfileUse
 import dev.po4yka.lenswake.automation.SelectorMatcher
 import dev.po4yka.lenswake.automation.UiNodeSnapshot
 import dev.po4yka.lenswake.core.AutomationAction
@@ -37,7 +38,7 @@ class PixelCameraAccessibilityPortTest {
             ),
         )
 
-        val result = port(gateway = gateway).inspect(profile())
+        val result = port(gateway = gateway).inspect(profileUse())
 
         val observed = assertInstanceOf(PortResult.Observed::class.java, result)
         assertEquals(
@@ -60,7 +61,7 @@ class PixelCameraAccessibilityPortTest {
             ),
         )
 
-        val result = port(gateway = gateway).inspect(profile())
+        val result = port(gateway = gateway).inspect(profileUse())
 
         val observed = assertInstanceOf(PortResult.Observed::class.java, result)
         assertEquals(
@@ -79,7 +80,7 @@ class PixelCameraAccessibilityPortTest {
             stateSignals = profile().stateSignals - PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
         )
 
-        val result = port(gateway = FakeAccessibilityGateway(activeSignals())).inspect(withoutLensSignal)
+        val result = port(gateway = FakeAccessibilityGateway(activeSignals())).inspect(profileUse(withoutLensSignal))
 
         val unavailable = assertInstanceOf(PortResult.Unavailable::class.java, result)
         assertEquals(AutomationFailureCode.CAMERA_STATE_UNKNOWN, unavailable.failure.code)
@@ -96,7 +97,7 @@ class PixelCameraAccessibilityPortTest {
             dispatchResult = AccessibilityDispatchResult.SemanticActionDispatched,
         )
 
-        val result = port(gateway = gateway).selectRearMainLens(profile())
+        val result = port(gateway = gateway).selectRearMainLens(profileUse())
 
         assertInstanceOf(ActionDispatch.Dispatched::class.java, result)
         assertEquals("node-$LENS_ACTION_RESOURCE", gateway.clickedNodePath)
@@ -107,7 +108,7 @@ class PixelCameraAccessibilityPortTest {
         val gateway = FakeAccessibilityGateway(activeSignals())
         val current = environment().copy(androidBuildFingerprint = "different-build")
 
-        val result = port(currentEnvironment = current, gateway = gateway).inspect(profile())
+        val result = port(currentEnvironment = current, gateway = gateway).inspect(profileUse())
 
         val unavailable = assertInstanceOf(PortResult.Unavailable::class.java, result)
         assertEquals(AutomationFailureCode.PROFILE_REQUIRES_REHEARSAL, unavailable.failure.code)
@@ -119,7 +120,7 @@ class PixelCameraAccessibilityPortTest {
         val gateway = FakeAccessibilityGateway(activeSignals())
         val probablyCompatible = profile().copy(compatibility = ProfileCompatibility.PROBABLY_COMPATIBLE)
 
-        val result = port(gateway = gateway).inspect(probablyCompatible)
+        val result = port(gateway = gateway).inspect(profileUse(probablyCompatible))
 
         val unavailable = assertInstanceOf(PortResult.Unavailable::class.java, result)
         assertEquals(AutomationFailureCode.PROFILE_REQUIRES_REHEARSAL, unavailable.failure.code)
@@ -133,10 +134,90 @@ class PixelCameraAccessibilityPortTest {
             selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION + 1,
         )
 
-        val result = port(gateway = gateway).inspect(unsupported)
+        val result = port(gateway = gateway).inspect(
+            profileUse(unsupported, ProfileUse.Kind.REHEARSAL),
+        )
 
         val unavailable = assertInstanceOf(PortResult.Unavailable::class.java, result)
         assertEquals(AutomationFailureCode.PROFILE_INCOMPATIBLE, unavailable.failure.code)
+        assertEquals(0, gateway.snapshotCalls)
+    }
+
+    @Test
+    fun `rehearsal admits every non-incompatible persisted compatibility`() = runTest {
+        for (compatibility in listOf(
+            ProfileCompatibility.VERIFIED,
+            ProfileCompatibility.PROBABLY_COMPATIBLE,
+            ProfileCompatibility.NEEDS_REHEARSAL,
+        )) {
+            val gateway = FakeAccessibilityGateway(activeSignals(
+                PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
+                PixelCameraStateSignal.NOT_RECORDING,
+            ))
+            val candidate = profile().copy(compatibility = compatibility)
+
+            val result = port(gateway = gateway).inspect(
+                profileUse(candidate, ProfileUse.Kind.REHEARSAL),
+            )
+
+            val observed = assertInstanceOf(PortResult.Observed::class.java, result)
+            assertEquals(PixelCameraState.Photo, observed.value)
+            assertEquals(1, gateway.snapshotCalls)
+        }
+    }
+
+    @Test
+    fun `rehearsal rejects incompatible environment before accessibility inspection`() = runTest {
+        val gateway = FakeAccessibilityGateway(activeSignals())
+        val otherDevice = environment().copy(deviceModel = "Pixel 9 Pro")
+
+        val result = port(currentEnvironment = otherDevice, gateway = gateway).inspect(
+            profileUse(kind = ProfileUse.Kind.REHEARSAL),
+        )
+
+        val unavailable = assertInstanceOf(PortResult.Unavailable::class.java, result)
+        assertEquals(AutomationFailureCode.PROFILE_INCOMPATIBLE, unavailable.failure.code)
+        assertEquals(0, gateway.snapshotCalls)
+    }
+
+    @Test
+    fun `rehearsal rejects a profile explicitly marked incompatible`() = runTest {
+        val gateway = FakeAccessibilityGateway(activeSignals())
+        val incompatible = profile().copy(compatibility = ProfileCompatibility.INCOMPATIBLE)
+
+        val result = port(gateway = gateway).inspect(
+            profileUse(incompatible, ProfileUse.Kind.REHEARSAL),
+        )
+
+        val unavailable = assertInstanceOf(PortResult.Unavailable::class.java, result)
+        assertEquals(AutomationFailureCode.PROFILE_INCOMPATIBLE, unavailable.failure.code)
+        assertEquals(0, gateway.snapshotCalls)
+    }
+
+    @Test
+    fun `rehearsal rejects wrong camera package before environment inspection`() = runTest {
+        var environmentProbeCalls = 0
+        val gateway = FakeAccessibilityGateway(activeSignals())
+        val wrongPackage = profile().copy(
+            environment = environment().copy(cameraPackage = "example.camera"),
+            targets = emptyMap(),
+            stateSignals = emptyMap(),
+        )
+        val port = PixelCameraAccessibilityPort(
+            cameraLauncher = { error("Camera launch is outside this adapter test") },
+            selectorMatcher = SelectorMatcher(),
+            environmentProbe = {
+                environmentProbeCalls += 1
+                PortResult.Observed(environment())
+            },
+            accessibilityGateway = gateway,
+        )
+
+        val result = port.inspect(profileUse(wrongPackage, ProfileUse.Kind.REHEARSAL))
+
+        val unavailable = assertInstanceOf(PortResult.Unavailable::class.java, result)
+        assertEquals(AutomationFailureCode.PROFILE_INCOMPATIBLE, unavailable.failure.code)
+        assertEquals(0, environmentProbeCalls)
         assertEquals(0, gateway.snapshotCalls)
     }
 
@@ -149,6 +230,11 @@ class PixelCameraAccessibilityPortTest {
         environmentProbe = { PortResult.Observed(currentEnvironment) },
         accessibilityGateway = gateway,
     )
+
+    private fun profileUse(
+        profile: PixelCameraProfile = profile(),
+        kind: ProfileUse.Kind = ProfileUse.Kind.UNATTENDED,
+    ): ProfileUse = ProfileUse(profile, kind)
 
     private fun profile(): PixelCameraProfile {
         val requiredSignals = setOf(

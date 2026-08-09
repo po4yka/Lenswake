@@ -7,6 +7,7 @@ import dev.po4yka.lenswake.automation.ActionDispatch
 import dev.po4yka.lenswake.automation.PixelCameraPort
 import dev.po4yka.lenswake.automation.PixelCameraState
 import dev.po4yka.lenswake.automation.PortResult
+import dev.po4yka.lenswake.automation.ProfileUse
 import dev.po4yka.lenswake.automation.SelectorMatchResult
 import dev.po4yka.lenswake.automation.SelectorMatcher
 import dev.po4yka.lenswake.automation.UiNodeSnapshot
@@ -49,8 +50,8 @@ class PixelCameraAccessibilityPort internal constructor(
         accessibilityGateway = RuntimePixelCameraAccessibilityGateway,
     )
 
-    override suspend fun inspect(profile: PixelCameraProfile): PortResult<PixelCameraState> {
-        validateProfile(profile)?.let { return PortResult.Unavailable(it) }
+    override suspend fun inspect(profileUse: ProfileUse): PortResult<PixelCameraState> {
+        validateProfile(profileUse)?.let { return PortResult.Unavailable(it) }
         return when (val snapshot = accessibilityGateway.snapshot()) {
             AccessibilitySnapshotResult.ServiceDisconnected -> PortResult.Unavailable(
                 failure(
@@ -72,14 +73,14 @@ class PixelCameraAccessibilityPort internal constructor(
                         ),
                     )
                 } else {
-                    inferState(profile, snapshot.nodes)
+                    inferState(profileUse.profile, snapshot.nodes)
                 }
             }
         }
     }
 
-    override suspend fun launchSecureCamera(profile: PixelCameraProfile): ActionDispatch {
-        validateProfile(profile)?.let { return ActionDispatch.Rejected(it) }
+    override suspend fun launchSecureCamera(profileUse: ProfileUse): ActionDispatch {
+        validateProfile(profileUse)?.let { return ActionDispatch.Rejected(it) }
         return when (val result = cameraLauncher()) {
             is CameraLaunchDispatch.Dispatched -> ActionDispatch.Dispatched(
                 InteractionMethod.STANDARD_ANDROID_API,
@@ -106,32 +107,33 @@ class PixelCameraAccessibilityPort internal constructor(
         }
     }
 
-    override suspend fun selectVideo(profile: PixelCameraProfile): ActionDispatch =
-        dispatch(AutomationAction.SELECT_VIDEO, profile)
+    override suspend fun selectVideo(profileUse: ProfileUse): ActionDispatch =
+        dispatch(AutomationAction.SELECT_VIDEO, profileUse)
 
-    override suspend fun selectTimeLapse(profile: PixelCameraProfile): ActionDispatch =
-        dispatch(AutomationAction.SELECT_TIME_LAPSE, profile)
+    override suspend fun selectTimeLapse(profileUse: ProfileUse): ActionDispatch =
+        dispatch(AutomationAction.SELECT_TIME_LAPSE, profileUse)
 
     override suspend fun selectTimeLapseSpeed(
         speed: TimeLapseSpeed,
-        profile: PixelCameraProfile,
-    ): ActionDispatch = dispatch(AutomationAction.SELECT_TIME_LAPSE_SPEED, profile, speed)
+        profileUse: ProfileUse,
+    ): ActionDispatch = dispatch(AutomationAction.SELECT_TIME_LAPSE_SPEED, profileUse, speed)
 
-    override suspend fun selectRearMainLens(profile: PixelCameraProfile): ActionDispatch =
-        dispatch(AutomationAction.SELECT_REAR_MAIN_LENS, profile)
+    override suspend fun selectRearMainLens(profileUse: ProfileUse): ActionDispatch =
+        dispatch(AutomationAction.SELECT_REAR_MAIN_LENS, profileUse)
 
-    override suspend fun startRecording(profile: PixelCameraProfile): ActionDispatch =
-        dispatch(AutomationAction.START_RECORDING, profile)
+    override suspend fun startRecording(profileUse: ProfileUse): ActionDispatch =
+        dispatch(AutomationAction.START_RECORDING, profileUse)
 
-    override suspend fun stopRecording(profile: PixelCameraProfile): ActionDispatch =
-        dispatch(AutomationAction.STOP_RECORDING, profile)
+    override suspend fun stopRecording(profileUse: ProfileUse): ActionDispatch =
+        dispatch(AutomationAction.STOP_RECORDING, profileUse)
 
     private suspend fun dispatch(
         action: AutomationAction,
-        profile: PixelCameraProfile,
+        profileUse: ProfileUse,
         speed: TimeLapseSpeed? = null,
     ): ActionDispatch {
-        validateProfile(profile)?.let { return ActionDispatch.Rejected(it) }
+        validateProfile(profileUse)?.let { return ActionDispatch.Rejected(it) }
+        val profile = profileUse.profile
         val snapshot = when (val result = accessibilityGateway.snapshot()) {
             is AccessibilitySnapshotResult.Available -> result
             AccessibilitySnapshotResult.ServiceDisconnected -> return ActionDispatch.Rejected(
@@ -320,7 +322,8 @@ class PixelCameraAccessibilityPort internal constructor(
         ),
     )
 
-    private fun validateProfile(profile: PixelCameraProfile): AutomationFailure? {
+    private fun validateProfile(profileUse: ProfileUse): AutomationFailure? {
+        val profile = profileUse.profile
         if (profile.environment.cameraPackage != PIXEL_CAMERA_PACKAGE) {
             return AutomationFailure(
                 code = AutomationFailureCode.PROFILE_INCOMPATIBLE,
@@ -341,17 +344,17 @@ class PixelCameraAccessibilityPort internal constructor(
             is PortResult.Observed -> result.value
             is PortResult.Unavailable -> return result.failure
         }
-        return when (profile.compatibilityFor(currentEnvironment)) {
-            ProfileCompatibility.VERIFIED -> null
-            ProfileCompatibility.PROBABLY_COMPATIBLE,
-            ProfileCompatibility.NEEDS_REHEARSAL,
-            -> AutomationFailure(
-                code = AutomationFailureCode.PROFILE_REQUIRES_REHEARSAL,
-                message = "Scheduled automation requires a profile verified for the current environment",
-            )
-            ProfileCompatibility.INCOMPATIBLE -> AutomationFailure(
+        val compatibility = profile.compatibilityFor(currentEnvironment)
+        return when {
+            compatibility == ProfileCompatibility.INCOMPATIBLE -> AutomationFailure(
                 code = AutomationFailureCode.PROFILE_INCOMPATIBLE,
                 message = "The current device or Pixel Camera package is incompatible with the profile",
+            )
+            profileUse.kind == ProfileUse.Kind.REHEARSAL -> null
+            compatibility == ProfileCompatibility.VERIFIED -> null
+            else -> AutomationFailure(
+                code = AutomationFailureCode.PROFILE_REQUIRES_REHEARSAL,
+                message = "Unattended automation requires a profile verified for the exact current environment",
             )
         }
     }
