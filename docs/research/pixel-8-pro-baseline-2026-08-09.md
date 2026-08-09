@@ -16,7 +16,7 @@ Build fingerprint:       google/husky/husky:17/CP2A.260705.006/15641320:user/rel
 Display:                 1008 x 2244 px, 360 dpi
 Pixel Camera package:    com.google.android.GoogleCamera
 Pixel Camera version:    10.4.117.936816638.14 (versionCode 69481630)
-Lenswake commit:         c16891aba311
+Lenswake commit:         1a153da
 Lenswake version:        0.1.0 debug
 ```
 
@@ -32,7 +32,7 @@ Exact-alarm special access:          not granted
 Lenswake Accessibility Service:      not enabled / not connected
 POST_NOTIFICATIONS:                  not granted
 Pixel Camera secure intent:          resolvable
-Persisted Pixel Camera profile:      none
+Persisted Pixel Camera profile:      exact-environment candidate, needs rehearsal
 Recorded physical rehearsal:         none
 ```
 
@@ -88,6 +88,10 @@ adb -s "$PIXEL_SERIAL" shell am start \
 - Local JVM tests, Android-test compilation, `lintDebug`, and `assembleDebug` passed.
 - The debug APK installed and `MainActivity` activated successfully.
 - The installed `base.apk` was pulled back and compared byte-for-byte with the local artifact.
+- The Profiles UI installed one exact-environment candidate with compatibility
+  `NEEDS_REHEARSAL`; it did not promote the candidate to `VERIFIED`.
+- The candidate survived a Lenswake `force-stop` and cold activity restart, demonstrating that it
+  was loaded from Room rather than retained only in process memory.
 - Exact-alarm AppOp, notification runtime permission, Accessibility enabled-service registration,
   and the bound Accessibility service were read back from Android after granting them.
 - The secure camera intent opened
@@ -98,7 +102,7 @@ adb -s "$PIXEL_SERIAL" shell am start \
 
 ```text
 SHA-256:
-c45a0cccb0516eb78abbb1304e8b5403f8b95157e63f2b37136ebea36f7eb8c1
+acb7d360acc00ce11f120de2a3427f3bd2b1d365fb8185ca7a4c32f8d903f977
 
 cmp result:
 identical
@@ -112,13 +116,41 @@ Runtime preflight correctly reported:
 - exact alarms: available after the grant;
 - Lenswake Accessibility Service enabled: available after the grant;
 - Accessibility runtime connection: available after service attachment;
-- profile availability and current compatibility: blocked;
+- profile availability: available after installing one persisted candidate;
+- profile compatibility: blocked because the exact-environment candidate still needs rehearsal;
 - physical rehearsal: unknown and blocking;
 - privileged fallback: unknown and optional.
 
 The Setup screen was visually inspected at the physical display resolution. Content remained
 readable and scrollable, status was communicated by text and glyph rather than color alone, and no
 clipping was observed.
+
+## Candidate profile installation
+
+The app offered installation only after the runtime environment exactly matched the observed
+Pixel 8 Pro baseline. The installed profile has deterministic identity:
+
+```text
+google-pixel-8-pro-sdk37-cp2a-260705-006-camera-69481630-1008x2244-en-us-v2
+```
+
+Its environment binds the Pixel 8 Pro model, SDK 37, build `CP2A.260705.006`, Pixel Camera
+versionCode `69481630`, `1008 x 2244` display, current locale, and selector schema v2. Installation
+changed the required readiness count from three to two. The two remaining gates were inspected in
+the Setup UI and are intentional:
+
+1. profile compatibility is blocked until rehearsal;
+2. no successful physical-device rehearsal is recorded for the current environment.
+
+The production rehearsal action remains disabled. The current alarm contract addresses persisted
+schedules, not a durable rehearsal execution with an independently scheduled session-bound STOP.
+Enabling a start-only rehearsal would risk leaving Pixel Camera recording after Lenswake process
+death, so the UI states that the durable stop backstop and coordinator are still required.
+
+After a deliberate `force-stop`, Android removed Lenswake from enabled Accessibility services. The
+profile was still present after the new process started. Accessibility was then re-enabled through
+the Android confirmation UI, both Lenswake and Bitwarden were observed bound, exact-alarm access
+remained allowed, and readiness returned to the expected two blockers.
 
 ## Observed Pixel Camera selectors
 
@@ -156,19 +188,18 @@ UIAutomator connected.
 ## Conclusion and remaining gates
 
 The application reports observed device readiness instead of static setup placeholders. Required
-Android permissions and semantic Pixel Camera start/stop signals are now verified on this Pixel,
-but the application remains fail-closed until a profile is persisted and a production-stack
-rehearsal is recorded.
+Android permissions, semantic Pixel Camera start/stop signals, and an exact-environment persisted
+candidate profile are now verified on this Pixel. Unattended execution remains fail-closed until a
+production-stack rehearsal succeeds and promotes that candidate to verified compatibility.
 
 The following remain deliberately unverified:
 
 1. exact-alarm delivery while screen-off, locked, and in Doze;
-2. persisted selector profile for Pixel Camera `69481630`;
-3. production-stack rehearsal rather than the bounded ADB calibration run;
-4. independent stop alarm and stopped-state verification;
-5. process-death and reboot recovery on the physical device;
-6. notification-less escalation behavior;
-7. optional Shizuku capability on Android 17.
+2. production-stack rehearsal rather than the bounded ADB calibration run;
+3. independent session-bound stop alarm and stopped-state verification for rehearsal;
+4. ordinary process-death recovery during automation and reboot recovery on the physical device;
+5. notification-less escalation behavior;
+6. optional Shizuku capability on Android 17.
 
 The manual calibration proves Pixel Camera behavior and selectors for this exact environment. It
 does not yet prove that an alarm-driven Lenswake execution can complete the same sequence while the
