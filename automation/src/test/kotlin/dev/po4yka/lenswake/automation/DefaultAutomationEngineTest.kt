@@ -417,6 +417,50 @@ class DefaultAutomationEngineTest {
     }
 
     @Test
+    fun `stop accepts a verified owned recording when Pixel Camera hides mode controls`() = runTest {
+        val session = session(status = SessionStatus.RECORDING).copy(
+            currentAutomationState = AutomationStateName.RECORDING,
+            recordActionAt = NOW.minusSeconds(60),
+            recordingVerifiedAt = NOW,
+        )
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(
+            state = PixelCameraState.RecordingUnknownMode,
+            stateAfterStop = PixelCameraState.TimeLapse(
+                TimeLapseSpeed.X120,
+                recording = false,
+                lens = LensSelection.REAR_MAIN,
+            ),
+        )
+        val engine = engine(repository, FakeDeviceControl(interactive = true), camera)
+
+        val result = engine.stop(session.id)
+
+        val succeeded = assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        assertEquals(SessionStatus.COMPLETED, succeeded.session.status)
+        assertNotNull(succeeded.session.stopActionAt)
+        assertNotNull(succeeded.session.stoppedVerifiedAt)
+        assertEquals(1, camera.calls.count { it == "stopRecording" })
+    }
+
+    @Test
+    fun `stop rejects hidden-mode recording without verified ownership`() = runTest {
+        val session = session(status = SessionStatus.STARTING).copy(
+            currentAutomationState = AutomationStateName.VERIFYING_RECORDING,
+            recordActionAt = NOW.minusSeconds(60),
+        )
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(state = PixelCameraState.RecordingUnknownMode)
+        val engine = engine(repository, FakeDeviceControl(interactive = true), camera)
+
+        val result = engine.stop(session.id)
+
+        val failed = assertInstanceOf(AutomationRunResult.Failed::class.java, result)
+        assertEquals(AutomationFailureCode.STOP_NOT_CONFIRMED, failed.failure.code)
+        assertEquals(0, camera.calls.count { it == "stopRecording" })
+    }
+
+    @Test
     fun `stop dispatch without stopped confirmation exhausts verification policy and fails`() = runTest {
         val session = session(status = SessionStatus.RECORDING).copy(
             currentAutomationState = AutomationStateName.RECORDING,
@@ -1075,6 +1119,7 @@ class DefaultAutomationEngineTest {
         private val stopException: Exception? = null,
         private val stopDispatch: ActionDispatch? = null,
         private val onStopRecording: (suspend () -> Unit)? = null,
+        private val stateAfterStop: PixelCameraState? = null,
     ) : PixelCameraPort {
         val calls = mutableListOf<String>()
         val trace = mutableListOf<String>()
@@ -1165,8 +1210,7 @@ class DefaultAutomationEngineTest {
             stopException?.let { throw it }
             stopDispatch?.let { return it }
             if (confirmStop) {
-                val current = state as PixelCameraState.TimeLapse
-                state = current.copy(recording = false)
+                state = stateAfterStop ?: (state as PixelCameraState.TimeLapse).copy(recording = false)
             }
             if (suspendStop) awaitCancellation()
             return dispatched()

@@ -218,7 +218,10 @@ class DefaultAutomationEngine(
         }
 
         val capture = context.current.capture as CaptureConfiguration.TimeLapse
-        if (beforeStop.isConfirmedRecording(capture)) {
+        val verifiedOwnedRecordingWithHiddenMode =
+            beforeStop is PixelCameraState.RecordingUnknownMode &&
+                context.current.recordingVerifiedAt != null
+        if (beforeStop.isConfirmedRecording(capture) || verifiedOwnedRecordingWithHiddenMode) {
             dispatchRecordingStop(context)
         } else if (!beforeStop.isConfirmedStopped()) {
             fail(
