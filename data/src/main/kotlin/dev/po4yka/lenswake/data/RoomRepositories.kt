@@ -139,4 +139,15 @@ class RoomExecutionRepository(
                 events = report.events.map { it.toDomain() },
             )
         }
+
+    override suspend fun findActiveRehearsals(limit: Int): List<ExecutionSession> {
+        require(limit in 1..ExecutionRepository.MAX_ACTIVE_REHEARSAL_LIMIT) {
+            "Rehearsal query limit must be between 1 and " +
+                ExecutionRepository.MAX_ACTIVE_REHEARSAL_LIMIT
+        }
+        return dao.findActiveRehearsals(limit).map { it.toDomain() }
+    }
+
+    override suspend fun latestSuccessfulRehearsal(profileId: ProfileId): ExecutionSession? =
+        dao.findLatestSuccessfulRehearsal(profileId.value)?.toDomain()
 }

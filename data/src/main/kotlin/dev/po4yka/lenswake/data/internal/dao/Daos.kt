@@ -78,6 +78,38 @@ internal interface ExecutionDao {
     )
     suspend fun findActiveForSchedule(scheduleId: String): ExecutionSessionEntity?
 
+    @Query(
+        """
+        SELECT * FROM execution_sessions
+        WHERE kind = 'REHEARSAL'
+          AND (
+            status IN ('PENDING', 'STARTING', 'RECORDING', 'STOPPING')
+            OR (
+              status = 'FAILED'
+              AND record_action_at_epoch_ms IS NOT NULL
+              AND stopped_verified_at_epoch_ms IS NULL
+            )
+          )
+        ORDER BY expected_stop_at_epoch_ms, created_at_epoch_ms, id
+        LIMIT :limit
+        """,
+    )
+    suspend fun findActiveRehearsals(limit: Int): List<ExecutionSessionEntity>
+
+    @Query(
+        """
+        SELECT * FROM execution_sessions
+        WHERE kind = 'REHEARSAL'
+          AND profile_id = :profileId
+          AND status = 'COMPLETED'
+          AND recording_verified_at_epoch_ms IS NOT NULL
+          AND stopped_verified_at_epoch_ms IS NOT NULL
+        ORDER BY stopped_verified_at_epoch_ms DESC, updated_at_epoch_ms DESC, id DESC
+        LIMIT 1
+        """,
+    )
+    suspend fun findLatestSuccessfulRehearsal(profileId: String): ExecutionSessionEntity?
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIgnoringConflict(session: ExecutionSessionEntity): Long
 

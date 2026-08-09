@@ -1,6 +1,7 @@
 package dev.po4yka.lenswake.core
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 interface ScheduleRepository {
     fun observeSchedules(): Flow<List<RecordingSchedule>>
@@ -45,6 +46,58 @@ interface ExecutionRepository {
         change: ExecutionChange,
         event: AutomationEvent,
     ): ExecutionApplyResult
+
+    /** Returns a bounded, stop-deadline-ordered recovery queue for durable rehearsals. */
+    suspend fun findActiveRehearsals(limit: Int): List<ExecutionSession> {
+        require(limit in 1..MAX_ACTIVE_REHEARSAL_LIMIT) {
+            "Rehearsal query limit must be between 1 and $MAX_ACTIVE_REHEARSAL_LIMIT"
+        }
+        return observeExecutions().first()
+            .asSequence()
+            .filter { session ->
+                session.kind == SessionKind.REHEARSAL && (
+                    session.status in ACTIVE_REHEARSAL_STATUSES ||
+                        (
+                            session.status == SessionStatus.FAILED &&
+                                session.recordActionAt != null &&
+                                session.stoppedVerifiedAt == null
+                            )
+                    )
+            }
+            .sortedWith(compareBy(ExecutionSession::expectedStopAt, ExecutionSession::createdAt, { it.id.value }))
+            .take(limit)
+            .toList()
+    }
+
+    /** Returns the latest rehearsal with both start and stop verification for [profileId]. */
+    suspend fun latestSuccessfulRehearsal(profileId: ProfileId): ExecutionSession? =
+        observeExecutions().first()
+            .asSequence()
+            .filter { session ->
+                session.kind == SessionKind.REHEARSAL &&
+                    session.profileId == profileId &&
+                    session.status == SessionStatus.COMPLETED &&
+                    session.recordingVerifiedAt != null &&
+                    session.stoppedVerifiedAt != null
+            }
+            .maxWithOrNull(
+                compareBy<ExecutionSession>(
+                    { checkNotNull(it.stoppedVerifiedAt) },
+                    ExecutionSession::updatedAt,
+                    { it.id.value },
+                ),
+            )
+
+    companion object {
+        const val MAX_ACTIVE_REHEARSAL_LIMIT: Int = 100
+
+        private val ACTIVE_REHEARSAL_STATUSES = setOf(
+            SessionStatus.PENDING,
+            SessionStatus.STARTING,
+            SessionStatus.RECORDING,
+            SessionStatus.STOPPING,
+        )
+    }
 }
 
 /**

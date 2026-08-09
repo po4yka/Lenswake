@@ -296,6 +296,103 @@ class RoomRepositoriesTest {
         assertNull(executions.getEnvironmentSnapshot(replacement.id))
     }
 
+    @Test
+    fun activeRehearsalsAreBoundedAndOrderedByExpectedStop() = runBlocking {
+        val pending = rehearsalSession(
+            id = "pending",
+            status = SessionStatus.PENDING,
+            expectedStopAtEpochMs = 30_000,
+        )
+        val stopping = rehearsalSession(
+            id = "stopping",
+            status = SessionStatus.STOPPING,
+            expectedStopAtEpochMs = 10_000,
+            recordActionAt = Instant.ofEpochMilli(5_000),
+        )
+        val failedWithOwnership = rehearsalSession(
+            id = "failed-owned",
+            status = SessionStatus.FAILED,
+            expectedStopAtEpochMs = 20_000,
+            recordActionAt = Instant.ofEpochMilli(5_000),
+        )
+        val failedWithoutOwnership = rehearsalSession(
+            id = "failed-unowned",
+            status = SessionStatus.FAILED,
+            expectedStopAtEpochMs = 5_000,
+        )
+        val failedAlreadyStopped = rehearsalSession(
+            id = "failed-stopped",
+            status = SessionStatus.FAILED,
+            expectedStopAtEpochMs = 6_000,
+            recordActionAt = Instant.ofEpochMilli(4_000),
+            stoppedVerifiedAt = Instant.ofEpochMilli(5_000),
+        )
+        val completed = rehearsalSession(
+            id = "completed",
+            status = SessionStatus.COMPLETED,
+            expectedStopAtEpochMs = 7_000,
+        )
+        listOf(
+            pending,
+            stopping,
+            failedWithOwnership,
+            failedWithoutOwnership,
+            failedAlreadyStopped,
+            completed,
+        ).forEach { executions.create(it) }
+
+        assertEquals(
+            listOf(stopping.id, failedWithOwnership.id),
+            executions.findActiveRehearsals(limit = 2).map { it.id },
+        )
+        assertTrue(runCatching { executions.findActiveRehearsals(0) }.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(runCatching { executions.findActiveRehearsals(101) }.exceptionOrNull() is IllegalArgumentException)
+    }
+
+    @Test
+    fun latestSuccessfulRehearsalRequiresBothVerificationProofs() = runBlocking {
+        val profileId = ProfileId("profile-proof")
+        val olderSuccess = rehearsalSession(
+            id = "older-success",
+            status = SessionStatus.COMPLETED,
+            expectedStopAtEpochMs = 10_000,
+            profileId = profileId,
+            recordingVerifiedAt = Instant.ofEpochMilli(7_000),
+            stoppedVerifiedAt = Instant.ofEpochMilli(8_000),
+        )
+        val latestSuccess = rehearsalSession(
+            id = "latest-success",
+            status = SessionStatus.COMPLETED,
+            expectedStopAtEpochMs = 20_000,
+            profileId = profileId,
+            recordingVerifiedAt = Instant.ofEpochMilli(17_000),
+            stoppedVerifiedAt = Instant.ofEpochMilli(18_000),
+        )
+        val missingStopProof = rehearsalSession(
+            id = "missing-stop-proof",
+            status = SessionStatus.COMPLETED,
+            expectedStopAtEpochMs = 30_000,
+            profileId = profileId,
+            recordingVerifiedAt = Instant.ofEpochMilli(27_000),
+        )
+        val otherProfile = rehearsalSession(
+            id = "other-profile",
+            status = SessionStatus.COMPLETED,
+            expectedStopAtEpochMs = 40_000,
+            profileId = ProfileId("other-profile"),
+            recordingVerifiedAt = Instant.ofEpochMilli(37_000),
+            stoppedVerifiedAt = Instant.ofEpochMilli(38_000),
+        )
+        listOf(olderSuccess, latestSuccess, missingStopProof, otherProfile)
+            .forEach { executions.create(it) }
+
+        assertEquals(
+            latestSuccess,
+            executions.latestSuccessfulRehearsal(profileId),
+        )
+        assertNull(executions.latestSuccessfulRehearsal(ProfileId("absent-profile")))
+    }
+
     private fun profile(): PixelCameraProfile = PixelCameraProfile(
         id = ProfileId("profile-1"),
         environment = PixelCameraEnvironment(
@@ -445,5 +542,31 @@ class RoomRepositoriesTest {
         batteryPercent = 75,
         charging = false,
         availableStorageBytes = 10_000_000_000,
+    )
+
+    private fun rehearsalSession(
+        id: String,
+        status: SessionStatus,
+        expectedStopAtEpochMs: Long,
+        profileId: ProfileId = ProfileId("profile-1"),
+        recordActionAt: Instant? = null,
+        recordingVerifiedAt: Instant? = null,
+        stoppedVerifiedAt: Instant? = null,
+    ): ExecutionSession = ExecutionSession(
+        id = SessionId(id),
+        executionKey = "rehearsal/$id",
+        kind = SessionKind.REHEARSAL,
+        scheduleId = null,
+        scheduleName = "Rehearsal",
+        profileId = profileId,
+        capture = CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120),
+        expectedStartAt = Instant.ofEpochMilli(expectedStopAtEpochMs - 1_000),
+        expectedStopAt = Instant.ofEpochMilli(expectedStopAtEpochMs),
+        status = status,
+        recordActionAt = recordActionAt,
+        recordingVerifiedAt = recordingVerifiedAt,
+        stoppedVerifiedAt = stoppedVerifiedAt,
+        createdAt = Instant.ofEpochMilli(1_000),
+        updatedAt = stoppedVerifiedAt ?: Instant.ofEpochMilli(2_000),
     )
 }
