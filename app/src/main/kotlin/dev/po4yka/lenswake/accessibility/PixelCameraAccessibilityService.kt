@@ -10,6 +10,9 @@ import dev.po4yka.lenswake.automation.UiNodeSnapshot
 import dev.po4yka.lenswake.core.NormalizedBounds
 import dev.po4yka.lenswake.platform.PIXEL_CAMERA_PACKAGE
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import java.lang.ref.WeakReference
 import java.util.concurrent.atomic.AtomicReference
@@ -198,18 +201,28 @@ class PixelCameraAccessibilityService : AccessibilityService() {
 /** Runtime-only service access for the application adapter; it intentionally holds a weak reference. */
 object PixelCameraAccessibilityRuntime {
     private val serviceReference = AtomicReference<WeakReference<PixelCameraAccessibilityService>?>()
+    private val mutableConnectionState = MutableStateFlow(false)
+
+    val connectionState: StateFlow<Boolean> = mutableConnectionState.asStateFlow()
 
     @Volatile
     var lastCameraEventAtMillis: Long? = null
         private set
 
+    val isConnected: Boolean
+        get() = connectionState.value
+
     internal fun attach(service: PixelCameraAccessibilityService) {
         serviceReference.set(WeakReference(service))
+        mutableConnectionState.value = true
     }
 
     internal fun detach(service: PixelCameraAccessibilityService) {
         val current = serviceReference.get()?.get()
-        if (current === service) serviceReference.set(null)
+        if (current === service) {
+            serviceReference.set(null)
+            mutableConnectionState.value = false
+        }
     }
 
     internal fun markCameraEvent(eventTime: Long) {

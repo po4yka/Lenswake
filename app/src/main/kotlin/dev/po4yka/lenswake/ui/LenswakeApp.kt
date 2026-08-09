@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
@@ -53,6 +54,10 @@ fun LenswakeApp() {
     val application = LocalContext.current.applicationContext as LenswakeApplication
     val factory = remember(application) { LenswakeViewModel.Factory(application.graph) }
     val viewModel: LenswakeViewModel = viewModel(factory = factory)
+    LifecycleResumeEffect(viewModel) {
+        viewModel.refreshPreflight()
+        onPauseOrDispose { }
+    }
     val state by viewModel.state.collectAsStateWithLifecycle()
     LenswakeApp(state = state)
 }

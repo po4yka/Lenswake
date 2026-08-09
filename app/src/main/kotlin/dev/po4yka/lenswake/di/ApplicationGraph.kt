@@ -4,6 +4,7 @@ import android.app.Application
 import dev.po4yka.lenswake.alarm.AlarmManagerRecordingScheduler
 import dev.po4yka.lenswake.alarm.SchedulerAlarmRecoveryCoordinator
 import dev.po4yka.lenswake.application.DefaultAlarmTriggerCoordinator
+import dev.po4yka.lenswake.application.RuntimePreflightProbe
 import dev.po4yka.lenswake.automation.DefaultAutomationEngine
 import dev.po4yka.lenswake.automation.SelectorMatcher
 import dev.po4yka.lenswake.core.AutomationProfileRepository
@@ -20,6 +21,7 @@ import dev.po4yka.lenswake.data.RoomScheduleRepository
 import dev.po4yka.lenswake.integration.AndroidDeviceControlPort
 import dev.po4yka.lenswake.integration.AndroidEnvironmentSnapshotCollector
 import dev.po4yka.lenswake.integration.AndroidPixelCameraEnvironmentProbe
+import dev.po4yka.lenswake.integration.AndroidRuntimePreflightProbe
 import dev.po4yka.lenswake.integration.PixelCameraAccessibilityPort
 import dev.po4yka.lenswake.platform.SecurePixelCameraLauncher
 import dev.po4yka.lenswake.platform.UnavailableDeviceWakeController
@@ -42,6 +44,10 @@ class ApplicationGraph(application: Application) {
 
     private val unavailablePrivilegedBridge = UnavailablePrivilegedBridge()
     private val cameraEnvironmentProbe = AndroidPixelCameraEnvironmentProbe(application)
+    val runtimePreflightProbe: RuntimePreflightProbe = AndroidRuntimePreflightProbe(
+        context = application,
+        cameraEnvironmentProbe = cameraEnvironmentProbe,
+    )
     private val deviceControl = AndroidDeviceControlPort(
         context = application,
         wakeController = UnavailableDeviceWakeController(),

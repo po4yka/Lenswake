@@ -14,6 +14,11 @@ import dev.po4yka.lenswake.core.ExecutionRepository
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
+import dev.po4yka.lenswake.core.PreflightCheck
+import dev.po4yka.lenswake.core.PreflightCheckType
+import dev.po4yka.lenswake.core.PreflightReport
+import dev.po4yka.lenswake.core.PreflightSeverity
+import dev.po4yka.lenswake.core.PreflightStatus
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.RecordingSchedule
@@ -23,6 +28,7 @@ import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.TimeLapseSpeed
+import dev.po4yka.lenswake.application.RuntimePreflightProbe
 import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
@@ -62,16 +68,20 @@ class LenswakeViewModelTest {
             schedules = listOf(schedule()),
             profiles = listOf(profile()),
             events = listOf(event()),
+            preflight = blockedPreflight(),
         )
 
         assertInstanceOf(ReadinessUiState.Blocked::class.java, state.readiness)
         assertEquals("Morning capture", state.schedules.single().title)
         assertEquals("Enabled; alarm registration not verified", state.schedules.single().status)
         assertEquals(
-            "Persisted as verified; current environment not checked",
+            "Persisted as verified; see current compatibility in Setup",
             state.profiles.single().compatibility,
         )
-        assertEquals(CapabilityStatus.BLOCKED, state.capabilities[2].status)
+        assertEquals(
+            CapabilityStatus.BLOCKED,
+            state.capabilities.single { it.name == "Lenswake Accessibility Service" }.status,
+        )
         assertEquals("automation.record.start_verified", state.diagnosticEvents.single().title)
         assertFalse(state.actions.canCreateSchedule)
         assertFalse(state.actions.canExportDiagnostics)
@@ -83,7 +93,12 @@ class LenswakeViewModelTest {
         val schedules = FakeScheduleRepository()
         val profiles = FakeProfileRepository()
         val executions = FakeExecutionRepository()
-        val viewModel = LenswakeViewModel(schedules, profiles, executions)
+        val viewModel = LenswakeViewModel(
+            schedules,
+            profiles,
+            executions,
+            RuntimePreflightProbe { blockedPreflight() },
+        )
 
         try {
             val loaded = async {
@@ -227,6 +242,29 @@ class LenswakeViewModelTest {
             state = AutomationStateName.VERIFYING_RECORDING,
             operation = AutomationOperation.VERIFY_RECORDING,
             outcome = AutomationOutcome.SUCCEEDED,
+        )
+
+        fun blockedPreflight() = PreflightReport(
+            checks = listOf(
+                PreflightCheck(
+                    type = PreflightCheckType.EXACT_ALARMS,
+                    severity = PreflightSeverity.BLOCKING,
+                    status = PreflightStatus.PASSED,
+                    message = "Exact alarms are available.",
+                ),
+                PreflightCheck(
+                    type = PreflightCheckType.ACCESSIBILITY_ENABLED,
+                    severity = PreflightSeverity.BLOCKING,
+                    status = PreflightStatus.FAILED,
+                    message = "Accessibility is disabled.",
+                ),
+                PreflightCheck(
+                    type = PreflightCheckType.PROFILE_COMPATIBILITY,
+                    severity = PreflightSeverity.BLOCKING,
+                    status = PreflightStatus.FAILED,
+                    message = "A current profile is required.",
+                ),
+            ),
         )
     }
 }
