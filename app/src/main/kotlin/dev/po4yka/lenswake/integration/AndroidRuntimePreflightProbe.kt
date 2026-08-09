@@ -12,6 +12,7 @@ import dev.po4yka.lenswake.application.RuntimePreflightEvaluator
 import dev.po4yka.lenswake.application.RuntimePreflightObservation
 import dev.po4yka.lenswake.application.RuntimePreflightProbe
 import dev.po4yka.lenswake.automation.PortResult
+import dev.po4yka.lenswake.core.ExecutionRepository
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PreflightReport
 import dev.po4yka.lenswake.core.PreflightStatus
@@ -24,6 +25,7 @@ import kotlinx.coroutines.flow.map
 class AndroidRuntimePreflightProbe(
     context: Context,
     private val cameraEnvironmentProbe: AndroidPixelCameraEnvironmentProbe,
+    private val executionRepository: ExecutionRepository,
     private val secureCameraResolver: SecurePixelCameraResolver = SecurePixelCameraResolver(context),
     private val evaluator: RuntimePreflightEvaluator = RuntimePreflightEvaluator(),
 ) : RuntimePreflightProbe {
@@ -35,7 +37,7 @@ class AndroidRuntimePreflightProbe(
     override val invalidations: Flow<Unit> = PixelCameraAccessibilityRuntime.connectionState
         .map { }
 
-    override fun inspect(profiles: List<PixelCameraProfile>): PreflightReport {
+    override suspend fun inspect(profiles: List<PixelCameraProfile>): PreflightReport {
         val environmentInspection = runCatching(cameraEnvironmentProbe::inspect)
         val environmentResult = environmentInspection.getOrNull()
         val currentEnvironment = (environmentResult as? PortResult.Observed)?.value
@@ -44,6 +46,19 @@ class AndroidRuntimePreflightProbe(
             currentEnvironment != null -> PreflightStatus.PASSED
             environmentInspection.isFailure -> PreflightStatus.UNKNOWN
             else -> PreflightStatus.FAILED
+        }
+        val rehearsalEvidence = runCatching {
+            if (currentEnvironment == null) {
+                emptyMap()
+            } else {
+                profiles
+                    .filter { profile -> profile.environment == currentEnvironment }
+                    .mapNotNull { profile ->
+                        executionRepository.latestSuccessfulRehearsal(profile.id)
+                            ?.let { profile.id to it }
+                    }
+                    .toMap()
+            }
         }
 
         return evaluator.evaluate(
@@ -59,8 +74,16 @@ class AndroidRuntimePreflightProbe(
                 ),
                 cameraEnvironment = currentEnvironment,
                 secureCameraResolves = secureCameraObservation(),
+                deviceWake = RuntimeCapabilityObservation(
+                    status = PreflightStatus.FAILED,
+                    message = "No verified device-wake implementation is configured; unattended locked-screen automation is blocked.",
+                ),
                 accessibilityEnabled = accessibilityEnabledObservation(),
                 accessibilityConnected = accessibilityConnectedObservation(),
+                successfulRehearsals = rehearsalEvidence.getOrDefault(emptyMap()),
+                rehearsalEvidenceFailure = rehearsalEvidence.exceptionOrNull()?.let { error ->
+                    "Successful rehearsal evidence could not be loaded: ${error.javaClass.simpleName}."
+                },
             ),
             profiles = profiles,
         )

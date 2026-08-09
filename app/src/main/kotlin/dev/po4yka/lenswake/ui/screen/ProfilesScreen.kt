@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.po4yka.lenswake.ui.LenswakeUiState
 import dev.po4yka.lenswake.ui.ProfileInstallUiState
+import dev.po4yka.lenswake.ui.RehearsalActionUiState
 import dev.po4yka.lenswake.ui.component.HonestEmptyState
 import dev.po4yka.lenswake.ui.component.ReadinessCard
 import dev.po4yka.lenswake.ui.component.ScreenHeader
@@ -20,6 +21,7 @@ fun ProfilesScreen(
     contentPadding: PaddingValues,
     onOpenSetup: () -> Unit,
     onInstallCandidateProfile: () -> Unit,
+    onRunRehearsal: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -96,13 +98,55 @@ fun ProfilesScreen(
         }
         item {
             HonestEmptyState(
-                title = "Production rehearsal not run",
-                detail = "A production-path rehearsal is required before unattended automation can be trusted.",
-                actionLabel = "Run rehearsal",
-                actionEnabled = false,
+                title = when (state.rehearsal) {
+                    RehearsalActionUiState.Idle -> "Production rehearsal not run"
+                    RehearsalActionUiState.Running -> "Production rehearsal running"
+                    is RehearsalActionUiState.Passed -> "Production rehearsal passed"
+                    is RehearsalActionUiState.Failed -> "Production rehearsal failed"
+                    is RehearsalActionUiState.SafetyStopPending -> "Safety STOP pending"
+                },
+                detail = "This screen-on production-path check records for 10 seconds at 120x using the rear main lens. " +
+                    "Passing it verifies the exercised start/stop profile path, but unattended scheduling remains blocked until device wake is available.",
+                actionLabel = if (state.rehearsal is RehearsalActionUiState.Running) {
+                    "Running rehearsal"
+                } else {
+                    "Run rehearsal"
+                },
+                actionEnabled = state.actions.canRunRehearsal,
                 unavailableReason = state.actions.rehearsalUnavailableReason,
-                onAction = {},
+                onAction = onRunRehearsal,
             )
+        }
+        when (val rehearsal = state.rehearsal) {
+            RehearsalActionUiState.Idle -> Unit
+            RehearsalActionUiState.Running -> item {
+                SummaryCard(
+                    title = "Rehearsal in progress",
+                    detail = "Lenswake armed the independent session-bound STOP alarm before starting Pixel Camera automation.",
+                    status = "Running",
+                )
+            }
+            is RehearsalActionUiState.Passed -> item {
+                SummaryCard(
+                    title = "Rehearsal verified",
+                    detail = rehearsal.message,
+                    status = "Passed",
+                )
+            }
+            is RehearsalActionUiState.Failed -> item {
+                SummaryCard(
+                    title = "Rehearsal failed",
+                    detail = rehearsal.message,
+                    status = "Failed",
+                )
+            }
+            is RehearsalActionUiState.SafetyStopPending -> item {
+                SummaryCard(
+                    title = "STOP verification pending",
+                    detail = rehearsal.message,
+                    status = "Safety alarm armed",
+                )
+            }
         }
     }
 }

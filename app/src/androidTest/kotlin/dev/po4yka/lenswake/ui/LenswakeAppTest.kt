@@ -18,12 +18,14 @@ class LenswakeAppTest {
     private fun setContent(
         state: LenswakeUiState = LenswakeUiState(),
         onInstallCandidateProfile: () -> Unit = {},
+        onRunRehearsal: () -> Unit = {},
     ) {
         composeRule.setContent {
             LenswakeTheme {
                 LenswakeApp(
                     state = state,
                     onInstallCandidateProfile = onInstallCandidateProfile,
+                    onRunRehearsal = onRunRehearsal,
                 )
             }
         }
@@ -82,5 +84,28 @@ class LenswakeAppTest {
         composeRule.onNodeWithText("Candidate profile installation failed").assertExists()
         composeRule.onNodeWithText("The environment does not match.").assertExists()
         composeRule.onNodeWithText("Run rehearsal").assertIsNotEnabled()
+    }
+
+    @Test
+    fun profilesRouteDispatchesEnabledRehearsal() {
+        var rehearsalRequests = 0
+        setContent(
+            state = LenswakeUiState(
+                profiles = listOf(
+                    ProfileSummaryUiState(
+                        id = "profile-1",
+                        title = "Pixel 8 Pro",
+                        environment = "Android 17 - Pixel Camera 69481630 - en-US",
+                        compatibility = "Needs rehearsal",
+                    ),
+                ),
+                actions = UiActionAvailability(canRunRehearsal = true),
+            ),
+            onRunRehearsal = { rehearsalRequests += 1 },
+        )
+
+        composeRule.onNodeWithText("Profiles").performClick()
+        composeRule.onNodeWithText("Run rehearsal").performClick()
+        composeRule.runOnIdle { assertEquals(1, rehearsalRequests) }
     }
 }

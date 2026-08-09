@@ -13,6 +13,7 @@ data class LenswakeUiState(
     val capabilities: List<CapabilityUiState> = defaultCapabilities,
     val diagnosticEvents: List<DiagnosticEventUiState> = emptyList(),
     val profileInstall: ProfileInstallUiState = ProfileInstallUiState.Idle,
+    val rehearsal: RehearsalActionUiState = RehearsalActionUiState.Idle,
     val actions: UiActionAvailability = UiActionAvailability(),
 )
 
@@ -33,6 +34,30 @@ sealed interface ProfileInstallUiState {
     data class Failed(
         val message: String,
     ) : ProfileInstallUiState
+}
+
+@Immutable
+sealed interface RehearsalActionUiState {
+    @Immutable
+    data object Idle : RehearsalActionUiState
+
+    @Immutable
+    data object Running : RehearsalActionUiState
+
+    @Immutable
+    data class Passed(
+        val message: String,
+    ) : RehearsalActionUiState
+
+    @Immutable
+    data class Failed(
+        val message: String,
+    ) : RehearsalActionUiState
+
+    @Immutable
+    data class SafetyStopPending(
+        val message: String,
+    ) : RehearsalActionUiState
 }
 
 @Immutable
@@ -112,7 +137,7 @@ data class UiActionAvailability(
     val installCandidateProfileUnavailableReason: String = "Candidate profile availability has not been checked.",
     val canRunRehearsal: Boolean = false,
     val rehearsalUnavailableReason: String =
-        "Production rehearsal is unavailable until its durable stop backstop and coordinator are implemented.",
+        "A matching profile and the required screen-on rehearsal capabilities are not ready.",
     val canExportDiagnostics: Boolean = false,
     val exportDiagnosticsUnavailableReason: String = "There are no diagnostic events to export.",
 )
@@ -122,6 +147,12 @@ private val defaultCapabilities = listOf(
         name = "Exact alarms",
         status = CapabilityStatus.UNKNOWN,
         detail = "Exact-alarm access has not been checked.",
+        required = true,
+    ),
+    CapabilityUiState(
+        name = "Device wake",
+        status = CapabilityStatus.BLOCKED,
+        detail = "No verified device-wake implementation is configured.",
         required = true,
     ),
     CapabilityUiState(

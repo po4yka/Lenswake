@@ -59,6 +59,7 @@ class ApplicationGraph(application: Application) {
     val runtimePreflightProbe: RuntimePreflightProbe = AndroidRuntimePreflightProbe(
         context = application,
         cameraEnvironmentProbe = cameraEnvironmentProbe,
+        executionRepository = executionRepository,
     )
     private val deviceControl = AndroidDeviceControlPort(
         context = application,

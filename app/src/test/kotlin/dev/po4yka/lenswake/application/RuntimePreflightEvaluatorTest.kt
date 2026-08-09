@@ -3,11 +3,17 @@ package dev.po4yka.lenswake.application
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
+import dev.po4yka.lenswake.core.CaptureConfiguration
+import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.PreflightCheckType
 import dev.po4yka.lenswake.core.PreflightStatus
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.ScheduleReadiness
+import dev.po4yka.lenswake.core.SessionId
+import dev.po4yka.lenswake.core.SessionKind
+import dev.po4yka.lenswake.core.SessionStatus
+import dev.po4yka.lenswake.core.TimeLapseSpeed
 import java.time.Instant
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
@@ -57,6 +63,44 @@ class RuntimePreflightEvaluatorTest {
     }
 
     @Test
+    fun matchingSuccessfulRehearsalPassesButUnavailableWakeStillBlocksScheduling() {
+        val environment = environment()
+        val profile = profile(environment)
+        val rehearsal = successfulRehearsal(profile)
+        val report = evaluator.evaluate(
+            observation = observation(
+                cameraEnvironment = environment,
+                deviceWake = failed("No wake implementation is configured."),
+            ).copy(successfulRehearsals = mapOf(profile.id to rehearsal)),
+            profiles = listOf(profile),
+        )
+        val checks = report.checks.associateBy { it.type }
+
+        assertEquals(PreflightStatus.PASSED, checks.getValue(PreflightCheckType.REHEARSAL_CURRENT).status)
+        assertEquals(PreflightStatus.FAILED, checks.getValue(PreflightCheckType.DEVICE_WAKE).status)
+        val blocked = assertInstanceOf(ScheduleReadiness.Blocked::class.java, report.readiness)
+        assertEquals(listOf(PreflightCheckType.DEVICE_WAKE), blocked.blockers.map { it.type })
+    }
+
+    @Test
+    fun rehearsalProofMustMatchProfilePromotionTimestamp() {
+        val environment = environment()
+        val profile = profile(environment)
+        val staleProof = successfulRehearsal(profile).copy(
+            stoppedVerifiedAt = profile.verifiedAt?.minusSeconds(1),
+        )
+
+        val check = evaluator.evaluate(
+            observation = observation(cameraEnvironment = environment).copy(
+                successfulRehearsals = mapOf(profile.id to staleProof),
+            ),
+            profiles = listOf(profile),
+        ).checks.single { it.type == PreflightCheckType.REHEARSAL_CURRENT }
+
+        assertEquals(PreflightStatus.FAILED, check.status)
+    }
+
+    @Test
     fun environmentDriftRequiresRehearsalAndSchemaDriftIsIncompatible() {
         val calibrated = environment()
         val fingerprintDrift = calibrated.copy(androidBuildFingerprint = "google/husky/new-build")
@@ -103,6 +147,7 @@ class RuntimePreflightEvaluatorTest {
         pixelCameraInstalled: RuntimeCapabilityObservation = passed("Pixel Camera installed."),
         cameraEnvironment: PixelCameraEnvironment? = environment(),
         secureCameraResolves: RuntimeCapabilityObservation = passed("Secure camera resolves."),
+        deviceWake: RuntimeCapabilityObservation = passed("Device wake available."),
         accessibilityEnabled: RuntimeCapabilityObservation = passed("Accessibility enabled."),
         accessibilityConnected: RuntimeCapabilityObservation = passed("Accessibility connected."),
     ) = RuntimePreflightObservation(
@@ -110,6 +155,7 @@ class RuntimePreflightEvaluatorTest {
         pixelCameraInstalled = pixelCameraInstalled,
         cameraEnvironment = cameraEnvironment,
         secureCameraResolves = secureCameraResolves,
+        deviceWake = deviceWake,
         accessibilityEnabled = accessibilityEnabled,
         accessibilityConnected = accessibilityConnected,
     )
@@ -121,6 +167,29 @@ class RuntimePreflightEvaluatorTest {
         compatibility = ProfileCompatibility.VERIFIED,
         verifiedAt = Instant.parse("2026-08-09T12:00:00Z"),
     )
+
+    private fun successfulRehearsal(profile: PixelCameraProfile): ExecutionSession {
+        val stoppedAt = checkNotNull(profile.verifiedAt)
+        val startedAt = stoppedAt.minusSeconds(10)
+        return ExecutionSession(
+            id = SessionId("rehearsal-1"),
+            executionKey = "rehearsal/rehearsal-1",
+            kind = SessionKind.REHEARSAL,
+            scheduleId = null,
+            scheduleName = "Rehearsal",
+            profileId = profile.id,
+            capture = CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120),
+            expectedStartAt = startedAt.minusSeconds(60),
+            expectedStopAt = stoppedAt.plusSeconds(30),
+            status = SessionStatus.COMPLETED,
+            recordActionAt = startedAt,
+            recordingVerifiedAt = startedAt,
+            stopActionAt = stoppedAt,
+            stoppedVerifiedAt = stoppedAt,
+            createdAt = startedAt.minusSeconds(60),
+            updatedAt = stoppedAt,
+        )
+    }
 
     private fun environment() = PixelCameraEnvironment(
         deviceManufacturer = "Google",

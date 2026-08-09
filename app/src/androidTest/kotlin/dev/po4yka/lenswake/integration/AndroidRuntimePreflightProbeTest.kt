@@ -22,6 +22,7 @@ class AndroidRuntimePreflightProbeTest {
         val probe = AndroidRuntimePreflightProbe(
             context = application,
             cameraEnvironmentProbe = AndroidPixelCameraEnvironmentProbe(application),
+            executionRepository = application.graph.executionRepository,
         )
 
         withTimeout(1_000) {
@@ -30,11 +31,12 @@ class AndroidRuntimePreflightProbeTest {
     }
 
     @Test
-    fun reportsObservedTargetCapabilitiesWithoutGrantingAccess() {
+    fun reportsObservedTargetCapabilitiesWithoutGrantingAccess() = runBlocking {
         val application = ApplicationProvider.getApplicationContext<LenswakeApplication>()
         val report = AndroidRuntimePreflightProbe(
             context = application,
             cameraEnvironmentProbe = AndroidPixelCameraEnvironmentProbe(application),
+            executionRepository = application.graph.executionRepository,
         ).inspect(emptyList())
 
         val checks = report.checks.associateBy { it.type }
@@ -57,6 +59,7 @@ class AndroidRuntimePreflightProbeTest {
         )
         assertTrue(checks.containsKey(PreflightCheckType.ACCESSIBILITY_ENABLED))
         assertTrue(checks.containsKey(PreflightCheckType.ACCESSIBILITY_CONNECTED))
+        assertEquals(PreflightStatus.FAILED, checks.getValue(PreflightCheckType.DEVICE_WAKE).status)
         assertTrue(report.readiness is dev.po4yka.lenswake.core.ScheduleReadiness.Blocked)
     }
 }

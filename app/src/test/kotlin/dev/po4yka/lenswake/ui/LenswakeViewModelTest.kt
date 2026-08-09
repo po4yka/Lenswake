@@ -22,6 +22,7 @@ import dev.po4yka.lenswake.core.PreflightStatus
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.RecordingSchedule
+import dev.po4yka.lenswake.core.RehearsalRequest
 import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.ScheduleRepository
 import dev.po4yka.lenswake.core.SessionId
@@ -31,8 +32,12 @@ import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.application.RuntimePreflightProbe
 import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfile
 import dev.po4yka.lenswake.application.KnownPixelCameraProfileCatalog
+import dev.po4yka.lenswake.application.RehearsalCoordinator
+import dev.po4yka.lenswake.application.RehearsalResult
+import dev.po4yka.lenswake.application.RehearsalResultCode
 import dev.po4yka.lenswake.automation.PortResult
 import java.time.Instant
+import java.time.Duration
 import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -106,6 +111,7 @@ class LenswakeViewModelTest {
             executions,
             RuntimePreflightProbe { blockedPreflight() },
             installUseCase(profiles),
+            unavailableRehearsalCoordinator(),
         )
 
         try {
@@ -139,6 +145,7 @@ class LenswakeViewModelTest {
             FakeExecutionRepository(),
             probe,
             installUseCase(FakeProfileRepository()),
+            unavailableRehearsalCoordinator(),
         )
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             viewModel.state.collect()
@@ -177,6 +184,7 @@ class LenswakeViewModelTest {
             FakeExecutionRepository(),
             RuntimePreflightProbe { blockedPreflight() },
             installUseCase(profiles),
+            unavailableRehearsalCoordinator(),
         )
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             viewModel.state.collect()
@@ -213,6 +221,7 @@ class LenswakeViewModelTest {
                 environmentProbe = { PortResult.Observed(unsupported) },
                 profileRepository = profiles,
             ),
+            unavailableRehearsalCoordinator(),
         )
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             viewModel.state.collect()
@@ -225,6 +234,44 @@ class LenswakeViewModelTest {
         assertEquals(
             "No candidate profile matches Pixel 8 Pro, Android SDK 37, Pixel Camera ${Long.MAX_VALUE}, and ${unsupported.localeTag}.",
             (failed.profileInstall as ProfileInstallUiState.Failed).message,
+        )
+    }
+
+    @Test
+    fun runRehearsalUsesBoundedProductionRequestAndSurfacesPendingSafetyStop() = runTest {
+        val profiles = FakeProfileRepository().also { it.save(profile()) }
+        var received: RehearsalRequest? = null
+        val coordinator = RehearsalCoordinator { request ->
+            received = request
+            RehearsalResult.SafetyStopPending(
+                sessionId = sessionId,
+                message = "STOP remains unverified.",
+            )
+        }
+        val viewModel = LenswakeViewModel(
+            FakeScheduleRepository(),
+            profiles,
+            FakeExecutionRepository(),
+            RuntimePreflightProbe { rehearsalEligiblePreflight() },
+            installUseCase(profiles),
+            coordinator,
+        )
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.state.collect()
+        }
+
+        assertEquals(true, viewModel.state.first { it.actions.canRunRehearsal }.actions.canRunRehearsal)
+        viewModel.runRehearsal()
+
+        val pending = viewModel.state.first { it.rehearsal is RehearsalActionUiState.SafetyStopPending }
+        assertEquals(profileId, received?.profileId)
+        assertEquals(Duration.ofSeconds(10), received?.recordingDuration)
+        assertEquals(TimeLapseSpeed.X120, received?.capture?.speed)
+        assertEquals(dev.po4yka.lenswake.core.LensSelection.REAR_MAIN, received?.capture?.lens)
+        assertFalse(pending.actions.canRunRehearsal)
+        assertEquals(
+            "STOP is not yet verified; wait for the independent safety alarm before retrying.",
+            pending.actions.rehearsalUnavailableReason,
         )
     }
 
@@ -292,7 +339,7 @@ class LenswakeViewModelTest {
         private val changes = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
         override val invalidations: Flow<Unit> = changes
 
-        override fun inspect(profiles: List<PixelCameraProfile>): PreflightReport = report
+        override suspend fun inspect(profiles: List<PixelCameraProfile>): PreflightReport = report
 
         fun invalidate() {
             check(changes.tryEmit(Unit)) { "Preflight invalidation was not delivered" }
@@ -388,6 +435,43 @@ class LenswakeViewModelTest {
             ),
         )
 
+        fun rehearsalEligiblePreflight() = PreflightReport(
+            checks = listOf(
+                PreflightCheckType.EXACT_ALARMS,
+                PreflightCheckType.PIXEL_CAMERA_INSTALLED,
+                PreflightCheckType.SECURE_CAMERA_RESOLVES,
+                PreflightCheckType.ACCESSIBILITY_ENABLED,
+                PreflightCheckType.ACCESSIBILITY_CONNECTED,
+                PreflightCheckType.PROFILE_AVAILABLE,
+            ).map { type ->
+                PreflightCheck(
+                    type = type,
+                    severity = PreflightSeverity.BLOCKING,
+                    status = PreflightStatus.PASSED,
+                    message = "$type passed.",
+                )
+            } + listOf(
+                PreflightCheck(
+                    type = PreflightCheckType.DEVICE_WAKE,
+                    severity = PreflightSeverity.BLOCKING,
+                    status = PreflightStatus.FAILED,
+                    message = "Device wake is unavailable.",
+                ),
+                PreflightCheck(
+                    type = PreflightCheckType.PROFILE_COMPATIBILITY,
+                    severity = PreflightSeverity.BLOCKING,
+                    status = PreflightStatus.FAILED,
+                    message = "Profile needs rehearsal.",
+                ),
+                PreflightCheck(
+                    type = PreflightCheckType.REHEARSAL_CURRENT,
+                    severity = PreflightSeverity.BLOCKING,
+                    status = PreflightStatus.FAILED,
+                    message = "Rehearsal is not current.",
+                ),
+            ),
+        )
+
         fun installUseCase(repository: AutomationProfileRepository) = InstallKnownPixelCameraProfile(
             environmentProbe = {
                 PortResult.Observed(
@@ -396,6 +480,13 @@ class LenswakeViewModelTest {
             },
             profileRepository = repository,
         )
+
+        fun unavailableRehearsalCoordinator() = RehearsalCoordinator {
+            RehearsalResult.Rejected(
+                code = RehearsalResultCode.START_FAILED,
+                message = "Not used by this test",
+            )
+        }
     }
 }
 

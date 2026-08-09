@@ -62,6 +62,7 @@ fun LenswakeApp() {
     LenswakeApp(
         state = state,
         onInstallCandidateProfile = viewModel::installCandidateProfile,
+        onRunRehearsal = viewModel::runRehearsal,
     )
 }
 
@@ -70,6 +71,7 @@ fun LenswakeApp() {
 fun LenswakeApp(
     state: LenswakeUiState,
     onInstallCandidateProfile: () -> Unit = {},
+    onRunRehearsal: () -> Unit = {},
 ) {
     val backStack = rememberNavBackStack(SchedulesRoute)
     val currentDestination = backStack.lastOrNull()
@@ -111,6 +113,7 @@ fun LenswakeApp(
                         contentPadding = contentPadding,
                         onOpenSetup = { backStack.add(SetupRoute) },
                         onInstallCandidateProfile = onInstallCandidateProfile,
+                        onRunRehearsal = onRunRehearsal,
                     )
                 }
                 entry<DiagnosticsRoute> {
