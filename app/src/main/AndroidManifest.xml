@@ -3,6 +3,8 @@
 
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
 
     <queries>
         <package android:name="com.google.android.GoogleCamera" />
@@ -26,14 +28,6 @@
         </activity>
 
         <receiver
-            android:name=".alarm.StartAlarmReceiver"
-            android:exported="false" />
-
-        <receiver
-            android:name=".alarm.StopAlarmReceiver"
-            android:exported="false" />
-
-        <receiver
             android:name=".alarm.AlarmRecoveryReceiver"
             android:exported="false">
             <intent-filter>
@@ -44,6 +38,12 @@
                 <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
+
+        <service
+            android:name=".alarm.AutomationExecutionService"
+            android:exported="false"
+            android:foregroundServiceType="systemExempted"
+            android:stopWithTask="false" />
 
         <service
             android:name=".accessibility.PixelCameraAccessibilityService"

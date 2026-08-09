@@ -23,13 +23,13 @@ class AlarmContractTest {
 
     @Test
     fun startAndStopHaveIndependentPendingIntentIdentities() {
-        val start = PendingIntent.getBroadcast(
+        val start = PendingIntent.getForegroundService(
             context,
             1_001,
             AlarmContract.intent(context, schedule, AlarmKind.START),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val stop = PendingIntent.getBroadcast(
+        val stop = PendingIntent.getForegroundService(
             context,
             1_002,
             AlarmContract.intent(context, schedule, AlarmKind.STOP),
@@ -37,6 +37,14 @@ class AlarmContractTest {
         )
         try {
             assertNotEquals(start, stop)
+            assertEquals(
+                AutomationExecutionService::class.java.name,
+                AlarmContract.intent(context, schedule, AlarmKind.START).component?.className,
+            )
+            assertEquals(
+                AutomationExecutionService::class.java.name,
+                AlarmContract.intent(context, schedule, AlarmKind.STOP).component?.className,
+            )
         } finally {
             start.cancel()
             stop.cancel()
@@ -45,7 +53,7 @@ class AlarmContractTest {
 
     @Test
     fun scheduleRevisionUpdatesPayloadWithoutChangingStartIdentity() {
-        val initial = PendingIntent.getBroadcast(
+        val initial = PendingIntent.getForegroundService(
             context,
             1_001,
             AlarmContract.intent(context, schedule, AlarmKind.START),
@@ -56,7 +64,7 @@ class AlarmContractTest {
             stopAt = schedule.stopAt.plusSeconds(60),
             updatedAt = schedule.updatedAt.plusSeconds(30),
         )
-        val replacement = PendingIntent.getBroadcast(
+        val replacement = PendingIntent.getForegroundService(
             context,
             1_001,
             AlarmContract.intent(context, changed, AlarmKind.START),
@@ -85,6 +93,18 @@ class AlarmContractTest {
         )
 
         assertEquals(null, result)
+    }
+
+    @Test
+    fun serviceParserInfersStartAndStopKindsFromExplicitActions() {
+        assertEquals(
+            AlarmKind.START,
+            AlarmContract.parse(AlarmContract.intent(context, schedule, AlarmKind.START))?.kind,
+        )
+        assertEquals(
+            AlarmKind.STOP,
+            AlarmContract.parse(AlarmContract.intent(context, schedule, AlarmKind.STOP))?.kind,
+        )
     }
 }
 

@@ -11,55 +11,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
-abstract class AutomationAlarmReceiver(
-    private val kind: AlarmKind,
-) : BroadcastReceiver() {
-    final override fun onReceive(context: Context, intent: Intent) {
-        val pendingResult = goAsync()
-        val scope = CoroutineScope(
-            SupervisorJob() + Dispatchers.IO + CoroutineName("lenswake-${kind.name.lowercase()}-alarm"),
-        )
-        scope.launch {
-            try {
-                val trigger = AlarmContract.parse(intent, kind)
-                if (trigger == null) {
-                    Log.e(TAG, "Rejected malformed ${kind.name} alarm")
-                    return@launch
-                }
-                val provider = context.applicationContext as? AlarmComponentProvider
-                if (provider == null) {
-                    Log.e(TAG, "Application does not provide AlarmComponentProvider")
-                    return@launch
-                }
-                when (val result = provider.alarmTriggerCoordinator.handle(trigger)) {
-                    AlarmHandlingResult.Accepted -> Log.i(
-                        TAG,
-                        "${kind.name} alarm durably accepted for ${trigger.scheduleId.value}",
-                    )
-                    is AlarmHandlingResult.Rejected -> Log.e(
-                        TAG,
-                        "${kind.name} alarm rejected for ${trigger.scheduleId.value}: ${result.reason}",
-                        result.cause,
-                    )
-                }
-            } catch (error: RuntimeException) {
-                Log.e(TAG, "Unhandled ${kind.name} alarm failure", error)
-            } finally {
-                pendingResult.finish()
-                scope.cancel()
-            }
-        }
-    }
-
-    private companion object {
-        const val TAG = "LenswakeAlarm"
-    }
-}
-
-class StartAlarmReceiver : AutomationAlarmReceiver(AlarmKind.START)
-
-class StopAlarmReceiver : AutomationAlarmReceiver(AlarmKind.STOP)
-
 class AlarmRecoveryReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action !in SUPPORTED_ACTIONS) return

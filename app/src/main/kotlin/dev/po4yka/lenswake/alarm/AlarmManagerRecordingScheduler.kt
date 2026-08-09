@@ -45,9 +45,9 @@ class AlarmManagerRecordingScheduler(
 
     override suspend fun cancel(scheduleId: ScheduleId): Result<Unit> = runCatching {
         AlarmKind.entries.forEach { kind ->
-            val pendingIntent = PendingIntent.getBroadcast(
+            val pendingIntent = PendingIntent.getForegroundService(
                 applicationContext,
-                requestCode(kind),
+                AlarmContract.requestCode(kind),
                 AlarmContract.identityIntent(applicationContext, scheduleId, kind),
                 PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
             )
@@ -111,9 +111,9 @@ class AlarmManagerRecordingScheduler(
         }
         validate(schedule, kind, triggerAt, clock.now())
         requireExactAlarmCapability()
-        val pendingIntent = PendingIntent.getBroadcast(
+        val pendingIntent = PendingIntent.getForegroundService(
             applicationContext,
-            requestCode(kind),
+            AlarmContract.requestCode(kind),
             AlarmContract.intent(applicationContext, schedule, kind),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -167,15 +167,6 @@ class AlarmManagerRecordingScheduler(
         }
     }
 
-    private fun requestCode(kind: AlarmKind): Int = when (kind) {
-        AlarmKind.START -> START_REQUEST_CODE
-        AlarmKind.STOP -> STOP_REQUEST_CODE
-    }
-
-    private companion object {
-        const val START_REQUEST_CODE = 1_001
-        const val STOP_REQUEST_CODE = 1_002
-    }
 }
 
 fun interface ExactAlarmCapability {
