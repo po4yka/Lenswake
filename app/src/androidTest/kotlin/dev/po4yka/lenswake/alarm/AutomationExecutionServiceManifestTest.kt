@@ -32,6 +32,20 @@ class AutomationExecutionServiceManifestTest {
     }
 
     @Test
+    fun recoveryServiceIsPrivateAndDeclaresSystemExemptedType() {
+        val info = context.packageManager.getServiceInfo(
+            ComponentName(context, AlarmRecoveryService::class.java),
+            PackageManager.ComponentInfoFlags.of(0),
+        )
+
+        assertFalse(info.exported)
+        assertTrue(
+            info.foregroundServiceType and ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED != 0,
+        )
+        assertEquals(android.app.Service.START_REDELIVER_INTENT, ALARM_RECOVERY_RESTART_MODE)
+    }
+
+    @Test
     fun manifestDeclaresBothForegroundServicePermissions() {
         val packageInfo = context.packageManager.getPackageInfo(
             context.packageName,

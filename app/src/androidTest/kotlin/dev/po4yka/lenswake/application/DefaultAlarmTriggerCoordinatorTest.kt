@@ -7,6 +7,8 @@ import dev.po4yka.lenswake.alarm.AlarmTrigger
 import dev.po4yka.lenswake.automation.AutomationEngine
 import dev.po4yka.lenswake.automation.AutomationRunResult
 import dev.po4yka.lenswake.core.AutomationEvent
+import dev.po4yka.lenswake.core.AutomationFailure
+import dev.po4yka.lenswake.core.AutomationFailureCode
 import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.ExecutionApplyResult
 import dev.po4yka.lenswake.core.ExecutionChange
@@ -90,7 +92,7 @@ class DefaultAlarmTriggerCoordinatorTest {
             startTrigger(schedule.updatedAt),
         )
 
-        assertTrue(result is AlarmHandlingResult.Rejected)
+        assertTrue(result is AlarmHandlingResult.Retryable)
         assertTrue(engine.startIds.isEmpty())
         assertTrue(executions.snapshots.isEmpty())
     }
@@ -108,7 +110,7 @@ class DefaultAlarmTriggerCoordinatorTest {
             snapshotTimeoutMillis = 25,
         ).handle(startTrigger(schedule.updatedAt))
 
-        assertTrue(result is AlarmHandlingResult.Rejected)
+        assertTrue(result is AlarmHandlingResult.Retryable)
         assertTrue(engine.startIds.isEmpty())
         assertTrue(executions.snapshots.isEmpty())
     }
@@ -121,9 +123,61 @@ class DefaultAlarmTriggerCoordinatorTest {
             startTrigger(schedule.updatedAt.minusSeconds(1)),
         )
 
-        assertTrue(result is AlarmHandlingResult.Rejected)
+        assertTrue(result is AlarmHandlingResult.TerminalRejected)
         assertTrue(executions.sessions.isEmpty())
         assertTrue(engine.startIds.isEmpty())
+    }
+
+    @Test
+    fun enginePersistenceFailureIsRetryable() = runBlocking {
+        val executions = FakeExecutionRepository()
+        val engine = FakeAutomationEngine(executions) { session ->
+            AutomationRunResult.PersistenceFailure(
+                session = session,
+                failure = AutomationFailure(
+                    AutomationFailureCode.SESSION_PERSISTENCE_FAILED,
+                    "database unavailable",
+                ),
+            )
+        }
+
+        val result = coordinator(executions, engine).handle(startTrigger(schedule.updatedAt))
+
+        assertTrue(result is AlarmHandlingResult.Retryable)
+    }
+
+    @Test
+    fun engineRevisionConflictIsRetryable() = runBlocking {
+        val executions = FakeExecutionRepository()
+        val engine = FakeAutomationEngine(executions) { session ->
+            AutomationRunResult.RevisionConflict(
+                session = session,
+                expectedRevision = session.revision,
+                actualRevision = session.revision + 1,
+            )
+        }
+
+        val result = coordinator(executions, engine).handle(startTrigger(schedule.updatedAt))
+
+        assertTrue(result is AlarmHandlingResult.Retryable)
+    }
+
+    @Test
+    fun persistedEngineFailureIsTerminal() = runBlocking {
+        val executions = FakeExecutionRepository()
+        val engine = FakeAutomationEngine(executions) { session ->
+            AutomationRunResult.Failed(
+                session = session,
+                failure = AutomationFailure(
+                    AutomationFailureCode.RECORDING_NOT_CONFIRMED,
+                    "recording was not verified",
+                ),
+            )
+        }
+
+        val result = coordinator(executions, engine).handle(startTrigger(schedule.updatedAt))
+
+        assertTrue(result is AlarmHandlingResult.TerminalRejected)
     }
 
     @Test
@@ -292,6 +346,7 @@ private class FakeExecutionRepository : ExecutionRepository, EnvironmentSnapshot
 
 private class FakeAutomationEngine(
     private val executions: FakeExecutionRepository,
+    private val startResult: ((ExecutionSession) -> AutomationRunResult)? = null,
 ) : AutomationEngine {
     val startIds = mutableListOf<SessionId>()
     val startSawPersistedSnapshot = mutableListOf<Boolean>()
@@ -302,7 +357,7 @@ private class FakeAutomationEngine(
         val session = requireNotNull(executions.get(sessionId))
         startSawPersistedSnapshot += session.environmentSnapshotId != null &&
             executions.getEnvironmentSnapshotForSession(sessionId) != null
-        return AutomationRunResult.AlreadySatisfied(session)
+        return startResult?.invoke(session) ?: AutomationRunResult.AlreadySatisfied(session)
     }
 
     override suspend fun stop(sessionId: SessionId): AutomationRunResult {

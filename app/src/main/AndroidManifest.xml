@@ -46,6 +46,12 @@
             android:stopWithTask="false" />
 
         <service
+            android:name=".alarm.AlarmRecoveryService"
+            android:exported="false"
+            android:foregroundServiceType="systemExempted"
+            android:stopWithTask="false" />
+
+        <service
             android:name=".accessibility.PixelCameraAccessibilityService"
             android:exported="true"
             android:label="Lenswake Pixel Camera automation"

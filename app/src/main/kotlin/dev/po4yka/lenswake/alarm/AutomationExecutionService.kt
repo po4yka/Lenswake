@@ -22,7 +22,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
 
 internal const val AUTOMATION_SERVICE_RESTART_MODE: Int = Service.START_REDELIVER_INTENT
 
@@ -38,8 +37,7 @@ class AutomationExecutionService : Service() {
     )
     private val queue = Channel<QueuedTrigger>(Channel.UNLIMITED)
     private val queuedKeys = ConcurrentHashMap.newKeySet<String>()
-    private val queuedCount = AtomicInteger()
-    private val latestStartId = AtomicInteger()
+    private val lifecycleGate = AlarmServiceLifecycleGate()
     private lateinit var notificationManager: NotificationManager
     private lateinit var alarmManager: AlarmManager
     private lateinit var journal: AlarmDeliveryJournal
@@ -61,33 +59,33 @@ class AutomationExecutionService : Service() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        latestStartId.set(startId)
-        val currentEntry = intent?.let(journal::persist)
-        if (intent != null && currentEntry == null) {
-            Log.e(TAG, "Rejected malformed foreground-service alarm intent")
-            stopSelfResult(startId)
-            return START_NOT_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int =
+        lifecycleGate.onStart(startId) {
+            val currentEntry = intent?.let(journal::persist)
+            if (intent != null && currentEntry == null) {
+                Log.e(TAG, "Rejected malformed foreground-service alarm intent")
+                stopSelfResult(startId)
+                return@onStart START_NOT_STICKY
+            }
+            val pendingEntries = if (!journalRestored) {
+                journalRestored = true
+                journal.entries()
+            } else {
+                listOfNotNull(currentEntry)
+            }
+            if (pendingEntries.isEmpty()) {
+                Log.e(TAG, "No redelivered intent or durable journal entry is available")
+                stopSelfResult(startId)
+                return@onStart START_NOT_STICKY
+            }
+            val accepted = pendingEntries.map(::enqueue).all { it }
+            if (!accepted) {
+                Log.e(TAG, "Could not enqueue durable alarm journal entries")
+                stopSelfResult(startId)
+                return@onStart AUTOMATION_SERVICE_RESTART_MODE
+            }
+            AUTOMATION_SERVICE_RESTART_MODE
         }
-        val pendingEntries = if (!journalRestored) {
-            journalRestored = true
-            journal.entries()
-        } else {
-            listOfNotNull(currentEntry)
-        }
-        if (pendingEntries.isEmpty()) {
-            Log.e(TAG, "No redelivered intent or durable journal entry is available")
-            stopSelfResult(startId)
-            return START_NOT_STICKY
-        }
-        val accepted = pendingEntries.map(::enqueue).all { it }
-        if (!accepted) {
-            Log.e(TAG, "Could not enqueue durable alarm journal entries")
-            stopSelfResult(startId)
-            return AUTOMATION_SERVICE_RESTART_MODE
-        }
-        return AUTOMATION_SERVICE_RESTART_MODE
-    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -122,12 +120,18 @@ class AutomationExecutionService : Service() {
                         "${trigger.kind} automation completed for ${trigger.scheduleId.value}",
                     )
                 }
-                is AlarmHandlingResult.Rejected -> {
-                    removeFromJournal = result.cause == null
-                    if (!removeFromJournal) scheduleRetry(queued)
+                is AlarmHandlingResult.TerminalRejected -> {
+                    removeFromJournal = true
                     Log.e(
                         TAG,
-                        "${trigger.kind} automation rejected for ${trigger.scheduleId.value}: ${result.reason}",
+                        "${trigger.kind} automation terminally rejected for ${trigger.scheduleId.value}: ${result.reason}",
+                    )
+                }
+                is AlarmHandlingResult.Retryable -> {
+                    scheduleRetry(queued)
+                    Log.e(
+                        TAG,
+                        "${trigger.kind} automation needs reconciliation for ${trigger.scheduleId.value}: ${result.reason}",
                         result.cause,
                     )
                 }
@@ -151,14 +155,14 @@ class AutomationExecutionService : Service() {
 
     private fun enqueue(entry: AlarmDeliveryJournal.Entry): Boolean {
         if (!queuedKeys.add(entry.key)) return true
-        queuedCount.incrementAndGet()
+        lifecycleGate.workAccepted()
         val queued = QueuedTrigger(
             entry = entry,
             enqueuedAtElapsedRealtime = SystemClock.elapsedRealtime(),
         )
         if (queue.trySend(queued).isSuccess) return true
         queuedKeys.remove(entry.key)
-        queuedCount.decrementAndGet()
+        lifecycleGate.workRejected()
         return false
     }
 
@@ -167,8 +171,8 @@ class AutomationExecutionService : Service() {
             Log.e(TAG, "Could not clear completed durable alarm journal entry")
         }
         queuedKeys.remove(queued.entry.key)
-        if (queuedCount.decrementAndGet() == 0) {
-            stopSelfResult(latestStartId.get())
+        lifecycleGate.complete { latestStartId ->
+            stopSelfResult(latestStartId)
         }
     }
 

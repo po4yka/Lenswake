@@ -4,35 +4,16 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import kotlinx.coroutines.CoroutineName
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
 
 class AlarmRecoveryReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action !in SUPPORTED_ACTIONS) return
-        val pendingResult = goAsync()
-        val scope = CoroutineScope(
-            SupervisorJob() + Dispatchers.IO + CoroutineName("lenswake-alarm-recovery"),
-        )
-        scope.launch {
-            try {
-                val provider = context.applicationContext as? AlarmComponentProvider
-                if (provider == null) {
-                    Log.e(TAG, "Application does not provide AlarmComponentProvider")
-                    return@launch
-                }
-                provider.alarmRecoveryCoordinator.restoreFutureSchedules()
-                    .onFailure { Log.e(TAG, "Future alarm restoration failed", it) }
-            } catch (error: RuntimeException) {
-                Log.e(TAG, "Unhandled future alarm restoration failure", error)
-            } finally {
-                pendingResult.finish()
-                scope.cancel()
-            }
+        try {
+            context.startForegroundService(
+                Intent(context, AlarmRecoveryService::class.java).setAction(intent.action),
+            )
+        } catch (error: RuntimeException) {
+            Log.e(TAG, "Could not start restartable alarm recovery service", error)
         }
     }
 

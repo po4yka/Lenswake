@@ -1,0 +1,65 @@
+package dev.po4yka.lenswake.alarm
+
+import android.app.AlarmManager
+import android.app.PendingIntent
+import android.content.Context
+
+internal sealed interface JournalRearmResult {
+    data class Rearmed(val count: Int) : JournalRearmResult
+    data object ExactAlarmsUnavailable : JournalRearmResult
+    data class Failed(val cause: Throwable) : JournalRearmResult
+}
+
+internal interface ExactAlarmRearmBackend {
+    fun canScheduleExactAlarms(): Boolean
+    fun rearm(trigger: AlarmTrigger, triggerAtEpochMillis: Long)
+}
+
+internal class AndroidExactAlarmRearmBackend(
+    private val context: Context,
+) : ExactAlarmRearmBackend {
+    private val alarmManager = context.getSystemService(AlarmManager::class.java)
+
+    override fun canScheduleExactAlarms(): Boolean = alarmManager.canScheduleExactAlarms()
+
+    override fun rearm(trigger: AlarmTrigger, triggerAtEpochMillis: Long) {
+        val pendingIntent = PendingIntent.getForegroundService(
+            context,
+            AlarmContract.requestCode(trigger.kind),
+            AlarmContract.triggerIntent(context, trigger),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        alarmManager.setExactAndAllowWhileIdle(
+            AlarmManager.RTC_WAKEUP,
+            triggerAtEpochMillis,
+            pendingIntent,
+        )
+    }
+}
+
+/** Re-arms journal transport only; it never calls the camera or automation coordinator. */
+internal class AlarmJournalReconciler(
+    private val journal: AlarmDeliveryJournal,
+    private val backend: ExactAlarmRearmBackend,
+    private val nowEpochMillis: () -> Long = System::currentTimeMillis,
+) {
+    fun rearmAll(): JournalRearmResult {
+        val entries = journal.entries()
+        if (entries.isEmpty()) return JournalRearmResult.Rearmed(0)
+        if (!backend.canScheduleExactAlarms()) return JournalRearmResult.ExactAlarmsUnavailable
+        return try {
+            val firstTriggerAt = nowEpochMillis() + REARM_DELAY_MILLIS
+            entries.forEachIndexed { index, entry ->
+                backend.rearm(entry.trigger, firstTriggerAt + index * REARM_STAGGER_MILLIS)
+            }
+            JournalRearmResult.Rearmed(entries.size)
+        } catch (error: RuntimeException) {
+            JournalRearmResult.Failed(error)
+        }
+    }
+
+    private companion object {
+        const val REARM_DELAY_MILLIS = 30_000L
+        const val REARM_STAGGER_MILLIS = 1_000L
+    }
+}

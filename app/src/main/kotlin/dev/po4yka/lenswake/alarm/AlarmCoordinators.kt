@@ -5,7 +5,12 @@ import dev.po4yka.lenswake.core.RecordingScheduler
 sealed interface AlarmHandlingResult {
     data object Accepted : AlarmHandlingResult
 
-    data class Rejected(val reason: String, val cause: Throwable? = null) : AlarmHandlingResult
+    data class TerminalRejected(val reason: String) : AlarmHandlingResult
+
+    data class Retryable(
+        val reason: String,
+        val cause: Throwable? = null,
+    ) : AlarmHandlingResult
 }
 
 /**
