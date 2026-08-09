@@ -1,0 +1,181 @@
+package dev.po4yka.lenswake.core
+
+import java.time.Instant
+
+data class ExecutionSession(
+    val id: SessionId,
+    val executionKey: String,
+    val kind: SessionKind,
+    val scheduleId: ScheduleId?,
+    val scheduleName: String?,
+    val profileId: ProfileId,
+    val capture: CaptureConfiguration,
+    val expectedStartAt: Instant,
+    val expectedStopAt: Instant,
+    val alarmStartDeliveredAt: Instant? = null,
+    val alarmStopDeliveredAt: Instant? = null,
+    val status: SessionStatus,
+    val currentAutomationState: AutomationStateName? = null,
+    val recordActionAt: Instant? = null,
+    val recordingVerifiedAt: Instant? = null,
+    val stopActionAt: Instant? = null,
+    val stoppedVerifiedAt: Instant? = null,
+    val environmentSnapshotId: EnvironmentSnapshotId? = null,
+    val failure: AutomationFailure? = null,
+    val revision: Long = 0,
+    val createdAt: Instant,
+    val updatedAt: Instant,
+) {
+    init {
+        require(executionKey.isNotBlank()) { "Execution key must not be blank" }
+        require(kind != SessionKind.SCHEDULED || scheduleId != null) {
+            "Scheduled execution must reference its schedule"
+        }
+        require(expectedStopAt.isAfter(expectedStartAt)) {
+            "Expected stop must be after expected start"
+        }
+        require(revision >= 0) { "Execution revision must not be negative" }
+        require(!updatedAt.isBefore(createdAt)) { "Execution update cannot precede creation" }
+    }
+}
+
+enum class SessionKind {
+    SCHEDULED,
+    REHEARSAL,
+}
+
+/**
+ * A compare-and-set update to an [ExecutionSession].
+ *
+ * The repository applies this change only if the stored revision equals [expectedRevision].
+ * [updatedSession] must carry the next consecutive revision, preventing callers from silently
+ * skipping or reusing a state transition.
+ */
+data class ExecutionChange(
+    val expectedRevision: Long,
+    val updatedSession: ExecutionSession,
+) {
+    init {
+        require(expectedRevision >= 0) { "Expected revision must not be negative" }
+        require(expectedRevision < Long.MAX_VALUE) { "Expected revision cannot be incremented" }
+        require(updatedSession.revision == expectedRevision + 1) {
+            "Updated session revision must immediately follow expected revision"
+        }
+    }
+}
+
+sealed interface ExecutionApplyResult {
+    data class Applied(
+        val session: ExecutionSession,
+    ) : ExecutionApplyResult
+
+    data class RevisionConflict(
+        val expectedRevision: Long,
+        val actualRevision: Long?,
+    ) : ExecutionApplyResult
+}
+
+enum class SessionStatus {
+    PENDING,
+    STARTING,
+    RECORDING,
+    STOPPING,
+    COMPLETED,
+    FAILED,
+    CANCELLED,
+}
+
+enum class AutomationStateName {
+    START_TRIGGERED,
+    VALIDATING_SESSION,
+    CAPTURING_ENVIRONMENT,
+    CHECKING_PREREQUISITES,
+    WAKING_DEVICE,
+    LAUNCHING_SECURE_CAMERA,
+    WAITING_FOR_PIXEL_CAMERA,
+    INSPECTING_CAMERA_STATE,
+    SELECTING_VIDEO,
+    VERIFYING_VIDEO,
+    SELECTING_TIME_LAPSE,
+    VERIFYING_TIME_LAPSE,
+    SELECTING_SPEED,
+    VERIFYING_SPEED,
+    STARTING_RECORDING,
+    VERIFYING_RECORDING,
+    RECORDING,
+    STOP_TRIGGERED,
+    VALIDATING_ACTIVE_SESSION,
+    INSPECTING_DEVICE,
+    WAKING_IF_REQUIRED,
+    LOCATING_PIXEL_CAMERA,
+    INSPECTING_RECORDING_STATE,
+    STOPPING_RECORDING,
+    VERIFYING_STOPPED,
+    COMPLETED,
+    RETRYING,
+    FAILED,
+    CANCELLED,
+}
+
+enum class AutomationOperation {
+    WAKE_DEVICE,
+    LAUNCH_CAMERA,
+    INSPECT_CAMERA,
+    SELECT_VIDEO,
+    SELECT_TIME_LAPSE,
+    SELECT_TIME_LAPSE_SPEED,
+    START_RECORDING,
+    STOP_RECORDING,
+    VERIFY_RECORDING,
+    VERIFY_STOPPED,
+}
+
+enum class AutomationOutcome {
+    STARTED,
+    DISPATCHED,
+    SUCCEEDED,
+    RETRYING,
+    FAILED,
+    CANCELLED,
+}
+
+enum class InteractionMethod {
+    ACCESSIBILITY_ACTION,
+    ACCESSIBILITY_NODE_GESTURE,
+    ACCESSIBILITY_PROFILE_GESTURE,
+    PRIVILEGED_INPUT,
+}
+
+data class AutomationEvent(
+    val id: EventId,
+    val sessionId: SessionId,
+    val name: String,
+    val sequence: Long? = null,
+    val timestamp: Instant,
+    val state: AutomationStateName,
+    val operation: AutomationOperation? = null,
+    val outcome: AutomationOutcome,
+    val interactionMethod: InteractionMethod? = null,
+    val attempt: Int? = null,
+    val durationMs: Long? = null,
+    val failure: AutomationFailure? = null,
+    val metadata: Map<String, String> = emptyMap(),
+) {
+    init {
+        require(name.isNotBlank()) { "Event name must not be blank" }
+        require(sequence == null || sequence >= 0) { "Event sequence must not be negative" }
+        require(attempt == null || attempt > 0) { "Event attempt must be positive" }
+        require(durationMs == null || durationMs >= 0) { "Event duration must not be negative" }
+        require(metadata.size <= MAX_METADATA_ENTRIES) {
+            "Event metadata may contain at most $MAX_METADATA_ENTRIES entries"
+        }
+        require(metadata.all { (key, value) -> key.length <= MAX_METADATA_LENGTH && value.length <= MAX_METADATA_LENGTH }) {
+            "Event metadata keys and values may contain at most $MAX_METADATA_LENGTH characters"
+        }
+    }
+
+    companion object {
+        const val MAX_METADATA_ENTRIES: Int = 24
+        const val MAX_METADATA_LENGTH: Int = 256
+    }
+}
