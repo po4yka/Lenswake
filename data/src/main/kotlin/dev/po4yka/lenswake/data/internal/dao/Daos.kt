@@ -9,6 +9,7 @@ import androidx.room.Transaction
 import androidx.room.Update
 import androidx.room.Upsert
 import dev.po4yka.lenswake.data.internal.entity.AutomationProfileEntity
+import dev.po4yka.lenswake.data.internal.entity.EnvironmentSnapshotEntity
 import dev.po4yka.lenswake.data.internal.entity.ExecutionEventEntity
 import dev.po4yka.lenswake.data.internal.entity.ExecutionSessionEntity
 import dev.po4yka.lenswake.data.internal.entity.ScheduleEntity
@@ -122,5 +123,109 @@ internal interface ExecutionDao {
         )
         insertEvent(event)
         return ExecutionCasResult.Applied
+    }
+}
+
+internal data class ExecutionReportEntities(
+    val session: ExecutionSessionEntity,
+    val environmentSnapshot: EnvironmentSnapshotEntity?,
+    val events: List<ExecutionEventEntity>,
+)
+
+internal sealed interface EnvironmentSnapshotInsertResult {
+    data class Inserted(
+        val session: ExecutionSessionEntity,
+    ) : EnvironmentSnapshotInsertResult
+
+    data class AlreadyExists(
+        val existing: EnvironmentSnapshotEntity,
+        val session: ExecutionSessionEntity,
+    ) : EnvironmentSnapshotInsertResult
+}
+
+@Dao
+internal interface EnvironmentSnapshotDao {
+    @Query("SELECT * FROM environment_snapshots WHERE id = :id")
+    suspend fun get(id: String): EnvironmentSnapshotEntity?
+
+    @Query("SELECT * FROM environment_snapshots WHERE session_id = :sessionId")
+    suspend fun getForSession(sessionId: String): EnvironmentSnapshotEntity?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnoringConflict(snapshot: EnvironmentSnapshotEntity): Long
+
+    @Query("SELECT * FROM execution_sessions WHERE id = :sessionId")
+    suspend fun getSession(sessionId: String): ExecutionSessionEntity?
+
+    @Query("SELECT * FROM execution_events WHERE session_id = :sessionId ORDER BY sequence, id")
+    suspend fun listEvents(sessionId: String): List<ExecutionEventEntity>
+
+    @Query(
+        """
+        UPDATE execution_sessions
+        SET environment_snapshot_id = :snapshotId,
+            revision = revision + 1,
+            updated_at_epoch_ms = :updatedAtEpochMs
+        WHERE id = :sessionId
+          AND revision = :expectedRevision
+          AND environment_snapshot_id IS NULL
+        """,
+    )
+    suspend fun linkSnapshot(
+        sessionId: String,
+        snapshotId: String,
+        expectedRevision: Long,
+        updatedAtEpochMs: Long,
+    ): Int
+
+    @Transaction
+    suspend fun insertImmutable(snapshot: EnvironmentSnapshotEntity): EnvironmentSnapshotInsertResult {
+        val session = checkNotNull(getSession(snapshot.sessionId)) {
+            "Environment snapshot session does not exist"
+        }
+        val existingForSession = getForSession(snapshot.sessionId)
+        if (existingForSession != null) {
+            check(session.environmentSnapshotId == existingForSession.id) {
+                "Execution session snapshot pointer does not match its immutable snapshot"
+            }
+            return EnvironmentSnapshotInsertResult.AlreadyExists(existingForSession, session)
+        }
+
+        val existingById = get(snapshot.id)
+        if (existingById != null) {
+            error("Environment snapshot id is already owned by another execution session")
+        }
+
+        check(session.environmentSnapshotId == null) {
+            "Execution session points to a missing environment snapshot"
+        }
+        check(insertIgnoringConflict(snapshot) != -1L) {
+            "Environment snapshot changed concurrently inside a transaction"
+        }
+        val updatedAtEpochMs = maxOf(session.updatedAtEpochMs, snapshot.capturedAtEpochMs)
+        check(
+            linkSnapshot(
+                sessionId = session.id,
+                snapshotId = snapshot.id,
+                expectedRevision = session.revision,
+                updatedAtEpochMs = updatedAtEpochMs,
+            ) == 1,
+        ) {
+            "Execution session changed concurrently while linking its environment snapshot"
+        }
+        val updatedSession = checkNotNull(getSession(session.id)) {
+            "Execution session disappeared while linking its environment snapshot"
+        }
+        return EnvironmentSnapshotInsertResult.Inserted(updatedSession)
+    }
+
+    @Transaction
+    suspend fun report(sessionId: String): ExecutionReportEntities? {
+        val session = getSession(sessionId) ?: return null
+        return ExecutionReportEntities(
+            session = session,
+            environmentSnapshot = getForSession(sessionId),
+            events = listEvents(sessionId),
+        )
     }
 }

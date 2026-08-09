@@ -47,6 +47,23 @@ interface ExecutionRepository {
     ): ExecutionApplyResult
 }
 
+/**
+ * Persistence boundary for immutable execution diagnostics.
+ *
+ * A session may own at most one environment snapshot. [capture] never overwrites a previously
+ * persisted snapshot, including when a caller retries with a different value. The first capture
+ * atomically links the snapshot from its execution session and advances the session revision.
+ */
+interface EnvironmentSnapshotRepository {
+    suspend fun capture(snapshot: EnvironmentSnapshot): EnvironmentSnapshotCaptureResult
+
+    suspend fun getEnvironmentSnapshot(id: EnvironmentSnapshotId): EnvironmentSnapshot?
+
+    suspend fun getEnvironmentSnapshotForSession(sessionId: SessionId): EnvironmentSnapshot?
+
+    suspend fun report(sessionId: SessionId): ExecutionReport?
+}
+
 interface RecordingScheduler {
     suspend fun scheduleStart(schedule: RecordingSchedule): Result<Unit>
 

@@ -2,9 +2,14 @@ package dev.po4yka.lenswake.data
 
 import dev.po4yka.lenswake.core.AutomationEvent
 import dev.po4yka.lenswake.core.AutomationProfileRepository
+import dev.po4yka.lenswake.core.EnvironmentSnapshot
+import dev.po4yka.lenswake.core.EnvironmentSnapshotCaptureResult
+import dev.po4yka.lenswake.core.EnvironmentSnapshotId
+import dev.po4yka.lenswake.core.EnvironmentSnapshotRepository
 import dev.po4yka.lenswake.core.ExecutionApplyResult
 import dev.po4yka.lenswake.core.ExecutionChange
 import dev.po4yka.lenswake.core.ExecutionRepository
+import dev.po4yka.lenswake.core.ExecutionReport
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.ProfileId
@@ -13,6 +18,7 @@ import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.ScheduleRepository
 import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.data.internal.dao.ExecutionCasResult
+import dev.po4yka.lenswake.data.internal.dao.EnvironmentSnapshotInsertResult
 import dev.po4yka.lenswake.data.internal.mapping.toDomain
 import dev.po4yka.lenswake.data.internal.mapping.toEntity
 import kotlinx.coroutines.flow.Flow
@@ -58,8 +64,9 @@ class RoomAutomationProfileRepository(
 
 class RoomExecutionRepository(
     database: LenswakeDatabase,
-) : ExecutionRepository {
+) : ExecutionRepository, EnvironmentSnapshotRepository {
     private val dao = database.executionDao()
+    private val environmentSnapshotDao = database.environmentSnapshotDao()
 
     override fun observeExecutions(): Flow<List<ExecutionSession>> =
         dao.observeAll().map { executions -> executions.map { it.toDomain() } }
@@ -103,4 +110,33 @@ class RoomExecutionRepository(
             )
         }
     }
+
+    override suspend fun capture(snapshot: EnvironmentSnapshot): EnvironmentSnapshotCaptureResult =
+        when (val result = environmentSnapshotDao.insertImmutable(snapshot.toEntity())) {
+            is EnvironmentSnapshotInsertResult.Inserted ->
+                EnvironmentSnapshotCaptureResult.Captured(
+                    snapshot = snapshot,
+                    session = result.session.toDomain(),
+                )
+            is EnvironmentSnapshotInsertResult.AlreadyExists ->
+                EnvironmentSnapshotCaptureResult.AlreadyExists(
+                    existing = result.existing.toDomain(),
+                    session = result.session.toDomain(),
+                )
+        }
+
+    override suspend fun getEnvironmentSnapshot(id: EnvironmentSnapshotId): EnvironmentSnapshot? =
+        environmentSnapshotDao.get(id.value)?.toDomain()
+
+    override suspend fun getEnvironmentSnapshotForSession(sessionId: SessionId): EnvironmentSnapshot? =
+        environmentSnapshotDao.getForSession(sessionId.value)?.toDomain()
+
+    override suspend fun report(sessionId: SessionId): ExecutionReport? =
+        environmentSnapshotDao.report(sessionId.value)?.let { report ->
+            ExecutionReport(
+                session = report.session.toDomain(),
+                environmentSnapshot = report.environmentSnapshot?.toDomain(),
+                events = report.events.map { it.toDomain() },
+            )
+        }
 }

@@ -10,6 +10,10 @@ import dev.po4yka.lenswake.core.AutomationOutcome
 import dev.po4yka.lenswake.core.AutomationStateName
 import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.EventId
+import dev.po4yka.lenswake.core.EnvironmentCapabilityStatus
+import dev.po4yka.lenswake.core.EnvironmentSnapshot
+import dev.po4yka.lenswake.core.EnvironmentSnapshotCaptureResult
+import dev.po4yka.lenswake.core.EnvironmentSnapshotId
 import dev.po4yka.lenswake.core.ExecutionApplyResult
 import dev.po4yka.lenswake.core.ExecutionChange
 import dev.po4yka.lenswake.core.ExecutionSession
@@ -187,6 +191,78 @@ class RoomRepositoriesTest {
         assertEquals(listOf(event.copy(sequence = 0)), executions.observeEvents(session.id).first())
     }
 
+    @Test
+    fun environmentSnapshotRoundTripsAndAppearsInExecutionReport() = runBlocking {
+        val profile = profile()
+        val schedule = schedule(profile.id)
+        val session = session(schedule, profile.id)
+        val snapshot = environmentSnapshot(session.id)
+        profiles.save(profile)
+        schedules.save(schedule)
+        executions.create(session)
+
+        val linkedSession = session.copy(
+            environmentSnapshotId = snapshot.id,
+            revision = 1,
+            updatedAt = snapshot.capturedAt,
+        )
+
+        assertEquals(
+            EnvironmentSnapshotCaptureResult.Captured(snapshot, linkedSession),
+            executions.capture(snapshot),
+        )
+        assertEquals(snapshot, executions.getEnvironmentSnapshot(snapshot.id))
+        assertEquals(snapshot, executions.getEnvironmentSnapshotForSession(session.id))
+        assertEquals(linkedSession, executions.get(session.id))
+        assertEquals(
+            linkedSession to snapshot,
+            executions.report(session.id)?.let { it.session to it.environmentSnapshot },
+        )
+
+        val staleChange = session.copy(
+            status = SessionStatus.STARTING,
+            revision = 1,
+            updatedAt = Instant.ofEpochMilli(4_000),
+        )
+        assertEquals(
+            ExecutionApplyResult.RevisionConflict(0, 1),
+            executions.apply(
+                ExecutionChange(0, staleChange),
+                event(session.id, "automation.start.stale_after_snapshot"),
+            ),
+        )
+        assertEquals(linkedSession, executions.get(session.id))
+    }
+
+    @Test
+    fun environmentSnapshotIsImmutableAndLimitedToOnePerSession() = runBlocking {
+        val profile = profile()
+        val schedule = schedule(profile.id)
+        val session = session(schedule, profile.id)
+        val original = environmentSnapshot(session.id)
+        profiles.save(profile)
+        schedules.save(schedule)
+        executions.create(session)
+        executions.capture(original)
+        val linkedSession = session.copy(
+            environmentSnapshotId = original.id,
+            revision = 1,
+            updatedAt = original.capturedAt,
+        )
+
+        val replacement = original.copy(
+            id = EnvironmentSnapshotId("snapshot-2"),
+            batteryPercent = 25,
+        )
+
+        assertEquals(
+            EnvironmentSnapshotCaptureResult.AlreadyExists(original, linkedSession),
+            executions.capture(replacement),
+        )
+        assertEquals(original, executions.getEnvironmentSnapshotForSession(session.id))
+        assertNull(executions.getEnvironmentSnapshot(replacement.id))
+    }
+
     private fun profile(): PixelCameraProfile = PixelCameraProfile(
         id = ProfileId("profile-1"),
         environment = PixelCameraEnvironment(
@@ -299,5 +375,20 @@ class RoomRepositoriesTest {
         state = AutomationStateName.START_TRIGGERED,
         outcome = AutomationOutcome.SUCCEEDED,
         metadata = mapOf("source" to "alarm"),
+    )
+
+    private fun environmentSnapshot(sessionId: SessionId): EnvironmentSnapshot = EnvironmentSnapshot(
+        id = EnvironmentSnapshotId("snapshot-1"),
+        sessionId = sessionId,
+        capturedAt = Instant.ofEpochMilli(3_500),
+        lenswakeVersion = "1.0-debug",
+        cameraEnvironment = profile().environment,
+        accessibilityStatus = EnvironmentCapabilityStatus.AVAILABLE,
+        privilegedBridgeStatus = EnvironmentCapabilityStatus.UNAVAILABLE,
+        screenInteractive = false,
+        keyguardLocked = true,
+        batteryPercent = 75,
+        charging = false,
+        availableStorageBytes = 10_000_000_000,
     )
 }

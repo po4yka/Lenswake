@@ -8,6 +8,8 @@ import dev.po4yka.lenswake.core.AutomationOutcome
 import dev.po4yka.lenswake.core.AutomationStateName
 import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.EnvironmentSnapshotId
+import dev.po4yka.lenswake.core.EnvironmentCapabilityStatus
+import dev.po4yka.lenswake.core.EnvironmentSnapshot
 import dev.po4yka.lenswake.core.EventId
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.InteractionMethod
@@ -24,6 +26,7 @@ import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.core.Zoom
 import dev.po4yka.lenswake.data.internal.entity.AutomationProfileEntity
+import dev.po4yka.lenswake.data.internal.entity.EnvironmentSnapshotEntity
 import dev.po4yka.lenswake.data.internal.entity.ExecutionEventEntity
 import dev.po4yka.lenswake.data.internal.entity.ExecutionSessionEntity
 import dev.po4yka.lenswake.data.internal.entity.ScheduleEntity
@@ -106,6 +109,56 @@ internal fun AutomationProfileEntity.toDomain(): PixelCameraProfile = PixelCamer
     fallbackGestures = JsonColumnCodec.decodeGestures(fallbackGesturesJson),
     compatibility = enumValueOf<ProfileCompatibility>(compatibility),
     verifiedAt = verifiedAtEpochMs?.let(Instant::ofEpochMilli),
+)
+
+internal fun EnvironmentSnapshot.toEntity(): EnvironmentSnapshotEntity = EnvironmentSnapshotEntity(
+    id = id.value,
+    sessionId = sessionId.value,
+    capturedAtEpochMs = capturedAt.toEpochMilli(),
+    lenswakeVersion = lenswakeVersion,
+    deviceManufacturer = cameraEnvironment.deviceManufacturer,
+    deviceModel = cameraEnvironment.deviceModel,
+    androidSdk = cameraEnvironment.androidSdk,
+    androidBuildFingerprint = cameraEnvironment.androidBuildFingerprint,
+    cameraPackage = cameraEnvironment.cameraPackage,
+    cameraVersionCode = cameraEnvironment.cameraVersionCode,
+    localeTag = cameraEnvironment.localeTag,
+    displayWidthPx = cameraEnvironment.displayWidthPx,
+    displayHeightPx = cameraEnvironment.displayHeightPx,
+    densityDpi = cameraEnvironment.densityDpi,
+    accessibilityStatus = accessibilityStatus.name,
+    privilegedBridgeStatus = privilegedBridgeStatus.name,
+    screenInteractive = screenInteractive,
+    keyguardLocked = keyguardLocked,
+    batteryPercent = batteryPercent,
+    charging = charging,
+    availableStorageBytes = availableStorageBytes,
+)
+
+internal fun EnvironmentSnapshotEntity.toDomain(): EnvironmentSnapshot = EnvironmentSnapshot(
+    id = EnvironmentSnapshotId(id),
+    sessionId = SessionId(sessionId),
+    capturedAt = Instant.ofEpochMilli(capturedAtEpochMs),
+    lenswakeVersion = lenswakeVersion,
+    cameraEnvironment = PixelCameraEnvironment(
+        deviceManufacturer = deviceManufacturer,
+        deviceModel = deviceModel,
+        androidSdk = androidSdk,
+        androidBuildFingerprint = androidBuildFingerprint,
+        cameraPackage = cameraPackage,
+        cameraVersionCode = cameraVersionCode,
+        localeTag = localeTag,
+        displayWidthPx = displayWidthPx,
+        displayHeightPx = displayHeightPx,
+        densityDpi = densityDpi,
+    ),
+    accessibilityStatus = enumValueOf<EnvironmentCapabilityStatus>(accessibilityStatus),
+    privilegedBridgeStatus = enumValueOf<EnvironmentCapabilityStatus>(privilegedBridgeStatus),
+    screenInteractive = screenInteractive,
+    keyguardLocked = keyguardLocked,
+    batteryPercent = batteryPercent,
+    charging = charging,
+    availableStorageBytes = availableStorageBytes,
 )
 
 internal fun ExecutionSession.toEntity(): ExecutionSessionEntity {

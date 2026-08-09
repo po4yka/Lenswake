@@ -148,6 +148,63 @@ internal data class ExecutionSessionEntity(
 )
 
 @Entity(
+    tableName = "environment_snapshots",
+    foreignKeys = [
+        ForeignKey(
+            entity = ExecutionSessionEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["session_id"],
+            onUpdate = ForeignKey.RESTRICT,
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["session_id"], unique = true)],
+)
+internal data class EnvironmentSnapshotEntity(
+    @PrimaryKey
+    val id: String,
+    @ColumnInfo(name = "session_id")
+    val sessionId: String,
+    @ColumnInfo(name = "captured_at_epoch_ms")
+    val capturedAtEpochMs: Long,
+    @ColumnInfo(name = "lenswake_version")
+    val lenswakeVersion: String,
+    @ColumnInfo(name = "device_manufacturer")
+    val deviceManufacturer: String,
+    @ColumnInfo(name = "device_model")
+    val deviceModel: String,
+    @ColumnInfo(name = "android_sdk")
+    val androidSdk: Int,
+    @ColumnInfo(name = "android_build_fingerprint")
+    val androidBuildFingerprint: String?,
+    @ColumnInfo(name = "camera_package")
+    val cameraPackage: String,
+    @ColumnInfo(name = "camera_version_code")
+    val cameraVersionCode: Long,
+    @ColumnInfo(name = "locale_tag")
+    val localeTag: String,
+    @ColumnInfo(name = "display_width_px")
+    val displayWidthPx: Int,
+    @ColumnInfo(name = "display_height_px")
+    val displayHeightPx: Int,
+    @ColumnInfo(name = "density_dpi")
+    val densityDpi: Int,
+    @ColumnInfo(name = "accessibility_status")
+    val accessibilityStatus: String,
+    @ColumnInfo(name = "privileged_bridge_status")
+    val privilegedBridgeStatus: String,
+    @ColumnInfo(name = "screen_interactive")
+    val screenInteractive: Boolean,
+    @ColumnInfo(name = "keyguard_locked")
+    val keyguardLocked: Boolean,
+    @ColumnInfo(name = "battery_percent")
+    val batteryPercent: Int?,
+    val charging: Boolean?,
+    @ColumnInfo(name = "available_storage_bytes")
+    val availableStorageBytes: Long?,
+)
+
+@Entity(
     tableName = "execution_events",
     foreignKeys = [
         ForeignKey(
