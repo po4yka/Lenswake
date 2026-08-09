@@ -6,6 +6,12 @@ import dev.po4yka.lenswake.alarm.AlarmTrigger
 import dev.po4yka.lenswake.alarm.AlarmTriggerCoordinator
 import dev.po4yka.lenswake.automation.AutomationEngine
 import dev.po4yka.lenswake.automation.AutomationRunResult
+import dev.po4yka.lenswake.core.AutomationEvent
+import dev.po4yka.lenswake.core.AutomationOutcome
+import dev.po4yka.lenswake.core.AutomationStateName
+import dev.po4yka.lenswake.core.EventId
+import dev.po4yka.lenswake.core.ExecutionApplyResult
+import dev.po4yka.lenswake.core.ExecutionChange
 import dev.po4yka.lenswake.core.ExecutionRepository
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.LenswakeClock
@@ -102,7 +108,62 @@ class DefaultAlarmTriggerCoordinator(
         val session = active ?: deterministicLookup?.getOrNull()
             ?: return rejected("No persisted execution exists for this STOP alarm")
         validateExecution(session, schedule, executionKey)?.let { return it }
-        return runEngine(AlarmKind.STOP) { automationEngine.stop(session.id) }
+        val deliveredSession = when (val delivery = persistStopDelivery(session)) {
+            is StopDeliveryResult.Persisted -> delivery.session
+            is StopDeliveryResult.Failed -> return delivery.result
+        }
+        return runEngine(AlarmKind.STOP) { automationEngine.stop(deliveredSession.id) }
+    }
+
+    private suspend fun persistStopDelivery(session: ExecutionSession): StopDeliveryResult {
+        if (session.alarmStopDeliveredAt != null) return StopDeliveryResult.Persisted(session)
+        if (session.revision == Long.MAX_VALUE) {
+            return StopDeliveryResult.Failed(rejected("STOP delivery cannot increment the execution revision"))
+        }
+
+        val deliveredAt = maxOf(clock.now(), session.updatedAt)
+        val updated = session.copy(
+            alarmStopDeliveredAt = deliveredAt,
+            revision = session.revision + 1,
+            updatedAt = deliveredAt,
+        )
+        val event = AutomationEvent(
+            id = EventId.new(),
+            sessionId = session.id,
+            name = STOP_DELIVERED_EVENT,
+            sequence = updated.revision,
+            timestamp = deliveredAt,
+            state = AutomationStateName.STOP_TRIGGERED,
+            outcome = AutomationOutcome.SUCCEEDED,
+            metadata = mapOf("alarmKind" to AlarmKind.STOP.name),
+        )
+        val result = try {
+            executionRepository.apply(
+                change = ExecutionChange(session.revision, updated),
+                event = event,
+            )
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            return StopDeliveryResult.Failed(rejected("Could not persist STOP alarm delivery", error))
+        }
+        return when (result) {
+            is ExecutionApplyResult.Applied -> StopDeliveryResult.Persisted(result.session)
+            is ExecutionApplyResult.RevisionConflict -> {
+                val winner = loadExecution(session.id)
+                if (winner.isFailure) {
+                    StopDeliveryResult.Failed(
+                        rejected("Could not resolve concurrent STOP delivery", winner.exceptionOrNull()),
+                    )
+                } else {
+                    val current = winner.getOrNull()
+                    if (current?.alarmStopDeliveredAt != null) {
+                        StopDeliveryResult.Persisted(current)
+                    } else {
+                        StopDeliveryResult.Failed(rejected("STOP delivery lost a concurrent state transition"))
+                    }
+                }
+            }
+        }
     }
 
     private fun validateTrigger(
@@ -195,4 +256,13 @@ class DefaultAlarmTriggerCoordinator(
         reason: String,
         cause: Throwable? = null,
     ): AlarmHandlingResult.Rejected = AlarmHandlingResult.Rejected(reason, cause)
+
+    private sealed interface StopDeliveryResult {
+        data class Persisted(val session: ExecutionSession) : StopDeliveryResult
+        data class Failed(val result: AlarmHandlingResult.Rejected) : StopDeliveryResult
+    }
+
+    private companion object {
+        const val STOP_DELIVERED_EVENT = "automation.alarm.stop_delivered"
+    }
 }

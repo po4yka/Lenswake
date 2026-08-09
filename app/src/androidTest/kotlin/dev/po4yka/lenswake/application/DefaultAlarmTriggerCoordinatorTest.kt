@@ -18,6 +18,8 @@ import dev.po4yka.lenswake.core.RecordingSchedule
 import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.ScheduleRepository
 import dev.po4yka.lenswake.core.SessionId
+import dev.po4yka.lenswake.core.SessionKind
+import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -79,14 +81,50 @@ class DefaultAlarmTriggerCoordinatorTest {
         assertTrue(engine.startIds.isEmpty())
     }
 
+    @Test
+    fun stopDeliveryIsPersistedAtomicallyBeforeAutomation() = runBlocking {
+        val executions = FakeExecutionRepository().apply { seed(recordingSession()) }
+        val engine = FakeAutomationEngine(executions)
+        val result = coordinator(
+            executions = executions,
+            engine = engine,
+            now = stopAt.plusSeconds(1),
+        ).handle(stopTrigger())
+
+        assertTrue(result is AlarmHandlingResult.Accepted)
+        assertEquals(listOf(true), engine.stopSawPersistedDelivery)
+        assertEquals(stopAt.plusSeconds(1), executions.sessions.values.single().alarmStopDeliveredAt)
+        assertEquals(1, executions.events.size)
+        assertEquals("automation.alarm.stop_delivered", executions.events.single().name)
+    }
+
+    @Test
+    fun duplicateStopPersistsOneDeliveryEventAndRemainsIdempotent() = runBlocking {
+        val executions = FakeExecutionRepository().apply { seed(recordingSession()) }
+        val engine = FakeAutomationEngine(executions)
+        val coordinator = coordinator(
+            executions = executions,
+            engine = engine,
+            now = stopAt.plusSeconds(1),
+        )
+
+        assertTrue(coordinator.handle(stopTrigger()) is AlarmHandlingResult.Accepted)
+        assertTrue(coordinator.handle(stopTrigger()) is AlarmHandlingResult.Accepted)
+
+        assertEquals(1, executions.events.size)
+        assertEquals(1L, executions.sessions.values.single().revision)
+        assertEquals(listOf(true, true), engine.stopSawPersistedDelivery)
+    }
+
     private fun coordinator(
         executions: FakeExecutionRepository,
         engine: FakeAutomationEngine,
+        now: Instant = startAt.plusSeconds(1),
     ): DefaultAlarmTriggerCoordinator = DefaultAlarmTriggerCoordinator(
         scheduleRepository = FakeScheduleRepository(schedule),
         executionRepository = executions,
         automationEngine = engine,
-        clock = LenswakeClock { startAt.plusSeconds(1) },
+        clock = LenswakeClock { now },
     )
 
     private fun startTrigger(updatedAt: Instant) = AlarmTrigger(
@@ -94,6 +132,31 @@ class DefaultAlarmTriggerCoordinatorTest {
         scheduleId = schedule.id,
         scheduleUpdatedAt = updatedAt,
         expectedAt = schedule.startAt,
+    )
+
+    private fun stopTrigger() = AlarmTrigger(
+        kind = AlarmKind.STOP,
+        scheduleId = schedule.id,
+        scheduleUpdatedAt = schedule.updatedAt,
+        expectedAt = schedule.stopAt,
+    )
+
+    private fun recordingSession() = ExecutionSession(
+        id = SessionId("scheduled-session"),
+        executionKey = "schedule/${schedule.id.value}/${schedule.startAt.toEpochMilli()}",
+        kind = SessionKind.SCHEDULED,
+        scheduleId = schedule.id,
+        scheduleName = schedule.name,
+        profileId = schedule.profileId,
+        capture = schedule.capture,
+        expectedStartAt = schedule.startAt,
+        expectedStopAt = schedule.stopAt,
+        alarmStartDeliveredAt = startAt,
+        status = SessionStatus.RECORDING,
+        recordingVerifiedAt = startAt.plusSeconds(10),
+        revision = 0,
+        createdAt = startAt,
+        updatedAt = startAt.plusSeconds(10),
     )
 }
 
@@ -108,6 +171,7 @@ private class FakeScheduleRepository(
 
 private class FakeExecutionRepository : ExecutionRepository {
     val sessions = linkedMapOf<SessionId, ExecutionSession>()
+    val events = mutableListOf<AutomationEvent>()
     private val observed = MutableStateFlow<List<ExecutionSession>>(emptyList())
 
     override fun observeExecutions(): Flow<List<ExecutionSession>> = observed
@@ -125,18 +189,42 @@ private class FakeExecutionRepository : ExecutionRepository {
     override suspend fun apply(
         change: ExecutionChange,
         event: AutomationEvent,
-    ): ExecutionApplyResult = error("Not used")
+    ): ExecutionApplyResult {
+        val current = sessions[change.updatedSession.id]
+        if (current?.revision != change.expectedRevision) {
+            return ExecutionApplyResult.RevisionConflict(
+                expectedRevision = change.expectedRevision,
+                actualRevision = current?.revision,
+            )
+        }
+        sessions[change.updatedSession.id] = change.updatedSession
+        events += event
+        observed.value = sessions.values.toList()
+        return ExecutionApplyResult.Applied(change.updatedSession)
+    }
+
+    fun seed(session: ExecutionSession) {
+        sessions[session.id] = session
+        observed.value = sessions.values.toList()
+    }
 }
 
 private class FakeAutomationEngine(
     private val executions: FakeExecutionRepository,
 ) : AutomationEngine {
     val startIds = mutableListOf<SessionId>()
+    val stopSawPersistedDelivery = mutableListOf<Boolean>()
 
     override suspend fun start(sessionId: SessionId): AutomationRunResult {
         startIds += sessionId
         return AutomationRunResult.AlreadySatisfied(requireNotNull(executions.get(sessionId)))
     }
 
-    override suspend fun stop(sessionId: SessionId): AutomationRunResult = error("Not used")
+    override suspend fun stop(sessionId: SessionId): AutomationRunResult {
+        val session = requireNotNull(executions.get(sessionId))
+        stopSawPersistedDelivery += session.alarmStopDeliveredAt != null && executions.events.any {
+            it.sessionId == sessionId && it.name == "automation.alarm.stop_delivered"
+        }
+        return AutomationRunResult.Succeeded(session)
+    }
 }
