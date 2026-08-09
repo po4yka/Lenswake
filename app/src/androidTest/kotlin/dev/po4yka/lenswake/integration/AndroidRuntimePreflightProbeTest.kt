@@ -6,6 +6,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.po4yka.lenswake.LenswakeApplication
 import dev.po4yka.lenswake.core.PreflightCheckType
 import dev.po4yka.lenswake.core.PreflightStatus
+import dev.po4yka.lenswake.platform.DeviceWakeController
+import dev.po4yka.lenswake.platform.PlatformCapability
+import dev.po4yka.lenswake.platform.PlatformCapabilityCode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -59,7 +62,35 @@ class AndroidRuntimePreflightProbeTest {
         )
         assertTrue(checks.containsKey(PreflightCheckType.ACCESSIBILITY_ENABLED))
         assertTrue(checks.containsKey(PreflightCheckType.ACCESSIBILITY_CONNECTED))
-        assertEquals(PreflightStatus.FAILED, checks.getValue(PreflightCheckType.DEVICE_WAKE).status)
+        assertEquals(PreflightStatus.PASSED, checks.getValue(PreflightCheckType.DEVICE_WAKE).status)
         assertTrue(report.readiness is dev.po4yka.lenswake.core.ScheduleReadiness.Blocked)
+    }
+
+    @Test
+    fun reportsWakeGatewayCapabilityFailureWithoutDispatchingIt() = runBlocking {
+        val application = ApplicationProvider.getApplicationContext<LenswakeApplication>()
+        var wakeDispatches = 0
+        val controller = object : DeviceWakeController {
+            override fun availability(): PlatformCapability<Unit> = PlatformCapability.Unavailable(
+                code = PlatformCapabilityCode.NO_VERIFIED_WAKE_PATH,
+                detail = "Wake gateway is disabled for this test.",
+            )
+
+            override suspend fun wakeDevice(): PlatformCapability<Unit> {
+                wakeDispatches += 1
+                return PlatformCapability.Available(Unit)
+            }
+        }
+        val report = AndroidRuntimePreflightProbe(
+            context = application,
+            cameraEnvironmentProbe = AndroidPixelCameraEnvironmentProbe(application),
+            executionRepository = application.graph.executionRepository,
+            deviceWakeController = controller,
+        ).inspect(emptyList())
+
+        val wake = report.checks.single { it.type == PreflightCheckType.DEVICE_WAKE }
+        assertEquals(PreflightStatus.FAILED, wake.status)
+        assertEquals("Wake gateway is disabled for this test.", wake.message)
+        assertEquals(0, wakeDispatches)
     }
 }

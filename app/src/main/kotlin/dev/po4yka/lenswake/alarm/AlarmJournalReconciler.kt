@@ -1,7 +1,6 @@
 package dev.po4yka.lenswake.alarm
 
 import android.app.AlarmManager
-import android.app.PendingIntent
 import android.content.Context
 
 internal sealed interface JournalRearmResult {
@@ -23,17 +22,25 @@ internal class AndroidExactAlarmRearmBackend(
     override fun canScheduleExactAlarms(): Boolean = alarmManager.canScheduleExactAlarms()
 
     override fun rearm(work: AlarmDeliveryWork, triggerAtEpochMillis: Long) {
-        val pendingIntent = PendingIntent.getForegroundService(
+        val pendingIntent = AlarmWakePendingIntentFactory.createOrUpdate(
             context,
             AlarmDeliveryWorkContract.requestCode(work),
             AlarmDeliveryWorkContract.triggerIntent(context, work),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        alarmManager.setExactAndAllowWhileIdle(
-            AlarmManager.RTC_WAKEUP,
-            triggerAtEpochMillis,
-            pendingIntent,
-        )
+        AlarmWakePendingIntentFactory.armReplacementThenCancelLegacyServiceIdentities(
+            context = context,
+            alarmManager = alarmManager,
+            requestCode = AlarmDeliveryWorkContract.requestCode(work),
+            legacyIdentityIntents = listOf(
+                AlarmDeliveryWorkContract.deliveryIdentityIntent(context, work),
+            ),
+        ) {
+            alarmManager.setExactAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                triggerAtEpochMillis,
+                pendingIntent,
+            )
+        }
     }
 }
 

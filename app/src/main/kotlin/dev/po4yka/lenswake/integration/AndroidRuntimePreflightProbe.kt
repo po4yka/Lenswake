@@ -16,6 +16,8 @@ import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PreflightReport
 import dev.po4yka.lenswake.core.PreflightStatus
 import dev.po4yka.lenswake.platform.PlatformCapability
+import dev.po4yka.lenswake.platform.AndroidDeviceWakeController
+import dev.po4yka.lenswake.platform.DeviceWakeController
 import dev.po4yka.lenswake.platform.SecurePixelCameraResolver
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -25,6 +27,7 @@ class AndroidRuntimePreflightProbe(
     context: Context,
     private val cameraEnvironmentProbe: AndroidPixelCameraEnvironmentProbe,
     private val executionRepository: ExecutionRepository,
+    private val deviceWakeController: DeviceWakeController = AndroidDeviceWakeController(context),
     private val secureCameraResolver: SecurePixelCameraResolver = SecurePixelCameraResolver(context),
     private val evaluator: RuntimePreflightEvaluator = RuntimePreflightEvaluator(),
 ) : RuntimePreflightProbe {
@@ -71,10 +74,7 @@ class AndroidRuntimePreflightProbe(
                 ),
                 cameraEnvironment = currentEnvironment,
                 secureCameraResolves = secureCameraObservation(),
-                deviceWake = RuntimeCapabilityObservation(
-                    status = PreflightStatus.FAILED,
-                    message = "No verified device-wake implementation is configured; unattended locked-screen automation is blocked.",
-                ),
+                deviceWake = deviceWakeObservation(),
                 accessibilityEnabled = accessibilityEnabledObservation(),
                 accessibilityConnected = accessibilityConnectedObservation(),
                 successfulRehearsals = rehearsalEvidence.getOrDefault(emptyMap()),
@@ -123,6 +123,30 @@ class AndroidRuntimePreflightProbe(
                     RuntimeCapabilityObservation(
                         status = PreflightStatus.UNKNOWN,
                         message = "Secure camera resolution could not be checked: ${error.javaClass.simpleName}.",
+                    )
+                },
+            )
+
+    private fun deviceWakeObservation(): RuntimeCapabilityObservation =
+        runCatching(deviceWakeController::availability)
+            .fold(
+                onSuccess = { result ->
+                    when (result) {
+                        is PlatformCapability.Available -> RuntimeCapabilityObservation(
+                            status = PreflightStatus.PASSED,
+                            message = "The private lock-screen display-wake gateway is available.",
+                        )
+
+                        is PlatformCapability.Unavailable -> RuntimeCapabilityObservation(
+                            status = PreflightStatus.FAILED,
+                            message = result.detail,
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    RuntimeCapabilityObservation(
+                        status = PreflightStatus.UNKNOWN,
+                        message = "Display-wake capability could not be checked: ${error.javaClass.simpleName}.",
                     )
                 },
             )

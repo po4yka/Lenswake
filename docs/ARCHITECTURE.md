@@ -500,19 +500,35 @@ where possible.
 
 ---
 
-## 6.6 Bounded Execution Service
+## 6.6 Wake Gateway and Bounded Execution Service
 
-The implemented exact-alarm path targets:
+Every automation exact alarm targets the private, no-history `AlarmWakeGatewayActivity` with an
+immutable `PendingIntent.getActivity()`. START, schedule STOP, rehearsal STOP, delivery retry, and
+journal rearm all use the same gateway. Android's pending-intent background-activity-start policy is
+selected centrally when the pending intent is created.
+
+The gateway calls `setShowWhenLocked(true)` and `setTurnScreenOn(true)`, but never dismisses the
+keyguard or acquires a screen wake lock. It accepts only explicit, structurally valid Lenswake alarm
+payloads, forwards the unchanged action, data, and extras to `AutomationExecutionService`, and stays
+visible only until Pixel Camera covers it or a finite deadline expires. The automation engine still
+requires the independent `PowerManager.isInteractive` postcondition; dispatching the gateway is not
+treated as proof that the display woke.
 
 ```text
+RTC_WAKEUP alarm
+        ↓
+AlarmWakeGatewayActivity
+        ↓ validated unchanged payload
 AutomationExecutionService
+        ↓ durable journal + domain revalidation
+START or STOP automation
 ```
 
-directly with `PendingIntent.getForegroundService()`. It is private, declares the
-`systemExempted` foreground-service type permitted by exact-alarm access, starts foreground
-immediately, serializes triggers, and enforces a finite per-trigger deadline. A private transport
-journal restores all accepted triggers after process recreation; Room and the coordinator still
-revalidate the domain intent and remain the source of truth.
+`AutomationExecutionService` is private, declares the `systemExempted` foreground-service type
+permitted by exact-alarm access, starts foreground immediately, serializes triggers, and enforces a
+finite per-trigger deadline. A private transport journal restores all accepted triggers after
+process recreation; Room and the coordinator still revalidate the domain intent and remain the
+source of truth.
 
 The coordinator returns explicit `Accepted`, `TerminalRejected`, or `Retryable` outcomes. Retry is
 never inferred from whether a `Throwable` happens to exist. Service start acceptance and work
@@ -527,9 +543,9 @@ opportunity. STOP markers explicitly warn that Pixel Camera may still be recordi
 notification is attempted, but it is not authoritative because Android 17 requires a runtime
 `POST_NOTIFICATIONS` grant; permission setup and in-app marker presentation remain product work.
 
-The service is used only for bounded START/STOP workflows. Its existence does not prove that an
-Android 17 background activity launch of secure Pixel Camera is permitted; that remains a physical
-Pixel 8 Pro acceptance gate.
+The service is used only for bounded START/STOP workflows. The gateway's availability check proves
+only that the private component is installed and enabled. Screen-off, locked-keyguard, Doze, and
+secure Pixel Camera launch remain physical Pixel 8 Pro acceptance gates.
 
 Lenswake should not maintain a permanent service during multi-hour Pixel Camera recording.
 

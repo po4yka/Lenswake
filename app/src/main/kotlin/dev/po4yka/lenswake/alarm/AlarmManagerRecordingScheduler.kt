@@ -1,7 +1,6 @@
 package dev.po4yka.lenswake.alarm
 
 import android.app.AlarmManager
-import android.app.PendingIntent
 import android.content.Context
 import dev.po4yka.lenswake.core.LenswakeClock
 import dev.po4yka.lenswake.core.RecordingSchedule
@@ -48,11 +47,12 @@ class AlarmManagerRecordingScheduler(
 
     override suspend fun cancel(scheduleId: ScheduleId): Result<Unit> = runCatching {
         AlarmKind.entries.forEach { kind ->
-            val pendingIntent = PendingIntent.getForegroundService(
+            cancelLegacyIdentity(scheduleId, kind, delivery = false)
+            cancelLegacyIdentity(scheduleId, kind, delivery = true)
+            val pendingIntent = AlarmWakePendingIntentFactory.find(
                 applicationContext,
                 AlarmContract.requestCode(kind),
                 AlarmContract.identityIntent(applicationContext, scheduleId, kind),
-                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
             )
             if (pendingIntent != null) {
                 alarmManager.cancel(pendingIntent)
@@ -114,18 +114,24 @@ class AlarmManagerRecordingScheduler(
         }
         validate(schedule, kind, triggerAt, clock.now())
         requireExactAlarmCapability()
-        val pendingIntent = PendingIntent.getForegroundService(
+        val pendingIntent = AlarmWakePendingIntentFactory.createOrUpdate(
             applicationContext,
             AlarmContract.requestCode(kind),
             AlarmContract.intent(applicationContext, schedule, kind),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         try {
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                triggerAt.toEpochMilli(),
-                pendingIntent,
-            )
+            AlarmWakePendingIntentFactory.armReplacementThenCancelLegacyServiceIdentities(
+                context = applicationContext,
+                alarmManager = alarmManager,
+                requestCode = AlarmContract.requestCode(kind),
+                legacyIdentityIntents = legacyIdentityIntents(schedule.id, kind),
+            ) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAt.toEpochMilli(),
+                    pendingIntent,
+                )
+            }
         } catch (error: SecurityException) {
             throw SchedulingException(
                 code = SchedulingFailureCode.ALARM_MANAGER_REJECTED,
@@ -169,6 +175,29 @@ class AlarmManagerRecordingScheduler(
             throw SchedulingException(code, "${kind.name.lowercase()} alarm must be in the future")
         }
     }
+
+    private fun cancelLegacyIdentity(
+        scheduleId: ScheduleId,
+        kind: AlarmKind,
+        delivery: Boolean,
+    ) {
+        val identityIntent = if (delivery) {
+            AlarmContract.deliveryIdentityIntent(applicationContext, scheduleId, kind)
+        } else {
+            AlarmContract.identityIntent(applicationContext, scheduleId, kind)
+        }
+        AlarmWakePendingIntentFactory.cancelLegacyServiceIdentity(
+            context = applicationContext,
+            alarmManager = alarmManager,
+            requestCode = AlarmContract.requestCode(kind),
+            identityIntent = identityIntent,
+        )
+    }
+
+    private fun legacyIdentityIntents(scheduleId: ScheduleId, kind: AlarmKind) = listOf(
+        AlarmContract.identityIntent(applicationContext, scheduleId, kind),
+        AlarmContract.deliveryIdentityIntent(applicationContext, scheduleId, kind),
+    )
 
 }
 

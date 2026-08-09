@@ -370,28 +370,36 @@ internal class AndroidAlarmDeliveryRetryBackend(
     )
 
     override fun schedule(work: AlarmDeliveryWork, triggerAtEpochMillis: Long): Result<Unit> = runCatching {
-        val pendingIntent = PendingIntent.getForegroundService(
+        val pendingIntent = AlarmWakePendingIntentFactory.createOrUpdate(
             context,
             AlarmDeliveryWorkContract.requestCode(work),
             AlarmDeliveryWorkContract.triggerIntent(context, work),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        alarmManager.setExactAndAllowWhileIdle(
-            AlarmManager.RTC_WAKEUP,
-            triggerAtEpochMillis,
-            pendingIntent,
-        )
+        AlarmWakePendingIntentFactory.armReplacementThenCancelLegacyServiceIdentities(
+            context = context,
+            alarmManager = alarmManager,
+            requestCode = AlarmDeliveryWorkContract.requestCode(work),
+            legacyIdentityIntents = listOf(
+                AlarmDeliveryWorkContract.deliveryIdentityIntent(context, work),
+            ),
+        ) {
+            alarmManager.setExactAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                triggerAtEpochMillis,
+                pendingIntent,
+            )
+        }
     }
 
     override fun restoreJournalEntry(key: String, work: AlarmDeliveryWork): Boolean =
         journal.replace(key, AlarmDeliveryWorkContract.triggerIntent(context, work)) != null
 
     override fun cancel(work: AlarmDeliveryWork): Boolean = runCatching {
-        val pendingIntent = PendingIntent.getForegroundService(
+        cancelLegacyDelivery(work)
+        val pendingIntent = AlarmWakePendingIntentFactory.find(
             context,
             AlarmDeliveryWorkContract.requestCode(work),
             AlarmDeliveryWorkContract.deliveryIdentityIntent(context, work),
-            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
         )
         if (pendingIntent != null) {
             alarmManager.cancel(pendingIntent)
@@ -399,4 +407,13 @@ internal class AndroidAlarmDeliveryRetryBackend(
         }
         true
     }.getOrDefault(false)
+
+    private fun cancelLegacyDelivery(work: AlarmDeliveryWork) {
+        AlarmWakePendingIntentFactory.cancelLegacyServiceIdentity(
+            context = context,
+            alarmManager = alarmManager,
+            requestCode = AlarmDeliveryWorkContract.requestCode(work),
+            identityIntent = AlarmDeliveryWorkContract.deliveryIdentityIntent(context, work),
+        )
+    }
 }

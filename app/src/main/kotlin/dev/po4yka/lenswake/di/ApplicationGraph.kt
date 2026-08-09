@@ -31,7 +31,7 @@ import dev.po4yka.lenswake.integration.AndroidPixelCameraEnvironmentProbe
 import dev.po4yka.lenswake.integration.AndroidRuntimePreflightProbe
 import dev.po4yka.lenswake.integration.PixelCameraAccessibilityPort
 import dev.po4yka.lenswake.platform.SecurePixelCameraLauncher
-import dev.po4yka.lenswake.platform.UnavailableDeviceWakeController
+import dev.po4yka.lenswake.platform.AndroidDeviceWakeController
 import dev.po4yka.lenswake.privileged.UnavailablePrivilegedBridge
 import kotlinx.coroutines.sync.Mutex
 
@@ -52,6 +52,7 @@ class ApplicationGraph(application: Application) {
 
     private val unavailablePrivilegedBridge = UnavailablePrivilegedBridge()
     private val cameraEnvironmentProbe = AndroidPixelCameraEnvironmentProbe(application)
+    private val deviceWakeController = AndroidDeviceWakeController(application)
     val installKnownPixelCameraProfile = InstallKnownPixelCameraProfile(
         environmentProbe = cameraEnvironmentProbe::inspect,
         profileRepository = profileRepository,
@@ -60,10 +61,11 @@ class ApplicationGraph(application: Application) {
         context = application,
         cameraEnvironmentProbe = cameraEnvironmentProbe,
         executionRepository = executionRepository,
+        deviceWakeController = deviceWakeController,
     )
     private val deviceControl = AndroidDeviceControlPort(
         context = application,
-        wakeController = UnavailableDeviceWakeController(),
+        wakeController = deviceWakeController,
     )
     private val pixelCamera = PixelCameraAccessibilityPort(
         launcher = SecurePixelCameraLauncher(application),

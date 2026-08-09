@@ -1,7 +1,6 @@
 package dev.po4yka.lenswake.alarm
 
 import android.app.AlarmManager
-import android.app.PendingIntent
 import android.content.Context
 import dev.po4yka.lenswake.core.ExecutionRepository
 import dev.po4yka.lenswake.core.ExecutionSession
@@ -126,7 +125,7 @@ internal class AndroidRehearsalStopAlarmBackend(
         exactAlarmCapability?.canScheduleExactAlarms() ?: alarmManager.canScheduleExactAlarms()
 
     override fun schedule(trigger: RehearsalStopTrigger, triggerAt: Instant): Result<Unit> = runCatching {
-        val pendingIntent = PendingIntent.getForegroundService(
+        val pendingIntent = AlarmWakePendingIntentFactory.createOrUpdate(
             applicationContext,
             RehearsalStopAlarmContract.REQUEST_CODE,
             RehearsalStopAlarmContract.intent(
@@ -134,14 +133,20 @@ internal class AndroidRehearsalStopAlarmBackend(
                 trigger.sessionId,
                 trigger.expectedAt,
             ),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         try {
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                triggerAt.toEpochMilli(),
-                pendingIntent,
-            )
+            AlarmWakePendingIntentFactory.armReplacementThenCancelLegacyServiceIdentities(
+                context = applicationContext,
+                alarmManager = alarmManager,
+                requestCode = RehearsalStopAlarmContract.REQUEST_CODE,
+                legacyIdentityIntents = legacyIdentityIntents(trigger.sessionId),
+            ) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAt.toEpochMilli(),
+                    pendingIntent,
+                )
+            }
         } catch (error: SecurityException) {
             throw SchedulingException(
                 code = SchedulingFailureCode.ALARM_MANAGER_REJECTED,
@@ -152,15 +157,31 @@ internal class AndroidRehearsalStopAlarmBackend(
     }
 
     override fun cancel(sessionId: SessionId): Result<Unit> = runCatching {
-        val pendingIntent = PendingIntent.getForegroundService(
+        cancelLegacyIdentities(sessionId)
+        val pendingIntent = AlarmWakePendingIntentFactory.find(
             applicationContext,
             RehearsalStopAlarmContract.REQUEST_CODE,
             RehearsalStopAlarmContract.identityIntent(applicationContext, sessionId),
-            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
         )
         if (pendingIntent != null) {
             alarmManager.cancel(pendingIntent)
             pendingIntent.cancel()
         }
     }
+
+    private fun cancelLegacyIdentities(sessionId: SessionId) {
+        legacyIdentityIntents(sessionId).forEach { identityIntent ->
+            AlarmWakePendingIntentFactory.cancelLegacyServiceIdentity(
+                context = applicationContext,
+                alarmManager = alarmManager,
+                requestCode = RehearsalStopAlarmContract.REQUEST_CODE,
+                identityIntent = identityIntent,
+            )
+        }
+    }
+
+    private fun legacyIdentityIntents(sessionId: SessionId) = listOf(
+        RehearsalStopAlarmContract.identityIntent(applicationContext, sessionId),
+        RehearsalStopAlarmContract.deliveryIdentityIntent(applicationContext, sessionId),
+    )
 }

@@ -28,6 +28,15 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".alarm.AlarmWakeGatewayActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Lenswake.WakeGateway" />
+
         <receiver
             android:name=".alarm.AlarmRecoveryReceiver"
             android:exported="false">

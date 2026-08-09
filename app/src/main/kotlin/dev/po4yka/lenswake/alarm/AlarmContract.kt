@@ -1,6 +1,5 @@
 package dev.po4yka.lenswake.alarm
 
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -66,8 +65,7 @@ object AlarmContract {
         trigger: AlarmTrigger,
         identity: String,
     ): Intent =
-        Intent(action(trigger.kind))
-            .setComponent(ComponentName(context, AutomationExecutionService::class.java))
+        AlarmWakeIntentRouting.route(context, Intent(action(trigger.kind)))
             .setData(uri(trigger.scheduleId, trigger.kind, identity))
             .putExtra(EXTRA_UPDATED_AT, trigger.scheduleUpdatedAt.toEpochMilli())
             .putExtra(EXTRA_EXPECTED_AT, trigger.expectedAt.toEpochMilli())
@@ -78,8 +76,7 @@ object AlarmContract {
         scheduleId: ScheduleId,
         kind: AlarmKind,
     ): Intent {
-        return Intent(action(kind))
-            .setComponent(ComponentName(context, AutomationExecutionService::class.java))
+        return AlarmWakeIntentRouting.route(context, Intent(action(kind)))
             .setData(uri(scheduleId, kind, DOMAIN_IDENTITY))
     }
 
@@ -88,8 +85,7 @@ object AlarmContract {
         scheduleId: ScheduleId,
         kind: AlarmKind,
     ): Intent {
-        return Intent(action(kind))
-            .setComponent(ComponentName(context, AutomationExecutionService::class.java))
+        return AlarmWakeIntentRouting.route(context, Intent(action(kind)))
             .setData(uri(scheduleId, kind, DELIVERY_IDENTITY))
     }
 

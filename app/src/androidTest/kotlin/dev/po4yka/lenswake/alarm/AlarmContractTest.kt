@@ -1,6 +1,8 @@
 package dev.po4yka.lenswake.alarm
 
+import android.app.AlarmManager
 import android.app.PendingIntent
+import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.po4yka.lenswake.core.CaptureConfiguration
@@ -21,17 +23,18 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class AlarmContractTest {
     private val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+    private val alarmManager = context.getSystemService(AlarmManager::class.java)
     private val schedule = testSchedule()
 
     @Test
     fun startAndStopHaveIndependentPendingIntentIdentities() {
-        val start = PendingIntent.getForegroundService(
+        val start = PendingIntent.getActivity(
             context,
             1_001,
             AlarmContract.intent(context, schedule, AlarmKind.START),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val stop = PendingIntent.getForegroundService(
+        val stop = PendingIntent.getActivity(
             context,
             1_002,
             AlarmContract.intent(context, schedule, AlarmKind.STOP),
@@ -40,11 +43,11 @@ class AlarmContractTest {
         try {
             assertNotEquals(start, stop)
             assertEquals(
-                AutomationExecutionService::class.java.name,
+                AlarmWakeGatewayActivity::class.java.name,
                 AlarmContract.intent(context, schedule, AlarmKind.START).component?.className,
             )
             assertEquals(
-                AutomationExecutionService::class.java.name,
+                AlarmWakeGatewayActivity::class.java.name,
                 AlarmContract.intent(context, schedule, AlarmKind.STOP).component?.className,
             )
         } finally {
@@ -54,8 +57,125 @@ class AlarmContractTest {
     }
 
     @Test
+    fun wakeFactoryCreatesActivityPendingIntentAndFindsTheSameIdentity() {
+        val factorySchedule = schedule.copy(id = ScheduleId("wake-factory-schedule"))
+        val intent = AlarmContract.intent(context, factorySchedule, AlarmKind.START)
+        val pendingIntent = AlarmWakePendingIntentFactory.createOrUpdate(
+            context,
+            AlarmContract.requestCode(AlarmKind.START),
+            intent,
+        )
+        try {
+            assertTrue(pendingIntent.isActivity)
+            val expectedGatewayFlags =
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_NO_ANIMATION or
+                    Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP
+            assertEquals(expectedGatewayFlags, intent.flags and expectedGatewayFlags)
+            assertEquals(
+                pendingIntent,
+                AlarmWakePendingIntentFactory.find(
+                    context,
+                    AlarmContract.requestCode(AlarmKind.START),
+                    AlarmContract.identityIntent(context, factorySchedule.id, AlarmKind.START),
+                ),
+            )
+            assertNull(
+                PendingIntent.getForegroundService(
+                    context,
+                    AlarmContract.requestCode(AlarmKind.START),
+                    AlarmContract.identityIntent(context, factorySchedule.id, AlarmKind.START),
+                    PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+                ),
+            )
+        } finally {
+            pendingIntent.cancel()
+        }
+    }
+
+    @Test
+    fun migrationCancelsLegacyScheduleDomainAndDeliveryWithoutTouchingGatewayIdentity() {
+        val migrationSchedule = schedule.copy(id = ScheduleId("legacy-service-migration"))
+        val domainIntent = AlarmContract.intent(context, migrationSchedule, AlarmKind.STOP)
+        val deliveryIntent = AlarmContract.triggerIntent(
+            context,
+            requireNotNull(AlarmContract.parse(domainIntent)).copy(deliveryAttempt = 1),
+        )
+        val requestCode = AlarmContract.requestCode(AlarmKind.STOP)
+        val legacyDomain = legacyServicePendingIntent(requestCode, domainIntent)
+        val legacyDelivery = legacyServicePendingIntent(requestCode, deliveryIntent)
+        val gatewayDomain = AlarmWakePendingIntentFactory.createOrUpdate(
+            context,
+            requestCode,
+            domainIntent,
+        )
+        try {
+            AlarmWakePendingIntentFactory.armReplacementThenCancelLegacyServiceIdentities(
+                context = context,
+                alarmManager = alarmManager,
+                requestCode = requestCode,
+                legacyIdentityIntents = listOf(
+                    AlarmContract.identityIntent(context, migrationSchedule.id, AlarmKind.STOP),
+                    AlarmContract.deliveryIdentityIntent(
+                        context,
+                        migrationSchedule.id,
+                        AlarmKind.STOP,
+                    ),
+                ),
+                armReplacement = {},
+            )
+            assertNull(findLegacyServicePendingIntent(requestCode, domainIntent))
+            assertNull(findLegacyServicePendingIntent(requestCode, deliveryIntent))
+            assertEquals(
+                gatewayDomain,
+                AlarmWakePendingIntentFactory.find(
+                    context,
+                    requestCode,
+                    AlarmContract.identityIntent(context, migrationSchedule.id, AlarmKind.STOP),
+                ),
+            )
+        } finally {
+            legacyDomain.cancel()
+            legacyDelivery.cancel()
+            gatewayDomain.cancel()
+        }
+    }
+
+    @Test
+    fun rejectedActivityReplacementPreservesLegacyServiceAlarmIdentity() {
+        val migrationSchedule = schedule.copy(id = ScheduleId("legacy-preserved-on-failure"))
+        val domainIntent = AlarmContract.intent(context, migrationSchedule, AlarmKind.START)
+        val requestCode = AlarmContract.requestCode(AlarmKind.START)
+        val legacyDomain = legacyServicePendingIntent(requestCode, domainIntent)
+        try {
+            val failure = runCatching {
+                AlarmWakePendingIntentFactory.armReplacementThenCancelLegacyServiceIdentities(
+                    context = context,
+                    alarmManager = alarmManager,
+                    requestCode = requestCode,
+                    legacyIdentityIntents = listOf(
+                        AlarmContract.identityIntent(
+                            context,
+                            migrationSchedule.id,
+                            AlarmKind.START,
+                        ),
+                    ),
+                ) {
+                    error("replacement rejected")
+                }
+            }.exceptionOrNull()
+
+            assertEquals("replacement rejected", failure?.message)
+            assertNotNull(findLegacyServicePendingIntent(requestCode, domainIntent))
+        } finally {
+            legacyDomain.cancel()
+        }
+    }
+
+    @Test
     fun scheduleRevisionUpdatesPayloadWithoutChangingStartIdentity() {
-        val initial = PendingIntent.getForegroundService(
+        val initial = PendingIntent.getActivity(
             context,
             1_001,
             AlarmContract.intent(context, schedule, AlarmKind.START),
@@ -66,7 +186,7 @@ class AlarmContractTest {
             stopAt = schedule.stopAt.plusSeconds(60),
             updatedAt = schedule.updatedAt.plusSeconds(30),
         )
-        val replacement = PendingIntent.getForegroundService(
+        val replacement = PendingIntent.getActivity(
             context,
             1_001,
             AlarmContract.intent(context, changed, AlarmKind.START),
@@ -96,13 +216,13 @@ class AlarmContractTest {
             deliveryAttempt = 1,
         )
         val deliveryIntent = AlarmContract.triggerIntent(context, journalTrigger)
-        val domain = PendingIntent.getForegroundService(
+        val domain = PendingIntent.getActivity(
             context,
             AlarmContract.requestCode(AlarmKind.START),
             futureDomainIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val delivery = PendingIntent.getForegroundService(
+        val delivery = PendingIntent.getActivity(
             context,
             AlarmContract.requestCode(AlarmKind.START),
             deliveryIntent,
@@ -114,13 +234,13 @@ class AlarmContractTest {
             assertEquals(schedule.startAt, AlarmContract.parse(futureDomainIntent)?.expectedAt)
             assertEquals(schedule.startAt, AlarmContract.parse(deliveryIntent)?.expectedAt)
 
-            val domainIdentity = PendingIntent.getForegroundService(
+            val domainIdentity = PendingIntent.getActivity(
                 context,
                 AlarmContract.requestCode(AlarmKind.START),
                 AlarmContract.identityIntent(context, schedule.id, AlarmKind.START),
                 PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
             )
-            val deliveryIdentity = PendingIntent.getForegroundService(
+            val deliveryIdentity = PendingIntent.getActivity(
                 context,
                 AlarmContract.requestCode(AlarmKind.START),
                 AlarmContract.deliveryIdentityIntent(context, schedule.id, AlarmKind.START),
@@ -131,7 +251,7 @@ class AlarmContractTest {
 
             requireNotNull(domainIdentity).cancel()
             assertNull(
-                PendingIntent.getForegroundService(
+                PendingIntent.getActivity(
                     context,
                     AlarmContract.requestCode(AlarmKind.START),
                     AlarmContract.identityIntent(context, schedule.id, AlarmKind.START),
@@ -139,7 +259,7 @@ class AlarmContractTest {
                 ),
             )
             assertNotNull(
-                PendingIntent.getForegroundService(
+                PendingIntent.getActivity(
                     context,
                     AlarmContract.requestCode(AlarmKind.START),
                     AlarmContract.deliveryIdentityIntent(context, schedule.id, AlarmKind.START),
@@ -154,7 +274,7 @@ class AlarmContractTest {
 
     @Test
     fun retryAttemptsReplaceOnlyDeliveryIdentityAndCanBeCancelledIndependently() {
-        val domain = PendingIntent.getForegroundService(
+        val domain = PendingIntent.getActivity(
             context,
             AlarmContract.requestCode(AlarmKind.STOP),
             AlarmContract.intent(context, schedule, AlarmKind.STOP),
@@ -163,13 +283,13 @@ class AlarmContractTest {
         val trigger = requireNotNull(
             AlarmContract.parse(AlarmContract.intent(context, schedule, AlarmKind.STOP)),
         )
-        val firstRetry = PendingIntent.getForegroundService(
+        val firstRetry = PendingIntent.getActivity(
             context,
             AlarmContract.requestCode(AlarmKind.STOP),
             AlarmContract.triggerIntent(context, trigger.copy(deliveryAttempt = 1)),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val replacementRetry = PendingIntent.getForegroundService(
+        val replacementRetry = PendingIntent.getActivity(
             context,
             AlarmContract.requestCode(AlarmKind.STOP),
             AlarmContract.triggerIntent(context, trigger.copy(deliveryAttempt = 2)),
@@ -180,7 +300,7 @@ class AlarmContractTest {
             assertNotEquals(domain, replacementRetry)
 
             requireNotNull(
-                PendingIntent.getForegroundService(
+                PendingIntent.getActivity(
                     context,
                     AlarmContract.requestCode(AlarmKind.STOP),
                     AlarmContract.deliveryIdentityIntent(context, schedule.id, AlarmKind.STOP),
@@ -189,7 +309,7 @@ class AlarmContractTest {
             ).cancel()
 
             assertNull(
-                PendingIntent.getForegroundService(
+                PendingIntent.getActivity(
                     context,
                     AlarmContract.requestCode(AlarmKind.STOP),
                     AlarmContract.deliveryIdentityIntent(context, schedule.id, AlarmKind.STOP),
@@ -197,7 +317,7 @@ class AlarmContractTest {
                 ),
             )
             assertNotNull(
-                PendingIntent.getForegroundService(
+                PendingIntent.getActivity(
                     context,
                     AlarmContract.requestCode(AlarmKind.STOP),
                     AlarmContract.identityIntent(context, schedule.id, AlarmKind.STOP),
@@ -222,7 +342,7 @@ class AlarmContractTest {
     }
 
     @Test
-    fun serviceParserInfersStartAndStopKindsFromExplicitActions() {
+    fun gatewayParserInfersStartAndStopKindsFromExplicitActions() {
         assertEquals(
             AlarmKind.START,
             AlarmContract.parse(AlarmContract.intent(context, schedule, AlarmKind.START))?.kind,
@@ -232,6 +352,22 @@ class AlarmContractTest {
             AlarmContract.parse(AlarmContract.intent(context, schedule, AlarmKind.STOP))?.kind,
         )
     }
+
+    private fun legacyServicePendingIntent(requestCode: Int, intent: Intent): PendingIntent =
+        PendingIntent.getForegroundService(
+            context,
+            requestCode,
+            AlarmWakePendingIntentFactory.legacyServiceIntent(context, intent),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+    private fun findLegacyServicePendingIntent(requestCode: Int, intent: Intent): PendingIntent? =
+        PendingIntent.getForegroundService(
+            context,
+            requestCode,
+            AlarmWakePendingIntentFactory.legacyServiceIntent(context, intent),
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+        )
 }
 
 internal fun testSchedule(): RecordingSchedule = RecordingSchedule(
