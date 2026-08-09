@@ -140,7 +140,7 @@ class AndroidRuntimePreflightProbe(
                 .getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
                 .any { service ->
                     val info = service.resolveInfo.serviceInfo
-                    ComponentName(info.packageName, info.name) == expectedComponent
+                    ComponentName.createRelative(info.packageName, info.name) == expectedComponent
                 }
         }.getOrElse { error ->
             return RuntimeCapabilityObservation(
