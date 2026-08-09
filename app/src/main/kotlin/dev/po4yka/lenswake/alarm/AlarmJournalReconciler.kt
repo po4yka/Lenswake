@@ -22,12 +22,12 @@ internal class AndroidExactAlarmRearmBackend(
     override fun canScheduleExactAlarms(): Boolean = alarmManager.canScheduleExactAlarms()
 
     override fun rearm(work: AlarmDeliveryWork, triggerAtEpochMillis: Long) {
-        val pendingIntent = AlarmWakePendingIntentFactory.createOrUpdate(
+        val pendingIntent = AutomationAlarmPendingIntentFactory.createOrUpdate(
             context,
             AlarmDeliveryWorkContract.requestCode(work),
             AlarmDeliveryWorkContract.triggerIntent(context, work),
         )
-        AlarmWakePendingIntentFactory.armReplacementThenCancelLegacyServiceIdentities(
+        AutomationAlarmPendingIntentFactory.armReplacementThenCancelLegacyGatewayActivityIdentities(
             context = context,
             alarmManager = alarmManager,
             requestCode = AlarmDeliveryWorkContract.requestCode(work),

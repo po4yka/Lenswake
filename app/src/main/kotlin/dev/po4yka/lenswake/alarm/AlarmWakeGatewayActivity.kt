@@ -7,20 +7,19 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import android.view.WindowManager
 
 /**
- * Visible, bounded bridge from a wakeup alarm to durable foreground-service execution.
+ * Visible, bounded target for a locally posted alarm-category full-screen intent.
  *
- * This Activity deliberately does not dismiss keyguard, hold a wake lock, or perform automation. Its
- * window asks Android to turn the display on and be shown over keyguard. A structurally valid explicit
- * alarm is immediately forwarded to [AutomationExecutionService], which persists and revalidates it.
+ * This Activity deliberately does not dismiss keyguard, hold a wake lock, forward alarm work, or
+ * perform automation. Its only valid mode asks Android to turn the display on over keyguard while the
+ * already-running durable execution service continues the scheduled workflow.
  */
 internal class AlarmWakeGatewayActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private val finishAtDeadline = Runnable(::finishGateway)
-    private var acceptedMode = false
+    private var acceptedWake = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,7 +37,7 @@ internal class AlarmWakeGatewayActivity : Activity() {
 
     override fun onStop() {
         super.onStop()
-        if (acceptedMode && !isChangingConfigurations) finishGateway()
+        if (acceptedWake && !isChangingConfigurations) finishGateway()
     }
 
     override fun onDestroy() {
@@ -48,34 +47,11 @@ internal class AlarmWakeGatewayActivity : Activity() {
 
     private fun handleIntent(incoming: Intent) {
         handler.removeCallbacks(finishAtDeadline)
-        acceptedMode = false
-
-        when {
-            AlarmWakeGatewayContract.isWakeOnly(this, incoming) -> {
-                acceptedMode = true
-                scheduleDeadline()
-            }
-
-            else -> {
-                val serviceIntent = AlarmWakeGatewayContract.forwardedServiceIntent(
-                    context = this,
-                    incoming = incoming,
-                )
-                if (serviceIntent == null) {
-                    Log.e(TAG, "Rejected malformed or non-explicit wake-gateway intent")
-                    finishGateway()
-                    return
-                }
-                try {
-                    startForegroundService(serviceIntent)
-                } catch (error: RuntimeException) {
-                    Log.e(TAG, "Could not forward durable alarm to execution service", error)
-                    finishGateway()
-                    return
-                }
-                acceptedMode = true
-                scheduleDeadline()
-            }
+        acceptedWake = AlarmWakeGatewayContract.isWakeOnly(this, incoming)
+        if (acceptedWake) {
+            scheduleDeadline()
+        } else {
+            finishGateway()
         }
     }
 
@@ -89,7 +65,6 @@ internal class AlarmWakeGatewayActivity : Activity() {
     }
 
     private companion object {
-        const val TAG = "LenswakeWakeGateway"
         const val MAX_VISIBLE_MILLIS = 20_000L
     }
 }
@@ -114,11 +89,4 @@ internal object AlarmWakeGatewayContract {
             intent.data == null &&
             intent.extras?.isEmpty != false
 
-    fun forwardedServiceIntent(context: Context, incoming: Intent): Intent? {
-        if (incoming.component != component(context)) return null
-        if (AlarmDeliveryWorkContract.parse(incoming) == null) return null
-        return Intent(incoming)
-            .setComponent(ComponentName(context, AutomationExecutionService::class.java))
-            .setFlags(0)
-    }
 }

@@ -134,7 +134,7 @@ class AndroidRuntimePreflightProbe(
                     when (result) {
                         is PlatformCapability.Available -> RuntimeCapabilityObservation(
                             status = PreflightStatus.PASSED,
-                            message = "The private lock-screen display-wake gateway is available.",
+                            message = "The full-screen alarm display-wake path is available.",
                         )
 
                         is PlatformCapability.Unavailable -> RuntimeCapabilityObservation(

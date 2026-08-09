@@ -125,7 +125,7 @@ internal class AndroidRehearsalStopAlarmBackend(
         exactAlarmCapability?.canScheduleExactAlarms() ?: alarmManager.canScheduleExactAlarms()
 
     override fun schedule(trigger: RehearsalStopTrigger, triggerAt: Instant): Result<Unit> = runCatching {
-        val pendingIntent = AlarmWakePendingIntentFactory.createOrUpdate(
+        val pendingIntent = AutomationAlarmPendingIntentFactory.createOrUpdate(
             applicationContext,
             RehearsalStopAlarmContract.REQUEST_CODE,
             RehearsalStopAlarmContract.intent(
@@ -135,7 +135,7 @@ internal class AndroidRehearsalStopAlarmBackend(
             ),
         )
         try {
-            AlarmWakePendingIntentFactory.armReplacementThenCancelLegacyServiceIdentities(
+            AutomationAlarmPendingIntentFactory.armReplacementThenCancelLegacyGatewayActivityIdentities(
                 context = applicationContext,
                 alarmManager = alarmManager,
                 requestCode = RehearsalStopAlarmContract.REQUEST_CODE,
@@ -158,7 +158,7 @@ internal class AndroidRehearsalStopAlarmBackend(
 
     override fun cancel(sessionId: SessionId): Result<Unit> = runCatching {
         cancelLegacyIdentities(sessionId)
-        val pendingIntent = AlarmWakePendingIntentFactory.find(
+        val pendingIntent = AutomationAlarmPendingIntentFactory.find(
             applicationContext,
             RehearsalStopAlarmContract.REQUEST_CODE,
             RehearsalStopAlarmContract.identityIntent(applicationContext, sessionId),
@@ -171,7 +171,7 @@ internal class AndroidRehearsalStopAlarmBackend(
 
     private fun cancelLegacyIdentities(sessionId: SessionId) {
         legacyIdentityIntents(sessionId).forEach { identityIntent ->
-            AlarmWakePendingIntentFactory.cancelLegacyServiceIdentity(
+            AutomationAlarmPendingIntentFactory.cancelLegacyGatewayActivityIdentity(
                 context = applicationContext,
                 alarmManager = alarmManager,
                 requestCode = RehearsalStopAlarmContract.REQUEST_CODE,

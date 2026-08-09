@@ -370,12 +370,12 @@ internal class AndroidAlarmDeliveryRetryBackend(
     )
 
     override fun schedule(work: AlarmDeliveryWork, triggerAtEpochMillis: Long): Result<Unit> = runCatching {
-        val pendingIntent = AlarmWakePendingIntentFactory.createOrUpdate(
+        val pendingIntent = AutomationAlarmPendingIntentFactory.createOrUpdate(
             context,
             AlarmDeliveryWorkContract.requestCode(work),
             AlarmDeliveryWorkContract.triggerIntent(context, work),
         )
-        AlarmWakePendingIntentFactory.armReplacementThenCancelLegacyServiceIdentities(
+        AutomationAlarmPendingIntentFactory.armReplacementThenCancelLegacyGatewayActivityIdentities(
             context = context,
             alarmManager = alarmManager,
             requestCode = AlarmDeliveryWorkContract.requestCode(work),
@@ -396,7 +396,7 @@ internal class AndroidAlarmDeliveryRetryBackend(
 
     override fun cancel(work: AlarmDeliveryWork): Boolean = runCatching {
         cancelLegacyDelivery(work)
-        val pendingIntent = AlarmWakePendingIntentFactory.find(
+        val pendingIntent = AutomationAlarmPendingIntentFactory.find(
             context,
             AlarmDeliveryWorkContract.requestCode(work),
             AlarmDeliveryWorkContract.deliveryIdentityIntent(context, work),
@@ -409,7 +409,7 @@ internal class AndroidAlarmDeliveryRetryBackend(
     }.getOrDefault(false)
 
     private fun cancelLegacyDelivery(work: AlarmDeliveryWork) {
-        AlarmWakePendingIntentFactory.cancelLegacyServiceIdentity(
+        AutomationAlarmPendingIntentFactory.cancelLegacyGatewayActivityIdentity(
             context = context,
             alarmManager = alarmManager,
             requestCode = AlarmDeliveryWorkContract.requestCode(work),

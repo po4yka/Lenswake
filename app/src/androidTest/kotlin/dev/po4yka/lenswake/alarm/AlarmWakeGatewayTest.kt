@@ -1,6 +1,8 @@
 package dev.po4yka.lenswake.alarm
 
-import android.content.ComponentName
+import android.Manifest
+import android.app.Notification
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
@@ -8,12 +10,12 @@ import android.content.pm.PackageManager
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.po4yka.lenswake.R
-import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.platform.AndroidDeviceWakeController
+import dev.po4yka.lenswake.platform.DeviceWakeNotificationContract
 import dev.po4yka.lenswake.platform.PlatformCapability
-import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -22,6 +24,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class AlarmWakeGatewayTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
+    private val notificationManager = context.getSystemService(NotificationManager::class.java)
 
     @Test
     fun gatewayIsPrivateBoundedAndExcludedFromHistory() {
@@ -39,75 +42,23 @@ class AlarmWakeGatewayTest {
     }
 
     @Test
-    fun validScheduleAlarmIsForwardedWithoutChangingDurablePayload() {
-        val incoming = AlarmContract.intent(context, testSchedule(), AlarmKind.START)
-
-        val forwarded = requireNotNull(
-            AlarmWakeGatewayContract.forwardedServiceIntent(context, incoming),
+    fun manifestDeclaresFullScreenIntentAndNotificationPermissions() {
+        val packageInfo = context.packageManager.getPackageInfo(
+            context.packageName,
+            PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong()),
         )
+        val permissions = packageInfo.requestedPermissions.orEmpty().toSet()
 
-        assertEquals(
-            ComponentName(context, AutomationExecutionService::class.java),
-            forwarded.component,
-        )
-        assertEquals(incoming.action, forwarded.action)
-        assertEquals(incoming.data, forwarded.data)
-        assertEquals(AlarmContract.parse(incoming), AlarmContract.parse(forwarded))
-        assertEquals(0, forwarded.flags)
+        assertTrue(Manifest.permission.USE_FULL_SCREEN_INTENT in permissions)
+        assertTrue(Manifest.permission.POST_NOTIFICATIONS in permissions)
     }
 
     @Test
-    fun validSessionBoundStopIsForwardedWithoutChangingDurablePayload() {
-        val trigger = RehearsalStopTrigger(
-            sessionId = SessionId("gateway-rehearsal"),
-            expectedAt = Instant.parse("2026-08-10T05:30:00Z"),
-            deliveryAttempt = 2,
-        )
-        val incoming = RehearsalStopAlarmContract.triggerIntent(context, trigger)
-
-        val forwarded = requireNotNull(
-            AlarmWakeGatewayContract.forwardedServiceIntent(context, incoming),
-        )
-
-        assertEquals(
-            ComponentName(context, AutomationExecutionService::class.java),
-            forwarded.component,
-        )
-        assertEquals(trigger, RehearsalStopAlarmContract.parse(forwarded))
-    }
-
-    @Test
-    fun implicitWrongComponentAndMalformedAlarmsAreRejected() {
-        val valid = AlarmContract.intent(context, testSchedule(), AlarmKind.STOP)
-
-        assertNull(
-            AlarmWakeGatewayContract.forwardedServiceIntent(
-                context,
-                Intent(valid).setComponent(null),
-            ),
-        )
-        assertNull(
-            AlarmWakeGatewayContract.forwardedServiceIntent(
-                context,
-                Intent(valid).setComponent(
-                    ComponentName(context, AutomationExecutionService::class.java),
-                ),
-            ),
-        )
-        assertNull(
-            AlarmWakeGatewayContract.forwardedServiceIntent(
-                context,
-                Intent(valid).replaceExtras(null),
-            ),
-        )
-    }
-
-    @Test
-    fun wakeOnlyIsExplicitAndNeverForwardsAutomation() {
+    fun wakeOnlyIntentIsExplicitAndRejectsAdditionalPayload() {
         val wakeOnly = AlarmWakeGatewayContract.wakeOnlyIntent(context)
 
+        assertEquals(AlarmWakeGatewayContract.component(context), wakeOnly.component)
         assertTrue(AlarmWakeGatewayContract.isWakeOnly(context, wakeOnly))
-        assertNull(AlarmWakeGatewayContract.forwardedServiceIntent(context, wakeOnly))
         assertFalse(
             AlarmWakeGatewayContract.isWakeOnly(
                 context,
@@ -123,9 +74,45 @@ class AlarmWakeGatewayTest {
     }
 
     @Test
-    fun productionWakeControllerReportsDeclaredPrivateGateway() {
-        assertTrue(
-            AndroidDeviceWakeController(context).availability() is PlatformCapability.Available,
+    fun wakeNotificationIsUrgentAlarmWithImmutableFullScreenIntent() {
+        DeviceWakeNotificationContract.ensureChannel(notificationManager)
+
+        val notification = DeviceWakeNotificationContract.notification(context)
+        val channel = requireNotNull(
+            notificationManager.getNotificationChannel(DeviceWakeNotificationContract.CHANNEL_ID),
         )
+
+        assertEquals(NotificationManager.IMPORTANCE_HIGH, channel.importance)
+        assertNull(channel.sound)
+        assertFalse(channel.shouldVibrate())
+        assertEquals(Notification.CATEGORY_ALARM, notification.category)
+        assertEquals(Notification.VISIBILITY_PUBLIC, notification.visibility)
+        assertTrue(notification.flags and Notification.FLAG_ONGOING_EVENT != 0)
+        assertEquals(
+            DeviceWakeNotificationContract.MAX_NOTIFICATION_LIFETIME_MILLIS,
+            notification.timeoutAfter,
+        )
+        assertNotNull(notification.fullScreenIntent)
+        assertTrue(requireNotNull(notification.fullScreenIntent).isImmutable)
+        assertEquals(context.packageName, notification.fullScreenIntent?.creatorPackage)
+    }
+
+    @Test
+    fun productionAvailabilityFailsClosedAgainstLiveNotificationState() {
+        DeviceWakeNotificationContract.ensureChannel(notificationManager)
+        val channel = notificationManager.getNotificationChannel(
+            DeviceWakeNotificationContract.CHANNEL_ID,
+        )
+        val permissionGranted = context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        val expectedAvailable = permissionGranted &&
+            notificationManager.areNotificationsEnabled() &&
+            notificationManager.canUseFullScreenIntent() &&
+            channel != null &&
+            channel.importance >= NotificationManager.IMPORTANCE_HIGH
+
+        val actual = AndroidDeviceWakeController(context).availability()
+
+        assertEquals(expectedAvailable, actual is PlatformCapability.Available)
     }
 }

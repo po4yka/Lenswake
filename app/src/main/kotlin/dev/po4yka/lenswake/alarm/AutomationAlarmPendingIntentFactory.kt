@@ -7,52 +7,51 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 
-/** Keeps every automation alarm on the same activity PendingIntent identity and BAL policy. */
-internal object AlarmWakePendingIntentFactory {
+/** Keeps durable automation alarms service-bound while migrating the rejected gateway transport. */
+internal object AutomationAlarmPendingIntentFactory {
     fun createOrUpdate(
         context: Context,
         requestCode: Int,
         intent: Intent,
-    ): PendingIntent = PendingIntent.getActivity(
+    ): PendingIntent = PendingIntent.getForegroundService(
         context,
         requestCode,
         intent,
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        creatorOptions(),
     )
 
     fun find(
         context: Context,
         requestCode: Int,
         identityIntent: Intent,
-    ): PendingIntent? = PendingIntent.getActivity(
+    ): PendingIntent? = PendingIntent.getForegroundService(
         context,
         requestCode,
         identityIntent,
         PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
-        creatorOptions(),
     )
 
-    /** Removes the service token created by Lenswake versions before the wake gateway migration. */
-    fun cancelLegacyServiceIdentity(
+    /** Removes the activity token installed by the superseded wake-gateway alarm transport. */
+    fun cancelLegacyGatewayActivityIdentity(
         context: Context,
         alarmManager: AlarmManager,
         requestCode: Int,
         identityIntent: Intent,
     ): Boolean {
-        val legacy = PendingIntent.getForegroundService(
+        val legacy = PendingIntent.getActivity(
             context,
             requestCode,
-            legacyServiceIntent(context, identityIntent),
+            legacyGatewayActivityIntent(context, identityIntent),
             PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+            creatorOptions(),
         ) ?: return false
         alarmManager.cancel(legacy)
         legacy.cancel()
         return true
     }
 
-    /** Preserves the legacy alarm unless Android first accepts its activity-based replacement. */
-    fun armReplacementThenCancelLegacyServiceIdentities(
+    /** Preserves an installed activity alarm unless Android accepts its service replacement first. */
+    fun armReplacementThenCancelLegacyGatewayActivityIdentities(
         context: Context,
         alarmManager: AlarmManager,
         requestCode: Int,
@@ -61,7 +60,7 @@ internal object AlarmWakePendingIntentFactory {
     ) {
         armReplacement()
         legacyIdentityIntents.forEach { identityIntent ->
-            cancelLegacyServiceIdentity(
+            cancelLegacyGatewayActivityIdentity(
                 context = context,
                 alarmManager = alarmManager,
                 requestCode = requestCode,
@@ -70,24 +69,18 @@ internal object AlarmWakePendingIntentFactory {
         }
     }
 
-    internal fun legacyServiceIntent(context: Context, intent: Intent): Intent = Intent(intent)
-        .setComponent(ComponentName(context, AutomationExecutionService::class.java))
-        .setFlags(0)
-
-    private fun creatorOptions() = ActivityOptions.makeBasic()
-        .setPendingIntentCreatorBackgroundActivityStartMode(
-            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS,
-        )
-        .toBundle()
-}
-
-internal object AlarmWakeIntentRouting {
-    fun route(context: Context, intent: Intent): Intent = intent
-        .setComponent(AlarmWakeGatewayContract.component(context))
+    internal fun legacyGatewayActivityIntent(context: Context, intent: Intent): Intent = Intent(intent)
+        .setComponent(ComponentName(context, AlarmWakeGatewayActivity::class.java))
         .addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_ACTIVITY_NO_ANIMATION or
                 Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS or
                 Intent.FLAG_ACTIVITY_CLEAR_TOP,
         )
+
+    private fun creatorOptions() = ActivityOptions.makeBasic()
+        .setPendingIntentCreatorBackgroundActivityStartMode(
+            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS,
+        )
+        .toBundle()
 }

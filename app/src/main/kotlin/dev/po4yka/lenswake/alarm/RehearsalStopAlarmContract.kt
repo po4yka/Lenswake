@@ -1,5 +1,6 @@
 package dev.po4yka.lenswake.alarm
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -84,7 +85,8 @@ object RehearsalStopAlarmContract {
         context: Context,
         sessionId: SessionId,
         identity: String,
-    ): Intent = AlarmWakeIntentRouting.route(context, Intent(ACTION_REHEARSAL_STOP))
+    ): Intent = Intent(ACTION_REHEARSAL_STOP)
+        .setComponent(ComponentName(context, AutomationExecutionService::class.java))
         .setData(
             Uri.Builder()
                 .scheme(SCHEME)

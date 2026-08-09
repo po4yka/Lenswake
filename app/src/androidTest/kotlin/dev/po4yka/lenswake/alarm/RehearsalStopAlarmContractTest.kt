@@ -26,13 +26,13 @@ class RehearsalStopAlarmContractTest {
     @Test
     fun rehearsalStopCannotAliasScheduleStopEvenWhenIdentifiersMatch() {
         val schedule = testSchedule()
-        val scheduleStop = PendingIntent.getActivity(
+        val scheduleStop = PendingIntent.getForegroundService(
             context,
             AlarmContract.requestCode(AlarmKind.STOP),
             AlarmContract.intent(context, schedule, AlarmKind.STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val rehearsalStop = PendingIntent.getActivity(
+        val rehearsalStop = PendingIntent.getForegroundService(
             context,
             RehearsalStopAlarmContract.REQUEST_CODE,
             RehearsalStopAlarmContract.intent(context, sessionId, expectedAt),
@@ -41,7 +41,7 @@ class RehearsalStopAlarmContractTest {
         try {
             assertNotEquals(scheduleStop, rehearsalStop)
             assertEquals(
-                AlarmWakeGatewayActivity::class.java.name,
+                AutomationExecutionService::class.java.name,
                 RehearsalStopAlarmContract.intent(context, sessionId, expectedAt).component?.className,
             )
             assertNotEquals(
@@ -59,13 +59,13 @@ class RehearsalStopAlarmContractTest {
         val domainIntent = RehearsalStopAlarmContract.intent(context, sessionId, expectedAt)
         val retryTrigger = RehearsalStopTrigger(sessionId, expectedAt, deliveryAttempt = 2)
         val deliveryIntent = RehearsalStopAlarmContract.triggerIntent(context, retryTrigger)
-        val domain = PendingIntent.getActivity(
+        val domain = PendingIntent.getForegroundService(
             context,
             RehearsalStopAlarmContract.REQUEST_CODE,
             domainIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val delivery = PendingIntent.getActivity(
+        val delivery = PendingIntent.getForegroundService(
             context,
             RehearsalStopAlarmContract.REQUEST_CODE,
             deliveryIntent,
@@ -77,7 +77,7 @@ class RehearsalStopAlarmContractTest {
             assertEquals(2, RehearsalStopAlarmContract.parse(deliveryIntent)?.deliveryAttempt)
 
             requireNotNull(
-                PendingIntent.getActivity(
+                PendingIntent.getForegroundService(
                     context,
                     RehearsalStopAlarmContract.REQUEST_CODE,
                     RehearsalStopAlarmContract.identityIntent(context, sessionId),
@@ -86,7 +86,7 @@ class RehearsalStopAlarmContractTest {
             ).cancel()
 
             assertNull(
-                PendingIntent.getActivity(
+                PendingIntent.getForegroundService(
                     context,
                     RehearsalStopAlarmContract.REQUEST_CODE,
                     RehearsalStopAlarmContract.identityIntent(context, sessionId),
@@ -94,7 +94,7 @@ class RehearsalStopAlarmContractTest {
                 ),
             )
             assertNotNull(
-                PendingIntent.getActivity(
+                PendingIntent.getForegroundService(
                     context,
                     RehearsalStopAlarmContract.REQUEST_CODE,
                     RehearsalStopAlarmContract.deliveryIdentityIntent(context, sessionId),
@@ -109,7 +109,7 @@ class RehearsalStopAlarmContractTest {
 
     @Test
     fun deliveryAttemptsReplaceOnlyDeliveryPayload() {
-        val first = PendingIntent.getActivity(
+        val first = PendingIntent.getForegroundService(
             context,
             RehearsalStopAlarmContract.REQUEST_CODE,
             RehearsalStopAlarmContract.triggerIntent(
@@ -118,7 +118,7 @@ class RehearsalStopAlarmContractTest {
             ),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val replacement = PendingIntent.getActivity(
+        val replacement = PendingIntent.getForegroundService(
             context,
             RehearsalStopAlarmContract.REQUEST_CODE,
             RehearsalStopAlarmContract.triggerIntent(
@@ -136,17 +136,17 @@ class RehearsalStopAlarmContractTest {
     }
 
     @Test
-    fun migrationCancelsLegacyRehearsalDomainAndDeliveryIdentities() {
+    fun migrationCancelsGatewayRehearsalDomainAndDeliveryIdentities() {
         val domainIntent = RehearsalStopAlarmContract.intent(context, sessionId, expectedAt)
         val deliveryIntent = RehearsalStopAlarmContract.triggerIntent(
             context,
             RehearsalStopTrigger(sessionId, expectedAt, deliveryAttempt = 1),
         )
-        val legacyDomain = legacyServicePendingIntent(domainIntent)
-        val legacyDelivery = legacyServicePendingIntent(deliveryIntent)
+        val legacyDomain = legacyGatewayPendingIntent(domainIntent)
+        val legacyDelivery = legacyGatewayPendingIntent(deliveryIntent)
         try {
             assertTrue(
-                AlarmWakePendingIntentFactory.cancelLegacyServiceIdentity(
+                AutomationAlarmPendingIntentFactory.cancelLegacyGatewayActivityIdentity(
                     context,
                     alarmManager,
                     RehearsalStopAlarmContract.REQUEST_CODE,
@@ -154,15 +154,15 @@ class RehearsalStopAlarmContractTest {
                 ),
             )
             assertTrue(
-                AlarmWakePendingIntentFactory.cancelLegacyServiceIdentity(
+                AutomationAlarmPendingIntentFactory.cancelLegacyGatewayActivityIdentity(
                     context,
                     alarmManager,
                     RehearsalStopAlarmContract.REQUEST_CODE,
                     RehearsalStopAlarmContract.deliveryIdentityIntent(context, sessionId),
                 ),
             )
-            assertNull(findLegacyServicePendingIntent(domainIntent))
-            assertNull(findLegacyServicePendingIntent(deliveryIntent))
+            assertNull(findLegacyGatewayPendingIntent(domainIntent))
+            assertNull(findLegacyGatewayPendingIntent(deliveryIntent))
         } finally {
             legacyDomain.cancel()
             legacyDelivery.cancel()
@@ -177,19 +177,19 @@ class RehearsalStopAlarmContractTest {
         assertNull(RehearsalStopAlarmContract.parse(Intent(valid).setData(null)))
     }
 
-    private fun legacyServicePendingIntent(intent: Intent): PendingIntent =
-        PendingIntent.getForegroundService(
+    private fun legacyGatewayPendingIntent(intent: Intent): PendingIntent =
+        PendingIntent.getActivity(
             context,
             RehearsalStopAlarmContract.REQUEST_CODE,
-            AlarmWakePendingIntentFactory.legacyServiceIntent(context, intent),
+            AutomationAlarmPendingIntentFactory.legacyGatewayActivityIntent(context, intent),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-    private fun findLegacyServicePendingIntent(intent: Intent): PendingIntent? =
-        PendingIntent.getForegroundService(
+    private fun findLegacyGatewayPendingIntent(intent: Intent): PendingIntent? =
+        PendingIntent.getActivity(
             context,
             RehearsalStopAlarmContract.REQUEST_CODE,
-            AlarmWakePendingIntentFactory.legacyServiceIntent(context, intent),
+            AutomationAlarmPendingIntentFactory.legacyGatewayActivityIntent(context, intent),
             PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
         )
 }

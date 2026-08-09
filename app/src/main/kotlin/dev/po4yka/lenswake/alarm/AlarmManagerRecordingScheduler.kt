@@ -49,7 +49,7 @@ class AlarmManagerRecordingScheduler(
         AlarmKind.entries.forEach { kind ->
             cancelLegacyIdentity(scheduleId, kind, delivery = false)
             cancelLegacyIdentity(scheduleId, kind, delivery = true)
-            val pendingIntent = AlarmWakePendingIntentFactory.find(
+            val pendingIntent = AutomationAlarmPendingIntentFactory.find(
                 applicationContext,
                 AlarmContract.requestCode(kind),
                 AlarmContract.identityIntent(applicationContext, scheduleId, kind),
@@ -114,13 +114,13 @@ class AlarmManagerRecordingScheduler(
         }
         validate(schedule, kind, triggerAt, clock.now())
         requireExactAlarmCapability()
-        val pendingIntent = AlarmWakePendingIntentFactory.createOrUpdate(
+        val pendingIntent = AutomationAlarmPendingIntentFactory.createOrUpdate(
             applicationContext,
             AlarmContract.requestCode(kind),
             AlarmContract.intent(applicationContext, schedule, kind),
         )
         try {
-            AlarmWakePendingIntentFactory.armReplacementThenCancelLegacyServiceIdentities(
+            AutomationAlarmPendingIntentFactory.armReplacementThenCancelLegacyGatewayActivityIdentities(
                 context = applicationContext,
                 alarmManager = alarmManager,
                 requestCode = AlarmContract.requestCode(kind),
@@ -186,7 +186,7 @@ class AlarmManagerRecordingScheduler(
         } else {
             AlarmContract.identityIntent(applicationContext, scheduleId, kind)
         }
-        AlarmWakePendingIntentFactory.cancelLegacyServiceIdentity(
+        AutomationAlarmPendingIntentFactory.cancelLegacyGatewayActivityIdentity(
             context = applicationContext,
             alarmManager = alarmManager,
             requestCode = AlarmContract.requestCode(kind),
