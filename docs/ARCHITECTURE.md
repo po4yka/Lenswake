@@ -5,7 +5,7 @@
 ```text
 Project: Lenswake
 Document: docs/ARCHITECTURE.md
-Status: Draft / Living Architecture
+Status: Living Architecture / Foundation Implemented
 Primary target: Pixel 8 Pro
 Primary OS: Android 17
 Primary camera app: Google Pixel Camera
@@ -33,6 +33,33 @@ It describes:
 - compatibility strategy.
 
 The document should evolve alongside implementation.
+
+## Implemented baseline
+
+The current implementation uses these concrete module boundaries:
+
+```text
+:app
+    Compose presentation, explicit ApplicationGraph, AlarmManager receivers,
+    secure-camera resolution, AccessibilityService, Android adapters
+
+:automation
+    platform-neutral START/STOP convergence engines, selector matching,
+    bounded operation-specific retry policies
+
+:core
+    schedules, ExecutionSession, profiles, failures, readiness,
+    repository and scheduler contracts
+
+:data
+    Room v1 database, internal entities/DAOs, domain mappings,
+    atomic session-transition plus event persistence
+```
+
+The implemented graph deliberately fails closed when the target environment has no compatible
+profile, Accessibility is disconnected, the selector result is ambiguous, or no verified wake path
+exists. This is an implementation baseline, not proof that locked-screen Pixel Camera automation is
+reliable on the target Pixel 8 Pro.
 
 ---
 
@@ -265,7 +292,7 @@ Contains platform-independent semantics:
 
 ```text
 RecordingSchedule
-RecordingSession
+ExecutionSession
 CaptureConfiguration
 AutomationProfile
 PixelCameraState
@@ -633,7 +660,7 @@ A schedule describes user intent.
 A session describes one execution attempt.
 
 ```kotlin
-data class RecordingSession(
+data class ExecutionSession(
     val id: SessionId,
     val scheduleId: ScheduleId,
 
@@ -2199,15 +2226,8 @@ latest automation failure
 
 # 66. Dependency Injection
 
-Dependency injection may use:
-
-```text
-Hilt
-or
-Koin
-```
-
-The architecture does not depend on a specific DI framework.
+The baseline uses a small explicit process-wide `ApplicationGraph`. This keeps availability and
+failure wiring visible and avoids a code-generation framework before the graph requires one.
 
 Important principle:
 
@@ -2223,17 +2243,25 @@ wiring at application boundary
 
 ```text
 Language:
-Kotlin
+Kotlin 2.3.10
+
+Build:
+AGP 9.2.1
+Gradle 9.4.1
+Java bytecode 17
+compileSdk / targetSdk 37
 
 UI:
-Jetpack Compose
+Jetpack Compose BOM 2026.06.01
+Material 3
+Navigation 3
 
 Async:
 Kotlin Coroutines
 Flow
 
 Persistence:
-Room
+Room 2.8.4
 
 Scheduling:
 AlarmManager
@@ -2242,13 +2270,13 @@ Automation:
 AccessibilityService
 
 Privileged operations:
-Shizuku API
+optional PrivilegedBridge; Shizuku adapter not implemented yet
 
 Serialization:
 kotlinx.serialization
 
 Testing:
-JUnit
+JUnit 6 for JVM tests
 kotlinx-coroutines-test
 Android instrumentation
 physical Pixel validation
@@ -2256,75 +2284,17 @@ physical Pixel validation
 
 ---
 
-# 68. Proposed Project Structure
+# 68. Project Structure
 
 ```text
-app/
-    src/main/
-
-core/
-    model/
-    common/
-    logging/
-    time/
-
-schedule/
-    model/
-    repository/
-    alarm/
-    validation/
-
-session/
-    model/
-    repository/
-
-automation/
-    coordinator/
-    start/
-    stop/
-    state/
-    retry/
-    timeout/
-    recovery/
-
-pixelcamera/
-    launcher/
-    inspector/
-    state/
-    profile/
-    selector/
-    compatibility/
-
-accessibility/
-    service/
-    snapshot/
-    matching/
-    gesture/
-
-privileged/
-    api/
-    shizuku/
-
-environment/
-    device/
-    battery/
-    thermal/
-    storage/
-
-diagnostics/
-    event/
-    history/
-    export/
-
-feature/
-    schedules/
-    profiles/
-    rehearsal/
-    diagnostics/
-    settings/
+:app
+:automation
+:core
+:data
 ```
 
-This may initially live in fewer Gradle modules.
+Conceptual feature and infrastructure boundaries remain packages until a separate Gradle module
+provides a concrete dependency or build-time benefit.
 
 ---
 

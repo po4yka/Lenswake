@@ -15,6 +15,44 @@ Unlike conventional camera automation apps, Lenswake does **not** implement its 
 
 ---
 
+## Current implementation baseline
+
+The repository contains a buildable Android 17 foundation split into four Gradle modules:
+
+```text
+:app        Compose UI, application wiring, alarms, Android and Accessibility adapters
+:automation pure Kotlin START/STOP state machines, retries, selectors, verification
+:core       domain models, repository contracts, failures, readiness, time
+:data       Room database, mappings, repositories, execution history
+```
+
+Implemented now:
+
+- independent exact START and STOP alarms with stale-trigger rejection and reboot/time-change restoration;
+- persisted schedules, environment-bound automation profiles, execution sessions, and structured events;
+- explicit START and STOP workflows that distinguish action dispatch from verified camera state;
+- profile-driven selector scoring, ambiguity rejection, observable state signals, and per-speed targets;
+- dynamically resolved secure Pixel Camera launch and a package-scoped, bounded Accessibility adapter;
+- an honest Compose setup/status shell that never invents schedules, verified profiles, or readiness;
+- fail-closed wake and privileged seams until a capability is verified on the target device.
+
+Not yet proven or shipped as reliable behavior:
+
+- waking a locked Pixel 8 Pro;
+- a calibrated selector profile for the installed Pixel Camera version;
+- locked-screen Time Lapse start/stop, Doze behavior, and process-death recovery on the target device;
+- schedule editing, calibration, rehearsal, diagnostics export, and Shizuku integration.
+
+The debug APK can be built with:
+
+```bash
+./gradlew test lintDebug assembleDebug
+```
+
+Physical-device tests are an additional gate; a successful JVM build is not Pixel Camera reliability evidence.
+
+---
+
 ## Why Lenswake?
 
 Android provides excellent camera APIs, but they cannot reproduce every feature of the native Pixel Camera.
@@ -1435,10 +1473,10 @@ Automation
 AccessibilityService
 
 Privileged operations
-Shizuku API
+PrivilegedBridge (Shizuku adapter planned)
 
 Dependency injection
-Koin or Hilt
+explicit application composition root
 
 Serialization
 kotlinx.serialization
@@ -1847,6 +1885,8 @@ Google, Pixel, Android, and Pixel Camera are trademarks of their respective owne
 
 ```text
 Status: Experimental / Research
+Foundation: Implemented and buildable
+Target automation: Not yet physically verified
 Target: Pixel 8 Pro + Android 17
 Distribution: Personal use
 Root required: No
