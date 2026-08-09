@@ -85,6 +85,13 @@ data class PixelCameraProfile(
         ) {
             "Profile selectors must be scoped to the calibrated camera package"
         }
+        require(
+            (targets.values + speedTargets.values)
+                .flatMap(UiSelectorSet::selectors)
+                .all { it.hasMeaningfulDiscriminant },
+        ) {
+            "Action selectors require a resource, description, text, role, or region discriminant"
+        }
     }
 
     fun compatibilityFor(currentEnvironment: PixelCameraEnvironment): ProfileCompatibility {
@@ -142,6 +149,14 @@ data class UiSelector(
     init {
         require(packageName.isNotBlank()) { "Selector package name must not be blank" }
     }
+
+    val hasMeaningfulDiscriminant: Boolean
+        get() =
+            !resourceId.isNullOrBlank() ||
+                !contentDescription.isNullOrBlank() ||
+                !text.isNullOrBlank() ||
+                !role.isNullOrBlank() ||
+                expectedRegion != null
 }
 
 data class GestureProfile(

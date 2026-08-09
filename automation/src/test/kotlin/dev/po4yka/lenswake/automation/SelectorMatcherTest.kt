@@ -105,6 +105,48 @@ class SelectorMatcherTest {
         assertEquals(245, match.score)
     }
 
+    @Test
+    fun `clickable state cannot meet threshold when configured discriminant misses`() {
+        val selectorSet = UiSelectorSet(
+            selectors = listOf(
+                UiSelector(
+                    packageName = CAMERA_PACKAGE,
+                    resourceId = "configured-but-not-present",
+                ),
+            ),
+            minimumScore = 10,
+        )
+
+        val result = SelectorMatcher().match(
+            selectorSet = selectorSet,
+            profile = profile(minimumScore = 100),
+            nodes = listOf(node(id = "clickable-only")),
+        )
+
+        assertInstanceOf(SelectorMatchResult.NoEligibleNodes::class.java, result)
+    }
+
+    @Test
+    fun `selected and clickable state cannot identify a node without a discriminant`() {
+        val selectorSet = UiSelectorSet(
+            selectors = listOf(
+                UiSelector(
+                    packageName = CAMERA_PACKAGE,
+                    expectedSelected = true,
+                ),
+            ),
+            minimumScore = 25,
+        )
+
+        val result = SelectorMatcher().match(
+            selectorSet = selectorSet,
+            profile = profile(minimumScore = 100),
+            nodes = listOf(node(id = "state-only", selected = true)),
+        )
+
+        assertInstanceOf(SelectorMatchResult.NoEligibleNodes::class.java, result)
+    }
+
     private fun profile(minimumScore: Int) = PixelCameraProfile(
         id = ProfileId("profile"),
         environment = PixelCameraEnvironment(

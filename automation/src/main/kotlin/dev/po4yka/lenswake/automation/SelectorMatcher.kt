@@ -129,22 +129,22 @@ class SelectorMatcher {
 
         var score = 0
         val signals = buildSet {
-            if (selector.resourceId != null && selector.resourceId == node.resourceId) {
+            if (!selector.resourceId.isNullOrBlank() && selector.resourceId == node.resourceId) {
                 score += RESOURCE_ID_SCORE
                 add(SelectorSignal.RESOURCE_ID)
             }
             if (
-                selector.contentDescription != null &&
+                !selector.contentDescription.isNullOrBlank() &&
                 selector.contentDescription == node.contentDescription
             ) {
                 score += CONTENT_DESCRIPTION_SCORE
                 add(SelectorSignal.CONTENT_DESCRIPTION)
             }
-            if (selector.text != null && selector.text == node.text) {
+            if (!selector.text.isNullOrBlank() && selector.text == node.text) {
                 score += TEXT_SCORE
                 add(SelectorSignal.TEXT)
             }
-            if (selector.role != null && selector.role == node.role) {
+            if (!selector.role.isNullOrBlank() && selector.role == node.role) {
                 score += ROLE_SCORE
                 add(SelectorSignal.ROLE)
             }
@@ -162,6 +162,7 @@ class SelectorMatcher {
                 add(SelectorSignal.EXPECTED_REGION)
             }
         }
+        if (signals.none { it.isMeaningfulDiscriminant }) return null
         return SelectorCandidate(node, score, selectorIndex, signals)
     }
 
@@ -181,3 +182,17 @@ class SelectorMatcher {
         const val REGION_SCORE = 10
     }
 }
+
+private val SelectorSignal.isMeaningfulDiscriminant: Boolean
+    get() = when (this) {
+        SelectorSignal.RESOURCE_ID,
+        SelectorSignal.CONTENT_DESCRIPTION,
+        SelectorSignal.TEXT,
+        SelectorSignal.ROLE,
+        SelectorSignal.EXPECTED_REGION,
+        -> true
+
+        SelectorSignal.CLICKABLE_STATE,
+        SelectorSignal.SELECTED_STATE,
+        -> false
+    }

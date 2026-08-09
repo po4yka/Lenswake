@@ -43,7 +43,12 @@ class PixelCameraProfileTest {
     @Test
     fun `profile rejects selectors outside its calibrated camera package`() {
         val foreignSelector = UiSelectorSet(
-            selectors = listOf(UiSelector(packageName = "example.other.camera")),
+            selectors = listOf(
+                UiSelector(
+                    packageName = "example.other.camera",
+                    role = "android.widget.Button",
+                ),
+            ),
             minimumScore = 1,
         )
 
@@ -57,6 +62,55 @@ class PixelCameraProfileTest {
                 verifiedAt = null,
             )
         }
+    }
+
+    @Test
+    fun `profile rejects action selector with only package and service state`() {
+        val unsafeSelector = UiSelectorSet(
+            selectors = listOf(
+                UiSelector(
+                    packageName = environment().cameraPackage,
+                    expectedSelected = true,
+                    requiresClickable = true,
+                ),
+            ),
+            minimumScore = 1,
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            PixelCameraProfile(
+                id = ProfileId("profile-1"),
+                environment = environment(),
+                selectorSchemaVersion = 1,
+                targets = mapOf(AutomationAction.START_RECORDING to unsafeSelector),
+                compatibility = ProfileCompatibility.NEEDS_REHEARSAL,
+                verifiedAt = null,
+            )
+        }
+    }
+
+    @Test
+    fun `region is a meaningful action selector discriminant`() {
+        val regionSelector = UiSelectorSet(
+            selectors = listOf(
+                UiSelector(
+                    packageName = environment().cameraPackage,
+                    expectedRegion = NormalizedBounds(0.25f, 0.25f, 0.75f, 0.75f),
+                ),
+            ),
+            minimumScore = 10,
+        )
+
+        val profile = PixelCameraProfile(
+            id = ProfileId("profile-1"),
+            environment = environment(),
+            selectorSchemaVersion = 1,
+            speedTargets = mapOf(TimeLapseSpeed.X120 to regionSelector),
+            compatibility = ProfileCompatibility.NEEDS_REHEARSAL,
+            verifiedAt = null,
+        )
+
+        assertEquals(regionSelector, profile.speedTargets[TimeLapseSpeed.X120])
     }
 
     private fun environment(): PixelCameraEnvironment = PixelCameraEnvironment(
