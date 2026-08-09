@@ -18,7 +18,6 @@ import dev.po4yka.lenswake.core.PreflightStatus
 import dev.po4yka.lenswake.platform.PlatformCapability
 import dev.po4yka.lenswake.platform.SecurePixelCameraResolver
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 
 /** Android-backed readiness inspection. It is observational and never grants special access. */
@@ -34,7 +33,6 @@ class AndroidRuntimePreflightProbe(
         applicationContext.getSystemService(AccessibilityManager::class.java)
 
     override val invalidations: Flow<Unit> = PixelCameraAccessibilityRuntime.connectionState
-        .drop(1)
         .map { }
 
     override fun inspect(profiles: List<PixelCameraProfile>): PreflightReport {

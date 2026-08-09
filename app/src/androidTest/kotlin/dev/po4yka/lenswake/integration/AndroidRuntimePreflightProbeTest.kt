@@ -10,9 +10,25 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 
 @RunWith(AndroidJUnit4::class)
 class AndroidRuntimePreflightProbeTest {
+    @Test
+    fun connectionInvalidationEmitsCurrentStateToLateCollectors() = runBlocking {
+        val application = ApplicationProvider.getApplicationContext<LenswakeApplication>()
+        val probe = AndroidRuntimePreflightProbe(
+            context = application,
+            cameraEnvironmentProbe = AndroidPixelCameraEnvironmentProbe(application),
+        )
+
+        withTimeout(1_000) {
+            probe.invalidations.first()
+        }
+    }
+
     @Test
     fun reportsObservedTargetCapabilitiesWithoutGrantingAccess() {
         val application = ApplicationProvider.getApplicationContext<LenswakeApplication>()
