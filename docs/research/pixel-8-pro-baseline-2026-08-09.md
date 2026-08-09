@@ -16,7 +16,8 @@ Build fingerprint:       google/husky/husky:17/CP2A.260705.006/15641320:user/rel
 Display:                 1008 x 2244 px, 360 dpi
 Pixel Camera package:    com.google.android.GoogleCamera
 Pixel Camera version:    10.4.117.936816638.14 (versionCode 69481630)
-Lenswake commit:         1a153da
+Lenswake baseline:       1a153da
+Durable rehearsal code: 17dcb4a
 Lenswake version:        0.1.0 debug
 ```
 
@@ -142,15 +143,59 @@ the Setup UI and are intentional:
 1. profile compatibility is blocked until rehearsal;
 2. no successful physical-device rehearsal is recorded for the current environment.
 
-The production rehearsal action remains disabled. The current alarm contract addresses persisted
-schedules, not a durable rehearsal execution with an independently scheduled session-bound STOP.
-Enabling a start-only rehearsal would risk leaving Pixel Camera recording after Lenswake process
-death, so the UI states that the durable stop backstop and coordinator are still required.
+The production rehearsal action now uses a persisted execution session and arms an independent,
+session-bound exact STOP alarm before START automation. A successful production rehearsal promotes
+only the exact profile and environment exercised by the complete start/stop proof.
 
 After a deliberate `force-stop`, Android removed Lenswake from enabled Accessibility services. The
 profile was still present after the new process started. Accessibility was then re-enabled through
 the Android confirmation UI, both Lenswake and Bitwarden were observed bound, exact-alarm access
 remained allowed, and readiness returned to the expected two blockers.
+
+## Durable rehearsal and process-death proof
+
+A normal production rehearsal completed as session
+`c871531e-72fa-475d-93b2-3216e17933a1`. Room recorded the following write-ahead and verification
+timestamps:
+
+```text
+record action:       1786294067638
+recording verified:  1786294067764
+stop action:         1786294077879
+stopped verified:    1786294078385
+```
+
+The independent safety alarm was cancelled only after the stopped postcondition was persisted, and
+the UI showed the exact profile as `VERIFIED` with a passed production rehearsal.
+
+Process-death recovery was then exercised with session
+`661e02c5-de52-45a1-91a6-4c3aa10963c9`. The replacement process and alarm were observed with:
+
+```bash
+adb -s "$PIXEL_SERIAL" shell pidof dev.po4yka.lenswake
+adb -s "$PIXEL_SERIAL" shell run-as dev.po4yka.lenswake kill -9 1880
+adb -s "$PIXEL_SERIAL" shell pidof dev.po4yka.lenswake
+adb -s "$PIXEL_SERIAL" shell dumpsys alarm
+```
+
+Pixel Camera was visibly recording when PID `1880` died at 21:36:08. Android recreated the bound
+Accessibility service in PID `3068`; the exact `REHEARSAL_STOP` PendingIntent remained registered
+for 21:37:43. The alarm then delivered independently, dispatched the semantic stop action, and
+verified the non-recording Pixel Camera state at 21:37:44. Room contains:
+
+```text
+session status:       FAILED
+record action:        1786296965787
+recording verified:   null
+stop action:          1786297063833
+stopped verified:     1786297064343
+terminal event:       automation.record.stop_verified_after_failure
+```
+
+`FAILED` is intentional: the process died before START verification could be persisted. The safety
+cleanup stopped the Lenswake-owned recording but did not manufacture successful rehearsal evidence
+or promote a profile. The safety deadline is conservative (START budget + requested duration +
+margin), so a process-death cleanup may occur later than the requested ten-second rehearsal.
 
 ## Observed Pixel Camera selectors
 
@@ -182,24 +227,26 @@ Starting UIAutomator for `android layout` temporarily disconnected and reconnect
 Accessibility services on this Android 17 build. That behavior briefly changed runtime preflight
 from available to blocked and exposed a Lenswake race: a late collector dropped the current
 connection state. Commit `d114256` removes that dropped initial emission and adds a physical-device
-instrumentation regression test. Final readiness was therefore verified without leaving
-UIAutomator connected.
+instrumentation regression test. Process-death validation confirmed that Android recreated the
+bound service and delivered its connection callback in the replacement process. Final readiness
+and alarm recovery were verified using screenshots without running UIAutomator in the automation
+window.
 
 ## Conclusion and remaining gates
 
 The application reports observed device readiness instead of static setup placeholders. Required
-Android permissions, semantic Pixel Camera start/stop signals, and an exact-environment persisted
-candidate profile are now verified on this Pixel. Unattended execution remains fail-closed until a
-production-stack rehearsal succeeds and promotes that candidate to verified compatibility.
+Android permissions, semantic Pixel Camera start/stop signals, a normal production rehearsal, and
+session-bound process-death STOP recovery are now verified on this Pixel. The exact-environment
+profile was promoted only by the complete normal rehearsal; the incomplete process-death START
+remained failed even though its safety cleanup succeeded.
 
 The following remain deliberately unverified:
 
 1. exact-alarm delivery while screen-off, locked, and in Doze;
-2. production-stack rehearsal rather than the bounded ADB calibration run;
-3. independent session-bound stop alarm and stopped-state verification for rehearsal;
-4. ordinary process-death recovery during automation and reboot recovery on the physical device;
-5. notification-less escalation behavior;
-6. optional Shizuku capability on Android 17.
+2. verified device wake for unattended locked-screen execution;
+3. reboot recovery on the physical device;
+4. notification-less escalation behavior;
+5. optional Shizuku capability on Android 17.
 
 The manual calibration proves Pixel Camera behavior and selectors for this exact environment. It
 does not yet prove that an alarm-driven Lenswake execution can complete the same sequence while the
