@@ -31,6 +31,22 @@ class AlarmRecoveryCoordinatorTest {
     }
 
     @Test
+    fun recoveryAttemptsEverySchedulerAndReturnsFirstFailure() = runBlocking {
+        val scheduler = RecordingSchedulerSpy().also {
+            it.restoreResult = Result.failure(IllegalStateException("schedule restore failed"))
+        }
+        val rehearsal = RecoverySchedulerSpy()
+        val coordinator = SchedulerAlarmRecoveryCoordinator(scheduler, listOf(rehearsal))
+
+        val result = coordinator.restoreFutureSchedules()
+
+        assertTrue(result.isFailure)
+        assertEquals("schedule restore failed", result.exceptionOrNull()?.message)
+        assertEquals(1, scheduler.restoreCalls)
+        assertEquals(1, rehearsal.restoreCalls)
+    }
+
+    @Test
     fun recoveryReceiverIsRegisteredForBootAndTimeChanges() {
         val receiver = ComponentName(context, AlarmRecoveryReceiver::class.java)
         val receiverInfo = context.packageManager.getReceiverInfo(
@@ -61,6 +77,7 @@ class AlarmRecoveryCoordinatorTest {
 private class RecordingSchedulerSpy : RecordingScheduler {
     var restoreCalls = 0
     var scheduleCalls = 0
+    var restoreResult: Result<Unit> = Result.success(Unit)
 
     override suspend fun scheduleStart(schedule: RecordingSchedule): Result<Unit> {
         scheduleCalls += 1
@@ -73,6 +90,15 @@ private class RecordingSchedulerSpy : RecordingScheduler {
     }
 
     override suspend fun cancel(scheduleId: ScheduleId): Result<Unit> = Result.success(Unit)
+
+    override suspend fun restoreAll(): Result<Unit> {
+        restoreCalls += 1
+        return restoreResult
+    }
+}
+
+private class RecoverySchedulerSpy : AlarmRecoveryScheduler {
+    var restoreCalls = 0
 
     override suspend fun restoreAll(): Result<Unit> {
         restoreCalls += 1

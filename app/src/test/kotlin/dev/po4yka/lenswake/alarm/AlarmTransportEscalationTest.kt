@@ -1,6 +1,7 @@
 package dev.po4yka.lenswake.alarm
 
 import dev.po4yka.lenswake.core.ScheduleId
+import dev.po4yka.lenswake.core.SessionId
 import java.time.Instant
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -64,7 +65,7 @@ class AlarmTransportEscalationTest {
 
         coordinator.scheduleRetry(entry(trigger), "Retry requested.")
 
-        assertEquals(listOf(trigger), backend.restored)
+        assertEquals(listOf(AlarmDeliveryWork.Schedule(trigger)), backend.restored)
         assertEquals(
             AlarmTransportFailureCode.EXACT_ALARM_SCHEDULING_FAILED,
             persistence.single().code,
@@ -80,10 +81,10 @@ class AlarmTransportEscalationTest {
         val trigger = trigger(kind = AlarmKind.STOP)
         coordinator.scheduleRetry(entry(trigger), "Retry requested.")
 
-        assertTrue(coordinator.resolve(trigger))
+        assertTrue(coordinator.resolve(AlarmDeliveryWork.Schedule(trigger)))
 
         assertTrue(persistence.markers().isEmpty())
-        assertEquals(listOf(trigger), backend.cancelled)
+        assertEquals(listOf(AlarmDeliveryWork.Schedule(trigger)), backend.cancelled)
         assertEquals(listOf(AlarmTransportEscalator.deliveryMarkerId(trigger)), notifier.dismissed)
     }
 
@@ -96,7 +97,7 @@ class AlarmTransportEscalationTest {
         val trigger = trigger(kind = AlarmKind.STOP)
 
         val result = coordinator.escalateTerminalStop(
-            trigger,
+            AlarmDeliveryWork.Schedule(trigger),
             "The schedule was deleted before STOP delivery.",
         )
 
@@ -104,7 +105,33 @@ class AlarmTransportEscalationTest {
         assertEquals(AlarmTransportFailureCode.STOP_TERMINAL_REJECTED, persistence.single().code)
         assertTrue(persistence.single().message.contains("stop it manually"))
         assertTrue(notifier.dismissed.isEmpty())
-        assertEquals(listOf(trigger), backend.cancelled)
+        assertEquals(listOf(AlarmDeliveryWork.Schedule(trigger)), backend.cancelled)
+    }
+
+    @Test
+    fun rehearsalStopUsesSameDurableBoundedRetryTransport() {
+        val backend = FakeDeliveryRetryBackend(canSchedule = true)
+        val coordinator = deliveryCoordinator(
+            FakeFailurePersistence(),
+            FakeFailureNotifier(),
+            backend,
+        )
+        val work = AlarmDeliveryWork.RehearsalStop(
+            RehearsalStopTrigger(
+                sessionId = SessionId("rehearsal-1"),
+                expectedAt = Instant.parse("2026-08-09T11:00:00Z"),
+            ),
+        )
+
+        val result = coordinator.scheduleRetry(
+            AlarmDeliveryJournal.Entry("entry-key", work),
+            "Coordinator temporarily unavailable.",
+        )
+
+        assertTrue(result is AlarmDeliveryRetryResult.Scheduled)
+        val replacement = backend.replaced.single() as AlarmDeliveryWork.RehearsalStop
+        assertEquals(1, replacement.trigger.deliveryAttempt)
+        assertEquals(listOf(replacement), backend.scheduled)
     }
 
     private fun deliveryCoordinator(
@@ -253,33 +280,33 @@ private class FakeDeliveryRetryBackend(
     private val replacementSucceeds: Boolean = true,
     private val schedulingResult: Result<Unit> = Result.success(Unit),
 ) : AlarmDeliveryRetryBackend {
-    val replaced = mutableListOf<AlarmTrigger>()
-    val scheduled = mutableListOf<AlarmTrigger>()
-    val restored = mutableListOf<AlarmTrigger>()
-    val cancelled = mutableListOf<AlarmTrigger>()
+    val replaced = mutableListOf<AlarmDeliveryWork>()
+    val scheduled = mutableListOf<AlarmDeliveryWork>()
+    val restored = mutableListOf<AlarmDeliveryWork>()
+    val cancelled = mutableListOf<AlarmDeliveryWork>()
 
     override fun canScheduleExactAlarms(): Boolean = canSchedule
 
     override fun replaceJournalEntry(
         key: String,
-        trigger: AlarmTrigger,
+        work: AlarmDeliveryWork,
     ): AlarmDeliveryJournal.Entry? {
-        replaced += trigger
-        return if (replacementSucceeds) AlarmDeliveryJournal.Entry("retry-key", trigger) else null
+        replaced += work
+        return if (replacementSucceeds) AlarmDeliveryJournal.Entry("retry-key", work) else null
     }
 
-    override fun schedule(trigger: AlarmTrigger, triggerAtEpochMillis: Long): Result<Unit> {
-        scheduled += trigger
+    override fun schedule(work: AlarmDeliveryWork, triggerAtEpochMillis: Long): Result<Unit> {
+        scheduled += work
         return schedulingResult
     }
 
-    override fun restoreJournalEntry(key: String, trigger: AlarmTrigger): Boolean {
-        restored += trigger
+    override fun restoreJournalEntry(key: String, work: AlarmDeliveryWork): Boolean {
+        restored += work
         return true
     }
 
-    override fun cancel(trigger: AlarmTrigger): Boolean {
-        cancelled += trigger
+    override fun cancel(work: AlarmDeliveryWork): Boolean {
+        cancelled += work
         return true
     }
 }
@@ -329,4 +356,4 @@ private fun trigger(
 )
 
 private fun entry(trigger: AlarmTrigger): AlarmDeliveryJournal.Entry =
-    AlarmDeliveryJournal.Entry("entry-key", trigger)
+    AlarmDeliveryJournal.Entry("entry-key", AlarmDeliveryWork.Schedule(trigger))

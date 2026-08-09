@@ -17,11 +17,11 @@ internal class AlarmDeliveryJournal(
     private val preferences = context.getSharedPreferences(preferenceName, Context.MODE_PRIVATE)
 
     fun persist(intent: Intent): Entry? {
-        val trigger = AlarmContract.parse(intent) ?: return null
+        val work = AlarmDeliveryWorkContract.parse(intent) ?: return null
         val encodedIntent = intent.toUri(Intent.URI_INTENT_SCHEME)
         val key = key(encodedIntent)
         return if (preferences.edit().putString(key, encodedIntent).commit()) {
-            Entry(key, trigger)
+            Entry(key, work)
         } else {
             null
         }
@@ -29,16 +29,16 @@ internal class AlarmDeliveryJournal(
 
     fun entries(): List<Entry> = preferences.all.mapNotNull { (key, value) ->
         val encodedIntent = value as? String ?: return@mapNotNull null
-        val trigger = runCatching {
-            AlarmContract.parse(Intent.parseUri(encodedIntent, Intent.URI_INTENT_SCHEME))
+        val work = runCatching {
+            AlarmDeliveryWorkContract.parse(Intent.parseUri(encodedIntent, Intent.URI_INTENT_SCHEME))
         }.getOrNull() ?: return@mapNotNull null
-        Entry(key, trigger)
+        Entry(key, work)
     }
 
     fun remove(key: String): Boolean = preferences.edit().remove(key).commit()
 
     fun replace(key: String, intent: Intent): Entry? {
-        val trigger = AlarmContract.parse(intent) ?: return null
+        val work = AlarmDeliveryWorkContract.parse(intent) ?: return null
         val encodedIntent = intent.toUri(Intent.URI_INTENT_SCHEME)
         val replacementKey = key(encodedIntent)
         return if (
@@ -47,7 +47,7 @@ internal class AlarmDeliveryJournal(
                 .putString(replacementKey, encodedIntent)
                 .commit()
         ) {
-            Entry(replacementKey, trigger)
+            Entry(replacementKey, work)
         } else {
             null
         }
@@ -55,7 +55,7 @@ internal class AlarmDeliveryJournal(
 
     data class Entry(
         val key: String,
-        val trigger: AlarmTrigger,
+        val work: AlarmDeliveryWork,
     )
 
     private fun key(encodedIntent: String): String {

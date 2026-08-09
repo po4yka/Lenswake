@@ -22,14 +22,34 @@ fun interface AlarmTriggerCoordinator {
     suspend fun handle(trigger: AlarmTrigger): AlarmHandlingResult
 }
 
+fun interface RehearsalStopTriggerCoordinator {
+    suspend fun handle(trigger: RehearsalStopTrigger): AlarmHandlingResult
+}
+
+/** Optional composition seam until the rehearsal application slice is wired. */
+interface RehearsalStopComponentProvider {
+    val rehearsalStopTriggerCoordinator: RehearsalStopTriggerCoordinator
+}
+
 fun interface AlarmRecoveryCoordinator {
     suspend fun restoreFutureSchedules(): Result<Unit>
 }
 
+fun interface AlarmRecoveryScheduler {
+    suspend fun restoreAll(): Result<Unit>
+}
+
 class SchedulerAlarmRecoveryCoordinator(
     private val scheduler: RecordingScheduler,
+    private val additionalSchedulers: List<AlarmRecoveryScheduler> = emptyList(),
 ) : AlarmRecoveryCoordinator {
-    override suspend fun restoreFutureSchedules(): Result<Unit> = scheduler.restoreAll()
+    override suspend fun restoreFutureSchedules(): Result<Unit> {
+        val results = mutableListOf(scheduler.restoreAll())
+        for (additionalScheduler in additionalSchedulers) {
+            results += additionalScheduler.restoreAll()
+        }
+        return results.firstOrNull(Result<Unit>::isFailure) ?: Result.success(Unit)
+    }
 }
 
 /** Implemented by the application composition root; receivers fail explicitly when absent. */

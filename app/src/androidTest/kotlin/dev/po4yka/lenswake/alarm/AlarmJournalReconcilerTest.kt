@@ -3,6 +3,8 @@ package dev.po4yka.lenswake.alarm
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import dev.po4yka.lenswake.core.SessionId
+import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -20,7 +22,7 @@ class AlarmJournalReconcilerTest {
             val result = AlarmJournalReconciler(journal, backend).rearmAll()
 
             assertTrue(result is JournalRearmResult.ExactAlarmsUnavailable)
-            assertEquals(2, journal.entries().size)
+            assertEquals(3, journal.entries().size)
             assertTrue(backend.rearmed.isEmpty())
         }
     }
@@ -36,9 +38,13 @@ class AlarmJournalReconcilerTest {
                 nowEpochMillis = { 1_000L },
             ).rearmAll()
 
-            assertEquals(JournalRearmResult.Rearmed(2), result)
-            assertEquals(setOf(AlarmKind.START, AlarmKind.STOP), backend.rearmed.map { it.first.kind }.toSet())
-            assertEquals(2, journal.entries().size)
+            assertEquals(JournalRearmResult.Rearmed(3), result)
+            assertEquals(
+                setOf(AlarmKind.START, AlarmKind.STOP),
+                backend.rearmed.mapNotNull { (it.first as? AlarmDeliveryWork.Schedule)?.trigger?.kind }.toSet(),
+            )
+            assertTrue(backend.rearmed.any { it.first is AlarmDeliveryWork.RehearsalStop })
+            assertEquals(3, journal.entries().size)
         }
     }
 
@@ -47,6 +53,17 @@ class AlarmJournalReconcilerTest {
         val schedule = testSchedule()
         requireNotNull(journal.persist(AlarmContract.intent(context, schedule, AlarmKind.START)))
         requireNotNull(journal.persist(AlarmContract.intent(context, schedule, AlarmKind.STOP)))
+        requireNotNull(
+            journal.persist(
+                RehearsalStopAlarmContract.triggerIntent(
+                    context,
+                    RehearsalStopTrigger(
+                        sessionId = SessionId("rearm-rehearsal"),
+                        expectedAt = Instant.parse("2026-08-10T08:00:00Z"),
+                    ),
+                ),
+            ),
+        )
         try {
             test(journal)
         } finally {
@@ -58,11 +75,11 @@ class AlarmJournalReconcilerTest {
 private class FakeRearmBackend(
     private val canSchedule: Boolean,
 ) : ExactAlarmRearmBackend {
-    val rearmed = mutableListOf<Pair<AlarmTrigger, Long>>()
+    val rearmed = mutableListOf<Pair<AlarmDeliveryWork, Long>>()
 
     override fun canScheduleExactAlarms(): Boolean = canSchedule
 
-    override fun rearm(trigger: AlarmTrigger, triggerAtEpochMillis: Long) {
-        rearmed += trigger to triggerAtEpochMillis
+    override fun rearm(work: AlarmDeliveryWork, triggerAtEpochMillis: Long) {
+        rearmed += work to triggerAtEpochMillis
     }
 }

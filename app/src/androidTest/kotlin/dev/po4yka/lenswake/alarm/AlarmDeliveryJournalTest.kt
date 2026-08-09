@@ -3,6 +3,8 @@ package dev.po4yka.lenswake.alarm
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import dev.po4yka.lenswake.core.SessionId
+import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test
@@ -37,11 +39,11 @@ class AlarmDeliveryJournalTest {
 
         val restored = AlarmDeliveryJournal(context, preferenceName).entries()
 
-        assertEquals(setOf(AlarmKind.START, AlarmKind.STOP), restored.map { it.trigger.kind }.toSet())
-        assertEquals(1, restored.single { it.trigger.kind == AlarmKind.STOP }.trigger.deliveryAttempt)
+        assertEquals(setOf(AlarmKind.START, AlarmKind.STOP), restored.map { it.scheduleTrigger.kind }.toSet())
+        assertEquals(1, restored.single { it.scheduleTrigger.kind == AlarmKind.STOP }.scheduleTrigger.deliveryAttempt)
 
-        val startEntry = requireNotNull(restored.singleOrNull { it.trigger.kind == AlarmKind.START })
-        val retryTrigger = startEntry.trigger.copy(deliveryAttempt = 1)
+        val startEntry = requireNotNull(restored.singleOrNull { it.scheduleTrigger.kind == AlarmKind.START })
+        val retryTrigger = startEntry.scheduleTrigger.copy(deliveryAttempt = 1)
         val replacement = firstJournal.replace(
             startEntry.key,
             AlarmContract.triggerIntent(context, retryTrigger),
@@ -49,19 +51,43 @@ class AlarmDeliveryJournalTest {
         assertNotNull(replacement)
         assertEquals(
             1,
-            firstJournal.entries().single { it.trigger.kind == AlarmKind.START }.trigger.deliveryAttempt,
+            firstJournal.entries().single { it.scheduleTrigger.kind == AlarmKind.START }.scheduleTrigger.deliveryAttempt,
         )
         val reverted = firstJournal.replace(
             requireNotNull(replacement).key,
-            AlarmContract.triggerIntent(context, startEntry.trigger),
+            AlarmContract.triggerIntent(context, startEntry.scheduleTrigger),
         )
         assertNotNull(reverted)
         assertEquals(
             0,
-            firstJournal.entries().single { it.trigger.kind == AlarmKind.START }.trigger.deliveryAttempt,
+            firstJournal.entries().single { it.scheduleTrigger.kind == AlarmKind.START }.scheduleTrigger.deliveryAttempt,
         )
 
         firstJournal.entries().forEach { firstJournal.remove(it.key) }
         assertEquals(emptyList<AlarmDeliveryJournal.Entry>(), firstJournal.entries())
     }
+
+    @Test
+    fun rehearsalStopSurvivesJournalRecreationWithDeliveryAttempt() {
+        val preferenceName = "alarm-journal-rehearsal-${System.nanoTime()}"
+        val firstJournal = AlarmDeliveryJournal(context, preferenceName)
+        val trigger = RehearsalStopTrigger(
+            sessionId = SessionId("rehearsal-session"),
+            expectedAt = Instant.parse("2026-08-10T05:31:00Z"),
+            deliveryAttempt = 2,
+        )
+        requireNotNull(
+            firstJournal.persist(RehearsalStopAlarmContract.triggerIntent(context, trigger)),
+        )
+
+        val restored = AlarmDeliveryJournal(context, preferenceName).entries().single()
+        val restoredTrigger = (restored.work as AlarmDeliveryWork.RehearsalStop).trigger
+
+        assertEquals(trigger, restoredTrigger)
+        assertEquals(2, restoredTrigger.deliveryAttempt)
+        assertEquals(true, firstJournal.remove(restored.key))
+    }
 }
+
+private val AlarmDeliveryJournal.Entry.scheduleTrigger: AlarmTrigger
+    get() = (work as AlarmDeliveryWork.Schedule).trigger

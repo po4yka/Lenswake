@@ -12,7 +12,7 @@ internal sealed interface JournalRearmResult {
 
 internal interface ExactAlarmRearmBackend {
     fun canScheduleExactAlarms(): Boolean
-    fun rearm(trigger: AlarmTrigger, triggerAtEpochMillis: Long)
+    fun rearm(work: AlarmDeliveryWork, triggerAtEpochMillis: Long)
 }
 
 internal class AndroidExactAlarmRearmBackend(
@@ -22,11 +22,11 @@ internal class AndroidExactAlarmRearmBackend(
 
     override fun canScheduleExactAlarms(): Boolean = alarmManager.canScheduleExactAlarms()
 
-    override fun rearm(trigger: AlarmTrigger, triggerAtEpochMillis: Long) {
+    override fun rearm(work: AlarmDeliveryWork, triggerAtEpochMillis: Long) {
         val pendingIntent = PendingIntent.getForegroundService(
             context,
-            AlarmContract.requestCode(trigger.kind),
-            AlarmContract.triggerIntent(context, trigger),
+            AlarmDeliveryWorkContract.requestCode(work),
+            AlarmDeliveryWorkContract.triggerIntent(context, work),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         alarmManager.setExactAndAllowWhileIdle(
@@ -50,7 +50,7 @@ internal class AlarmJournalReconciler(
         return try {
             val firstTriggerAt = nowEpochMillis() + REARM_DELAY_MILLIS
             entries.forEachIndexed { index, entry ->
-                backend.rearm(entry.trigger, firstTriggerAt + index * REARM_STAGGER_MILLIS)
+                backend.rearm(entry.work, firstTriggerAt + index * REARM_STAGGER_MILLIS)
             }
             JournalRearmResult.Rearmed(entries.size)
         } catch (error: RuntimeException) {

@@ -101,12 +101,12 @@ class AutomationExecutionService : Service() {
     }
 
     private suspend fun process(queued: QueuedTrigger) {
-        val trigger = queued.entry.trigger
+        val work = queued.entry.work
         val elapsedBeforeExecution = SystemClock.elapsedRealtime() - queued.enqueuedAtElapsedRealtime
         val remainingDeadline = EXECUTION_DEADLINE_MILLIS - elapsedBeforeExecution
         var removeFromJournal = false
         if (remainingDeadline <= 0) {
-            Log.e(TAG, "${trigger.kind} alarm expired while waiting for serialized execution")
+            Log.e(TAG, "${work.displayKind} alarm expired while waiting for serialized execution")
             scheduleRetry(queued, "Alarm expired while waiting for serialized execution.")
             complete(queued, removeFromJournal)
             return
@@ -115,21 +115,21 @@ class AutomationExecutionService : Service() {
             val provider = applicationContext as? AlarmComponentProvider
                 ?: error("Application does not provide AlarmComponentProvider")
             when (val result = withTimeout(remainingDeadline) {
-                provider.alarmTriggerCoordinator.handle(trigger)
+                handle(work, provider)
             }) {
                 AlarmHandlingResult.Accepted -> {
                     removeFromJournal = true
-                    retryCoordinator.resolve(trigger)
+                    retryCoordinator.resolve(work)
                     Log.i(
                         TAG,
-                        "${trigger.kind} automation completed for ${trigger.scheduleId.value}",
+                        "${work.displayKind} automation completed for ${work.targetId}",
                     )
                 }
                 is AlarmHandlingResult.TerminalRejected -> {
                     removeFromJournal = true
-                    if (trigger.kind == AlarmKind.STOP) {
+                    if (work.isStop) {
                         val escalation = retryCoordinator.escalateTerminalStop(
-                            trigger,
+                            work,
                             result.reason,
                         )
                         Log.e(
@@ -139,18 +139,18 @@ class AutomationExecutionService : Service() {
                                 "notification=${escalation.notification}",
                         )
                     } else {
-                        retryCoordinator.resolve(trigger)
+                        retryCoordinator.resolve(work)
                     }
                     Log.e(
                         TAG,
-                        "${trigger.kind} automation terminally rejected for ${trigger.scheduleId.value}: ${result.reason}",
+                        "${work.displayKind} automation terminally rejected for ${work.targetId}: ${result.reason}",
                     )
                 }
                 is AlarmHandlingResult.Retryable -> {
                     scheduleRetry(queued, result.reason)
                     Log.e(
                         TAG,
-                        "${trigger.kind} automation needs reconciliation for ${trigger.scheduleId.value}: ${result.reason}",
+                        "${work.displayKind} automation needs reconciliation for ${work.targetId}: ${result.reason}",
                         result.cause,
                     )
                 }
@@ -159,16 +159,32 @@ class AutomationExecutionService : Service() {
             scheduleRetry(queued, "Automation exceeded its finite service deadline.")
             Log.e(
                 TAG,
-                "${trigger.kind} automation exceeded the finite foreground-service deadline",
+                "${work.displayKind} automation exceeded the finite foreground-service deadline",
                 error,
             )
         } catch (error: CancellationException) {
             throw error
         } catch (error: RuntimeException) {
             scheduleRetry(queued, "Unhandled foreground-service failure: ${error.message.orEmpty()}")
-            Log.e(TAG, "Unhandled ${trigger.kind} foreground-service failure", error)
+            Log.e(TAG, "Unhandled ${work.displayKind} foreground-service failure", error)
         } finally {
             complete(queued, removeFromJournal)
+        }
+    }
+
+    private suspend fun handle(
+        work: AlarmDeliveryWork,
+        provider: AlarmComponentProvider,
+    ): AlarmHandlingResult {
+        return when (work) {
+            is AlarmDeliveryWork.Schedule -> provider.alarmTriggerCoordinator.handle(work.trigger)
+            is AlarmDeliveryWork.RehearsalStop -> {
+                val rehearsalProvider = applicationContext as? RehearsalStopComponentProvider
+                    ?: return AlarmHandlingResult.Retryable(
+                        "Application does not provide RehearsalStopTriggerCoordinator",
+                    )
+                rehearsalProvider.rehearsalStopTriggerCoordinator.handle(work.trigger)
+            }
         }
     }
 
@@ -200,7 +216,7 @@ class AutomationExecutionService : Service() {
             AlarmDeliveryRetryResult.Scheduled -> Unit
             is AlarmDeliveryRetryResult.Escalated -> Log.e(
                 TAG,
-                "${queued.entry.trigger.kind} transport escalation ${result.code}; " +
+                "${queued.entry.work.displayKind} transport escalation ${result.code}; " +
                     "markerPersisted=${result.result.markerPersisted}, " +
                     "notification=${result.result.notification}; journal entry retained",
             )

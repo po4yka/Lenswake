@@ -64,26 +64,25 @@ internal class AlarmTransportEscalator(
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
 ) {
     fun escalateDelivery(
-        trigger: AlarmTrigger,
+        work: AlarmDeliveryWork,
         code: AlarmTransportFailureCode,
         detail: String,
     ): AlarmTransportEscalationResult {
-        val isStop = trigger.kind == AlarmKind.STOP
         val marker = AlarmTransportFailureMarker(
-            id = deliveryMarkerId(trigger),
+            id = work.markerId,
             code = code,
-            title = if (isStop) {
+            title = if (work.isStop) {
                 "Scheduled STOP needs manual action"
             } else {
                 "Scheduled recording did not start"
             },
-            message = if (isStop) {
+            message = if (work.isStop) {
                 "Lenswake could not deliver STOP. Pixel Camera may still be recording; open Pixel Camera and stop it manually. $detail"
             } else {
                 "Lenswake could not deliver START. The recording may not have started; open Lenswake and review the schedule. $detail"
             },
-            actionLabel = if (isStop) "Open Pixel Camera" else "Open Lenswake",
-            cameraAction = isStop,
+            actionLabel = if (work.isStop) "Open Pixel Camera" else "Open Lenswake",
+            cameraAction = work.isStop,
             recordedAtEpochMillis = nowEpochMillis(),
         )
         return escalate(marker)
@@ -104,7 +103,7 @@ internal class AlarmTransportEscalator(
         ),
     )
 
-    fun resolveDelivery(trigger: AlarmTrigger): Boolean = resolve(deliveryMarkerId(trigger))
+    fun resolveDelivery(work: AlarmDeliveryWork): Boolean = resolve(work.markerId)
 
     fun resolveRecovery(): Boolean = resolve(RECOVERY_MARKER_ID)
 
@@ -126,16 +125,8 @@ internal class AlarmTransportEscalator(
     companion object {
         const val RECOVERY_MARKER_ID = "alarm-recovery"
 
-        fun deliveryMarkerId(trigger: AlarmTrigger): String = buildString {
-            append("alarm-delivery/")
-            append(trigger.scheduleId.value)
-            append('/')
-            append(trigger.kind.name)
-            append('/')
-            append(trigger.scheduleUpdatedAt.toEpochMilli())
-            append('/')
-            append(trigger.expectedAt.toEpochMilli())
-        }
+        fun deliveryMarkerId(trigger: AlarmTrigger): String =
+            AlarmDeliveryWork.Schedule(trigger).markerId
     }
 }
 
@@ -277,10 +268,10 @@ internal class AndroidAlarmTransportFailureNotifier(
 
 internal interface AlarmDeliveryRetryBackend {
     fun canScheduleExactAlarms(): Boolean
-    fun replaceJournalEntry(key: String, trigger: AlarmTrigger): AlarmDeliveryJournal.Entry?
-    fun schedule(trigger: AlarmTrigger, triggerAtEpochMillis: Long): Result<Unit>
-    fun restoreJournalEntry(key: String, trigger: AlarmTrigger): Boolean
-    fun cancel(trigger: AlarmTrigger): Boolean
+    fun replaceJournalEntry(key: String, work: AlarmDeliveryWork): AlarmDeliveryJournal.Entry?
+    fun schedule(work: AlarmDeliveryWork, triggerAtEpochMillis: Long): Result<Unit>
+    fun restoreJournalEntry(key: String, work: AlarmDeliveryWork): Boolean
+    fun cancel(work: AlarmDeliveryWork): Boolean
 }
 
 internal sealed interface AlarmDeliveryRetryResult {
@@ -301,60 +292,60 @@ internal class AlarmDeliveryRetryCoordinator(
         entry: AlarmDeliveryJournal.Entry,
         detail: String,
     ): AlarmDeliveryRetryResult {
-        val trigger = entry.trigger
-        if (trigger.deliveryAttempt >= maxAttempts) {
-            return escalate(trigger, AlarmTransportFailureCode.RETRY_ATTEMPTS_EXHAUSTED, detail)
+        val work = entry.work
+        if (work.deliveryAttempt >= maxAttempts) {
+            return escalate(work, AlarmTransportFailureCode.RETRY_ATTEMPTS_EXHAUSTED, detail)
         }
         val exactAlarmsAvailable = runCatching { backend.canScheduleExactAlarms() }
             .getOrElse { error ->
                 return escalate(
-                    trigger,
+                    work,
                     AlarmTransportFailureCode.EXACT_ALARM_UNAVAILABLE,
                     "$detail Exact-alarm capability check failed: ${error.message.orEmpty()}",
                 )
             }
         if (!exactAlarmsAvailable) {
-            return escalate(trigger, AlarmTransportFailureCode.EXACT_ALARM_UNAVAILABLE, detail)
+            return escalate(work, AlarmTransportFailureCode.EXACT_ALARM_UNAVAILABLE, detail)
         }
-        val retryTrigger = trigger.copy(deliveryAttempt = trigger.deliveryAttempt + 1)
-        val retryEntry = runCatching { backend.replaceJournalEntry(entry.key, retryTrigger) }.getOrNull()
-            ?: return escalate(trigger, AlarmTransportFailureCode.JOURNAL_UPDATE_FAILED, detail)
-        val scheduling = backend.schedule(retryTrigger, nowEpochMillis() + RETRY_DELAY_MILLIS)
+        val retryWork = work.nextAttempt()
+        val retryEntry = runCatching { backend.replaceJournalEntry(entry.key, retryWork) }.getOrNull()
+            ?: return escalate(work, AlarmTransportFailureCode.JOURNAL_UPDATE_FAILED, detail)
+        val scheduling = backend.schedule(retryWork, nowEpochMillis() + RETRY_DELAY_MILLIS)
         if (scheduling.isSuccess) return AlarmDeliveryRetryResult.Scheduled
 
-        runCatching { backend.restoreJournalEntry(retryEntry.key, trigger) }
+        runCatching { backend.restoreJournalEntry(retryEntry.key, work) }
         return escalate(
-            trigger,
+            work,
             AlarmTransportFailureCode.EXACT_ALARM_SCHEDULING_FAILED,
             "$detail ${scheduling.exceptionOrNull()?.message.orEmpty()}".trim(),
         )
     }
 
-    fun resolve(trigger: AlarmTrigger): Boolean {
-        runCatching { backend.cancel(trigger) }
-        return escalator.resolveDelivery(trigger)
+    fun resolve(work: AlarmDeliveryWork): Boolean {
+        runCatching { backend.cancel(work) }
+        return escalator.resolveDelivery(work)
     }
 
     fun escalateTerminalStop(
-        trigger: AlarmTrigger,
+        work: AlarmDeliveryWork,
         detail: String,
     ): AlarmTransportEscalationResult {
-        require(trigger.kind == AlarmKind.STOP) { "Only STOP rejection needs manual-stop escalation" }
-        runCatching { backend.cancel(trigger) }
+        require(work.isStop) { "Only STOP rejection needs manual-stop escalation" }
+        runCatching { backend.cancel(work) }
         return escalator.escalateDelivery(
-            trigger = trigger,
+            work = work,
             code = AlarmTransportFailureCode.STOP_TERMINAL_REJECTED,
             detail = detail,
         )
     }
 
     private fun escalate(
-        trigger: AlarmTrigger,
+        work: AlarmDeliveryWork,
         code: AlarmTransportFailureCode,
         detail: String,
     ): AlarmDeliveryRetryResult.Escalated = AlarmDeliveryRetryResult.Escalated(
         code = code,
-        result = escalator.escalateDelivery(trigger, code, detail),
+        result = escalator.escalateDelivery(work, code, detail),
     )
 
     private companion object {
@@ -372,14 +363,17 @@ internal class AndroidAlarmDeliveryRetryBackend(
 
     override fun replaceJournalEntry(
         key: String,
-        trigger: AlarmTrigger,
-    ): AlarmDeliveryJournal.Entry? = journal.replace(key, AlarmContract.triggerIntent(context, trigger))
+        work: AlarmDeliveryWork,
+    ): AlarmDeliveryJournal.Entry? = journal.replace(
+        key,
+        AlarmDeliveryWorkContract.triggerIntent(context, work),
+    )
 
-    override fun schedule(trigger: AlarmTrigger, triggerAtEpochMillis: Long): Result<Unit> = runCatching {
+    override fun schedule(work: AlarmDeliveryWork, triggerAtEpochMillis: Long): Result<Unit> = runCatching {
         val pendingIntent = PendingIntent.getForegroundService(
             context,
-            AlarmContract.requestCode(trigger.kind),
-            AlarmContract.triggerIntent(context, trigger),
+            AlarmDeliveryWorkContract.requestCode(work),
+            AlarmDeliveryWorkContract.triggerIntent(context, work),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         alarmManager.setExactAndAllowWhileIdle(
@@ -389,14 +383,14 @@ internal class AndroidAlarmDeliveryRetryBackend(
         )
     }
 
-    override fun restoreJournalEntry(key: String, trigger: AlarmTrigger): Boolean =
-        journal.replace(key, AlarmContract.triggerIntent(context, trigger)) != null
+    override fun restoreJournalEntry(key: String, work: AlarmDeliveryWork): Boolean =
+        journal.replace(key, AlarmDeliveryWorkContract.triggerIntent(context, work)) != null
 
-    override fun cancel(trigger: AlarmTrigger): Boolean = runCatching {
+    override fun cancel(work: AlarmDeliveryWork): Boolean = runCatching {
         val pendingIntent = PendingIntent.getForegroundService(
             context,
-            AlarmContract.requestCode(trigger.kind),
-            AlarmContract.deliveryIdentityIntent(context, trigger.scheduleId, trigger.kind),
+            AlarmDeliveryWorkContract.requestCode(work),
+            AlarmDeliveryWorkContract.deliveryIdentityIntent(context, work),
             PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
         )
         if (pendingIntent != null) {
