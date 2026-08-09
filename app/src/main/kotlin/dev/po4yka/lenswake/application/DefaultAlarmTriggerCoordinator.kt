@@ -10,6 +10,9 @@ import dev.po4yka.lenswake.core.AutomationEvent
 import dev.po4yka.lenswake.core.AutomationOutcome
 import dev.po4yka.lenswake.core.AutomationStateName
 import dev.po4yka.lenswake.core.EventId
+import dev.po4yka.lenswake.core.EnvironmentSnapshotCaptureResult
+import dev.po4yka.lenswake.core.EnvironmentSnapshotId
+import dev.po4yka.lenswake.core.EnvironmentSnapshotRepository
 import dev.po4yka.lenswake.core.ExecutionApplyResult
 import dev.po4yka.lenswake.core.ExecutionChange
 import dev.po4yka.lenswake.core.ExecutionRepository
@@ -23,14 +26,23 @@ import dev.po4yka.lenswake.core.SessionStatus
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 import java.util.concurrent.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 
 /** Validates exact-alarm identity and bridges a persisted execution plan into the engine. */
 class DefaultAlarmTriggerCoordinator(
     private val scheduleRepository: ScheduleRepository,
     private val executionRepository: ExecutionRepository,
+    private val environmentSnapshotRepository: EnvironmentSnapshotRepository,
+    private val environmentSnapshotCollector: EnvironmentSnapshotCollector,
     private val automationEngine: AutomationEngine,
     private val clock: LenswakeClock,
+    private val snapshotCollectionTimeoutMillis: Long = SNAPSHOT_COLLECTION_TIMEOUT_MILLIS,
 ) : AlarmTriggerCoordinator {
+    init {
+        require(snapshotCollectionTimeoutMillis > 0) { "Snapshot collection timeout must be positive" }
+    }
+
     override suspend fun handle(trigger: AlarmTrigger): AlarmHandlingResult {
         val schedule = try {
             scheduleRepository.get(trigger.scheduleId)
@@ -86,7 +98,106 @@ class DefaultAlarmTriggerCoordinator(
             }
         }
         validateExecution(existing, schedule, executionKey)?.let { return it }
-        return runEngine(AlarmKind.START) { automationEngine.start(existing.id) }
+        val snapshottedSession = when (val snapshot = ensureEnvironmentSnapshot(existing)) {
+            is SnapshotCheckpoint.Ready -> snapshot.session
+            is SnapshotCheckpoint.Failed -> return snapshot.result
+        }
+        return runEngine(AlarmKind.START) { automationEngine.start(snapshottedSession.id) }
+    }
+
+    private suspend fun ensureEnvironmentSnapshot(session: ExecutionSession): SnapshotCheckpoint {
+        val linkedSnapshotId = session.environmentSnapshotId
+        if (linkedSnapshotId != null) {
+            val existing = try {
+                environmentSnapshotRepository.getEnvironmentSnapshot(linkedSnapshotId)
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                return SnapshotCheckpoint.Failed(rejected("Could not load the linked environment snapshot", error))
+            }
+            return if (existing?.sessionId == session.id) {
+                SnapshotCheckpoint.Ready(session)
+            } else {
+                SnapshotCheckpoint.Failed(rejected("Execution points to a missing environment snapshot"))
+            }
+        }
+
+        val existing = try {
+            environmentSnapshotRepository.getEnvironmentSnapshotForSession(session.id)
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            return SnapshotCheckpoint.Failed(rejected("Could not check for an existing environment snapshot", error))
+        }
+        if (existing != null) {
+            val refreshed = loadExecution(session.id)
+            if (refreshed.isFailure) {
+                return SnapshotCheckpoint.Failed(
+                    rejected("Could not reload the snapshotted execution", refreshed.exceptionOrNull()),
+                )
+            }
+            val linked = refreshed.getOrNull()
+            return if (linked?.environmentSnapshotId == existing.id) {
+                SnapshotCheckpoint.Ready(linked)
+            } else {
+                SnapshotCheckpoint.Failed(rejected("Environment snapshot is not linked from its execution"))
+            }
+        }
+
+        val snapshotId = deterministicSnapshotId(session.id)
+        val collected = try {
+            withTimeout(snapshotCollectionTimeoutMillis) {
+                environmentSnapshotCollector.collect(snapshotId, session.id)
+            }
+        } catch (_: TimeoutCancellationException) {
+            return SnapshotCheckpoint.Failed(
+                rejected("Environment snapshot collection exceeded its finite timeout"),
+            )
+        } catch (error: CancellationException) {
+            throw error
+        }
+        if (collected.isFailure) {
+            return SnapshotCheckpoint.Failed(
+                rejected("Could not capture the execution environment", collected.exceptionOrNull()),
+            )
+        }
+        val snapshot = checkNotNull(collected.getOrNull())
+        if (snapshot.id != snapshotId || snapshot.sessionId != session.id) {
+            return SnapshotCheckpoint.Failed(rejected("Environment collector returned a mismatched snapshot"))
+        }
+        val capture = try {
+            environmentSnapshotRepository.capture(snapshot)
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            return SnapshotCheckpoint.Failed(rejected("Could not persist the execution environment", error))
+        }
+        return when (capture) {
+            is EnvironmentSnapshotCaptureResult.Captured -> validateCapturedSnapshot(
+                expectedSnapshotId = snapshotId,
+                snapshotSessionId = capture.snapshot.sessionId,
+                capturedSnapshotId = capture.snapshot.id,
+                session = capture.session,
+            )
+            is EnvironmentSnapshotCaptureResult.AlreadyExists -> validateCapturedSnapshot(
+                expectedSnapshotId = capture.existing.id,
+                snapshotSessionId = capture.existing.sessionId,
+                capturedSnapshotId = capture.existing.id,
+                session = capture.session,
+            )
+        }
+    }
+
+    private fun validateCapturedSnapshot(
+        expectedSnapshotId: EnvironmentSnapshotId,
+        snapshotSessionId: SessionId,
+        capturedSnapshotId: EnvironmentSnapshotId,
+        session: ExecutionSession,
+    ): SnapshotCheckpoint = if (
+        snapshotSessionId == session.id &&
+        capturedSnapshotId == expectedSnapshotId &&
+        session.environmentSnapshotId == capturedSnapshotId
+    ) {
+        SnapshotCheckpoint.Ready(session)
+    } else {
+        SnapshotCheckpoint.Failed(rejected("Persisted environment snapshot linkage is inconsistent"))
     }
 
     private suspend fun handleStop(schedule: RecordingSchedule): AlarmHandlingResult {
@@ -252,6 +363,10 @@ class DefaultAlarmTriggerCoordinator(
         UUID.nameUUIDFromBytes(executionKey.toByteArray(StandardCharsets.UTF_8)).toString(),
     )
 
+    private fun deterministicSnapshotId(sessionId: SessionId): EnvironmentSnapshotId = EnvironmentSnapshotId(
+        UUID.nameUUIDFromBytes("environment/${sessionId.value}".toByteArray(StandardCharsets.UTF_8)).toString(),
+    )
+
     private fun rejected(
         reason: String,
         cause: Throwable? = null,
@@ -262,7 +377,13 @@ class DefaultAlarmTriggerCoordinator(
         data class Failed(val result: AlarmHandlingResult.Rejected) : StopDeliveryResult
     }
 
+    private sealed interface SnapshotCheckpoint {
+        data class Ready(val session: ExecutionSession) : SnapshotCheckpoint
+        data class Failed(val result: AlarmHandlingResult.Rejected) : SnapshotCheckpoint
+    }
+
     private companion object {
         const val STOP_DELIVERED_EVENT = "automation.alarm.stop_delivered"
+        const val SNAPSHOT_COLLECTION_TIMEOUT_MILLIS = 5_000L
     }
 }
