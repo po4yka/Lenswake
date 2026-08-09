@@ -155,9 +155,10 @@ class DefaultAutomationEngine(
         val hasOwnership = context.current.recordActionAt != null
         val stopOutstanding = context.current.stoppedVerifiedAt == null
         when (context.current.status) {
-            SessionStatus.COMPLETED,
-            SessionStatus.CANCELLED,
-            -> return@execute AutomationRunResult.AlreadyTerminal(context.current)
+            SessionStatus.COMPLETED -> return@execute AutomationRunResult.AlreadyTerminal(context.current)
+            SessionStatus.CANCELLED -> if (!hasOwnership || !stopOutstanding) {
+                return@execute AutomationRunResult.AlreadyTerminal(context.current)
+            }
             SessionStatus.FAILED -> if (!hasOwnership || !stopOutstanding) {
                 return@execute AutomationRunResult.AlreadyTerminal(context.current)
             }
@@ -218,14 +219,7 @@ class DefaultAutomationEngine(
 
         val capture = context.current.capture as CaptureConfiguration.TimeLapse
         if (beforeStop.isConfirmedRecording(capture)) {
-            dispatch(
-                context = context,
-                operation = AutomationOperation.STOP_RECORDING,
-                state = AutomationStateName.STOPPING_RECORDING,
-                defaultFailureCode = AutomationFailureCode.STOP_ACTION_FAILED,
-                defaultFailureMessage = "Pixel Camera rejected the stop action",
-                action = { pixelCamera.stopRecording(context.profileUse) },
-            ) { session, now -> session.copy(stopActionAt = now) }
+            dispatchRecordingStop(context)
         } else if (!beforeStop.isConfirmedStopped()) {
             fail(
                 context,
@@ -641,6 +635,78 @@ class DefaultAutomationEngine(
             lastRejection ?: failure(
                 AutomationFailureCode.RECORD_ACTION_FAILED,
                 "Pixel Camera definitively rejected the Record action",
+            ),
+        )
+    }
+
+    private suspend fun dispatchRecordingStop(context: RunContext) {
+        val operation = AutomationOperation.STOP_RECORDING
+        val state = AutomationStateName.STOPPING_RECORDING
+        val policy = config.policyFor(operation)
+        var lastRejection: AutomationFailure? = null
+
+        for (attempt in 1..policy.maxAttempts) {
+            if (attempt > 1) {
+                retryTransition(context, operation, attempt, state)
+                sleeper.sleep(policy.delayBeforeAttempt(attempt))
+            }
+
+            context.transition(
+                state = state,
+                operation = operation,
+                outcome = AutomationOutcome.STARTED,
+                attempt = attempt,
+                metadata = mapOf("dispatchCheckpoint" to "write_ahead"),
+            ) { session, now -> session.copy(stopActionAt = session.stopActionAt ?: now) }
+
+            val invocation = try {
+                timed(operation) { pixelCamera.stopRecording(context.profileUse) }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                fail(
+                    context,
+                    operationFailure(
+                        AutomationFailureCode.STOP_ACTION_FAILED,
+                        "Stop dispatch threw after a possible external side effect",
+                        error,
+                    ),
+                )
+            }
+
+            when (invocation) {
+                TimedCall.TimedOut -> fail(context, timeoutFailure(operation))
+                is TimedCall.Completed -> when (val dispatch = invocation.value) {
+                    is ActionDispatch.Dispatched -> {
+                        context.transition(
+                            state = state,
+                            operation = operation,
+                            outcome = AutomationOutcome.DISPATCHED,
+                            method = dispatch.method,
+                            attempt = attempt,
+                        )
+                        return
+                    }
+
+                    is ActionDispatch.Rejected -> {
+                        lastRejection = dispatch.failure
+                        context.transition(
+                            state = state,
+                            operation = operation,
+                            outcome = AutomationOutcome.FAILED,
+                            attempt = attempt,
+                            failure = dispatch.failure,
+                            metadata = mapOf("dispatchCheckpoint" to "cleared_definitive_rejection"),
+                        ) { session, _ -> session.copy(stopActionAt = null) }
+                    }
+                }
+            }
+        }
+
+        fail(
+            context,
+            lastRejection ?: failure(
+                AutomationFailureCode.STOP_ACTION_FAILED,
+                "Pixel Camera definitively rejected the Stop action",
             ),
         )
     }
