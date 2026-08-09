@@ -188,7 +188,11 @@ converge to Video
         ↓
 converge to Time Lapse
         ↓
+converge to rear main lens
+        ↓
 converge to 120×
+        ↓
+persist Record dispatch checkpoint
         ↓
 press Record
         ↓
@@ -414,16 +418,17 @@ Must not execute unattended automation directly.
 
 ---
 
-## 6.2 StartAlarmReceiver
+## 6.2 START Alarm Delivery
 
-Triggered by exact START alarm.
+The exact START alarm targets `AutomationExecutionService` directly through a foreground-service
+`PendingIntent`; there is no intermediate START broadcast receiver.
 
 Responsibilities:
 
 ```text
-receive schedule ID
+persist transport trigger
         ↓
-validate schedule
+load and validate schedule/session
         ↓
 delegate to application-level START handler
 ```
@@ -434,34 +439,38 @@ It must not contain Pixel Camera navigation logic.
 
 ---
 
-## 6.3 StopAlarmReceiver
+## 6.3 STOP Alarm Delivery
 
-Triggered by exact STOP alarm.
+The exact STOP alarm uses the same durable service path and an independently persisted trigger.
 
 Responsibilities:
 
 ```text
-receive schedule ID/session ID
+persist transport trigger
         ↓
-validate current session
+persist STOP delivery and validate current session
         ↓
 delegate to STOP handler
 ```
 
 ---
 
-## 6.4 BootReceiver
+## 6.4 AlarmRecoveryReceiver and AlarmRecoveryService
 
-Triggered after reboot.
+Triggered after reboot, clock/timezone changes, package replacement, or exact-alarm access changes.
 
 Responsibilities:
 
 ```text
+start a bounded recovery foreground service
+        ↓
 load pending schedules
         ↓
 restore future START alarms
         ↓
 restore future STOP alarms if needed
+        ↓
+re-arm retained transport-journal entries
         ↓
 invalidate runtime capabilities that no longer hold
 ```
@@ -504,6 +513,12 @@ directly with `PendingIntent.getForegroundService()`. It is private, declares th
 immediately, serializes triggers, and enforces a finite per-trigger deadline. A private transport
 journal restores all accepted triggers after process recreation; Room and the coordinator still
 revalidate the domain intent and remain the source of truth.
+
+The coordinator returns explicit `Accepted`, `TerminalRejected`, or `Retryable` outcomes. Retry is
+never inferred from whether a `Throwable` happens to exist. Service start acceptance and work
+completion share one synchronized lifecycle gate, so completion of older work cannot stop a newly
+accepted trigger. `AlarmRecoveryService` restores future schedules and re-arms journal transport;
+it never invokes Pixel Camera or the automation engine.
 
 The service is used only for bounded START/STOP workflows. Its existence does not prove that an
 Android 17 background activity launch of secure Pixel Camera is permitted; that remains a physical
@@ -736,6 +751,10 @@ CONVERGING_TO_TIME_LAPSE
        ↓
 VERIFYING_TIME_LAPSE
        ↓
+SELECTING_REAR_MAIN_LENS
+       ↓
+VERIFYING_REAR_MAIN_LENS
+       ↓
 CONVERGING_TO_SPEED
        ↓
 VERIFYING_SPEED
@@ -759,7 +778,7 @@ FAILED
 # 11. START Sequence Diagram
 
 ```text
-AlarmManager     Receiver     Coordinator     Device      PixelCamera     Accessibility
+AlarmManager      Service     Coordinator     Device      PixelCamera     Accessibility
     │               │              │             │             │               │
     │ START         │              │             │             │               │
     ├──────────────▶│              │             │             │               │
@@ -788,8 +807,16 @@ AlarmManager     Receiver     Coordinator     Device      PixelCamera     Access
     │               │              │ select Time Lapse         │               │
     │               │              ├──────────────────────────────────────────▶│
     │               │              │             │             │               │
+    │               │              │ select rear main lens     │               │
+    │               │              ├──────────────────────────────────────────▶│
+    │               │              │             │             │               │
+    │               │              │ verify rear main lens     │               │
+    │               │              ├──────────────────────────────────────────▶│
+    │               │              │             │             │               │
     │               │              │ select speed              │               │
     │               │              ├──────────────────────────────────────────▶│
+    │               │              │             │             │               │
+    │               │              │ persist dispatch checkpoint              │
     │               │              │             │             │               │
     │               │              │ Record                     │              │
     │               │              ├──────────────────────────────────────────▶│
@@ -1137,6 +1164,11 @@ different device generation
         ↓
 INCOMPATIBLE by default
 ```
+
+Unattended execution accepts only a profile whose stored status is `VERIFIED`, whose
+`verifiedAt` is present, whose selector schema equals `PixelCameraSelectorSchema.CURRENT_VERSION`,
+and whose current runtime environment still evaluates to `VERIFIED`. A fingerprint-only drift is
+`PROBABLY_COMPATIBLE` and must go through rehearsal rather than scheduled execution.
 
 ---
 

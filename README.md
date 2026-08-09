@@ -28,12 +28,13 @@ The repository contains a buildable Android 17 foundation split into four Gradle
 
 Implemented now:
 
-- independent exact START and STOP alarms with stale-trigger rejection and reboot/time-change restoration;
-- direct exact-alarm handoff to a bounded, restartable foreground service with a private transport journal;
+- independent exact START and STOP alarms with stale-trigger rejection and bounded reboot/time-change restoration;
+- direct exact-alarm handoff to a bounded, restartable foreground service with a private transport journal, typed retry decisions, and journal re-arming;
 - persisted schedules, environment-bound automation profiles, execution sessions, structured events, and immutable execution-environment snapshots;
 - explicit START and STOP workflows that distinguish action dispatch from verified camera state;
-- fail-closed recording ownership, operation-specific timeouts, and safe STOP recovery;
-- profile-driven selector scoring, meaningful-discriminant enforcement, ambiguity rejection, observable state signals, and per-speed targets;
+- write-ahead recording ownership, operation-specific timeouts, safe reconciliation after uncertain Record dispatch, and safe STOP recovery;
+- profile-driven selector scoring, meaningful-discriminant enforcement, ambiguity rejection, observable state signals, per-speed targets, and verified rear-main-lens selection;
+- selector-schema and environment compatibility checks that require a current, timestamped `VERIFIED` profile for unattended execution;
 - dynamically resolved secure Pixel Camera launch and a package-scoped, bounded Accessibility adapter;
 - an honest Compose setup/status shell that never invents schedules, verified profiles, or readiness;
 - fail-closed wake and privileged seams until a capability is verified on the target device.
