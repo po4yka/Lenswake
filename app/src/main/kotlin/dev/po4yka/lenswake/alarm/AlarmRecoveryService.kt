@@ -30,6 +30,7 @@ class AlarmRecoveryService : Service() {
     private val lifecycleGate = AlarmServiceLifecycleGate()
     private lateinit var notificationManager: NotificationManager
     private lateinit var reconciler: AlarmJournalReconciler
+    private lateinit var escalator: AlarmTransportEscalator
     private lateinit var retryCoordinator: AlarmRecoveryRetryCoordinator
     private lateinit var checkpointPersistence: AlarmRecoveryCheckpointPersistence
     private var foregroundAdmitted = false
@@ -41,7 +42,7 @@ class AlarmRecoveryService : Service() {
             journal = AlarmDeliveryJournal(this),
             backend = AndroidExactAlarmRearmBackend(this),
         )
-        val escalator = AlarmTransportEscalator(
+        escalator = AlarmTransportEscalator(
             persistence = SharedPreferencesAlarmTransportFailurePersistence(this),
             notifier = AndroidAlarmTransportFailureNotifier(this),
         )
@@ -130,12 +131,25 @@ class AlarmRecoveryService : Service() {
                 Log.e(TAG, "Future schedule restoration failed", error)
             }
         Log.i(TAG, "Alarm recovery source action: $action")
-        when (val result = reconciler.rearmAll()) {
+        val rearmResult = reconciler.rearmAll()
+        rearmResult.corruptEntries.forEach { entry ->
+            val escalation = escalator.escalateJournalCorruption(entry)
+            Log.e(
+                TAG,
+                "Corrupt durable alarm journal entry detected (${entry.reason}); " +
+                    "markerPersisted=${escalation.markerPersisted}, " +
+                    "notification=${escalation.notification}",
+            )
+            if (!escalation.markerPersisted) {
+                failures += "A corrupt journal entry was detected but its durable incident could not be saved."
+            }
+        }
+        when (val result = rearmResult) {
             is JournalRearmResult.Rearmed -> Log.i(
                 TAG,
                 "Alarm recovery re-armed ${result.count} journaled triggers",
             )
-            JournalRearmResult.ExactAlarmsUnavailable -> {
+            is JournalRearmResult.ExactAlarmsUnavailable -> {
                 capabilityUnavailable = true
                 failures += "Journaled triggers retained because exact alarms are unavailable."
                 Log.e(TAG, failures.last())

@@ -1,8 +1,10 @@
 package dev.po4yka.lenswake.data
 
+import android.util.Log
 import dev.po4yka.lenswake.core.AutomationEvent
 import dev.po4yka.lenswake.core.AutomationFailureCode
 import dev.po4yka.lenswake.core.AutomationProfileRepository
+import dev.po4yka.lenswake.core.CorruptProfileEntryException
 import dev.po4yka.lenswake.core.EnvironmentSnapshot
 import dev.po4yka.lenswake.core.EnvironmentSnapshotCaptureResult
 import dev.po4yka.lenswake.core.EnvironmentSnapshotId
@@ -15,6 +17,8 @@ import dev.po4yka.lenswake.core.ExecutionReport
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.ProfileId
+import dev.po4yka.lenswake.core.ProfilePersistenceIssue
+import dev.po4yka.lenswake.core.ProfilePersistenceIssueCode
 import dev.po4yka.lenswake.core.RecordingSchedule
 import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.ScheduleRepository
@@ -22,6 +26,7 @@ import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.data.internal.dao.ExecutionCasResult
 import dev.po4yka.lenswake.data.internal.dao.ExecutionReservationEntityResult
 import dev.po4yka.lenswake.data.internal.dao.EnvironmentSnapshotInsertResult
+import dev.po4yka.lenswake.data.internal.entity.AutomationProfileEntity
 import dev.po4yka.lenswake.data.internal.mapping.toDomain
 import dev.po4yka.lenswake.data.internal.mapping.toEntity
 import java.time.Instant
@@ -53,9 +58,20 @@ class RoomAutomationProfileRepository(
     private val dao = database.automationProfileDao()
 
     override fun observeProfiles(): Flow<List<PixelCameraProfile>> =
-        dao.observeAll().map { profiles -> profiles.map { it.toDomain() } }
+        dao.observeAll().map { profiles -> profiles.decode(reportIssues = true).profiles }
 
-    override suspend fun get(id: ProfileId): PixelCameraProfile? = dao.get(id.value)?.toDomain()
+    override fun observePersistenceIssues(): Flow<List<ProfilePersistenceIssue>> =
+        dao.observeAll().map { profiles -> profiles.decode(reportIssues = false).issues }
+
+    override suspend fun get(id: ProfileId): PixelCameraProfile? = dao.get(id.value)?.let { entity ->
+        try {
+            entity.toDomain()
+        } catch (error: Exception) {
+            val issue = entity.persistenceIssue()
+            report(issue, error)
+            throw CorruptProfileEntryException(issue, error)
+        }
+    }
 
     override suspend fun save(profile: PixelCameraProfile) {
         dao.upsert(profile.toEntity())
@@ -63,6 +79,45 @@ class RoomAutomationProfileRepository(
 
     override suspend fun delete(id: ProfileId) {
         dao.delete(id.value)
+    }
+
+    private fun List<AutomationProfileEntity>.decode(
+        reportIssues: Boolean,
+    ): DecodedProfiles {
+        val profiles = ArrayList<PixelCameraProfile>(size)
+        val issues = mutableListOf<ProfilePersistenceIssue>()
+        for (entity in this) {
+            try {
+                profiles += entity.toDomain()
+            } catch (error: Exception) {
+                val issue = entity.persistenceIssue()
+                issues += issue
+                if (reportIssues) report(issue, error)
+            }
+        }
+        return DecodedProfiles(profiles, issues)
+    }
+
+    private fun AutomationProfileEntity.persistenceIssue() = ProfilePersistenceIssue(
+        entryKey = id,
+        code = ProfilePersistenceIssueCode.CORRUPT_ENTRY,
+    )
+
+    private fun report(issue: ProfilePersistenceIssue, error: Exception) {
+        Log.e(
+            TAG,
+            "profile.persistence.corrupt_entry " +
+                "code=${issue.code} cause=${error.javaClass.simpleName}",
+        )
+    }
+
+    private data class DecodedProfiles(
+        val profiles: List<PixelCameraProfile>,
+        val issues: List<ProfilePersistenceIssue>,
+    )
+
+    private companion object {
+        const val TAG = "LenswakeProfileStore"
     }
 }
 

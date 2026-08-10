@@ -44,6 +44,7 @@ class AutomationExecutionService : Service() {
     private lateinit var notificationManager: NotificationManager
     private lateinit var journal: AlarmDeliveryJournal
     private lateinit var retryCoordinator: AlarmDeliveryRetryCoordinator
+    private lateinit var journalCorruptionHandler: AlarmJournalCorruptionDeliveryHandler
     private lateinit var dispatcher: AlarmWorkDispatcher
     private var journalRestored = false
 
@@ -51,11 +52,20 @@ class AutomationExecutionService : Service() {
         super.onCreate()
         notificationManager = getSystemService(NotificationManager::class.java)
         journal = AlarmDeliveryJournal(this)
+        val escalator = AlarmTransportEscalator(
+            persistence = SharedPreferencesAlarmTransportFailurePersistence(this),
+            notifier = AndroidAlarmTransportFailureNotifier(this),
+        )
         retryCoordinator = AlarmDeliveryRetryCoordinator(
             backend = AndroidAlarmDeliveryRetryBackend(this, journal),
-            escalator = AlarmTransportEscalator(
-                persistence = SharedPreferencesAlarmTransportFailurePersistence(this),
-                notifier = AndroidAlarmTransportFailureNotifier(this),
+            escalator = escalator,
+        )
+        journalCorruptionHandler = AlarmJournalCorruptionDeliveryHandler(
+            escalator = escalator,
+            recoveryCoordinator = AlarmRecoveryRetryCoordinator(
+                persistence = SharedPreferencesAlarmRecoveryCheckpointPersistence(this),
+                backend = AndroidAlarmRecoveryRetryBackend(this),
+                escalator = escalator,
             ),
         )
         dispatcher = AlarmWorkDispatcher(
@@ -95,7 +105,9 @@ class AutomationExecutionService : Service() {
             }
             val pendingEntries = if (!journalRestored) {
                 journalRestored = true
-                journal.entries().causalRestorationOrder()
+                val snapshot = journal.read()
+                reportJournalCorruptions(snapshot.corruptEntries)
+                snapshot.entries.causalRestorationOrder()
             } else {
                 listOfNotNull(currentEntry)
             }
@@ -112,6 +124,20 @@ class AutomationExecutionService : Service() {
         }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun reportJournalCorruptions(entries: List<AlarmDeliveryJournal.CorruptEntry>) {
+        val handling = journalCorruptionHandler.handle(entries)
+        entries.zip(handling.escalations).forEach { (entry, result) ->
+            Log.e(
+                TAG,
+                "Corrupt durable alarm journal entry detected (${entry.reason}); " +
+                    "markerPersisted=${result.markerPersisted}, notification=${result.notification}",
+            )
+        }
+        handling.recovery?.let { result ->
+            Log.e(TAG, "Corrupt journal incident persistence requeued through alarm recovery: $result")
+        }
+    }
 
     override fun onDestroy() {
         serviceScope.cancel()

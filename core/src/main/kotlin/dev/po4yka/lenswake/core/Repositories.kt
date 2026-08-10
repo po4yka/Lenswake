@@ -17,6 +17,9 @@ interface ScheduleRepository {
 interface AutomationProfileRepository {
     fun observeProfiles(): Flow<List<PixelCameraProfile>>
 
+    /** Reports unreadable persisted rows without terminating [observeProfiles]. */
+    fun observePersistenceIssues(): Flow<List<ProfilePersistenceIssue>>
+
     suspend fun get(id: ProfileId): PixelCameraProfile?
 
     suspend fun save(profile: PixelCameraProfile)

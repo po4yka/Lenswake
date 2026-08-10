@@ -22,6 +22,8 @@ import dev.po4yka.lenswake.core.PreflightSeverity
 import dev.po4yka.lenswake.core.PreflightStatus
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
+import dev.po4yka.lenswake.core.ProfilePersistenceIssue
+import dev.po4yka.lenswake.core.ProfilePersistenceIssueCode
 import dev.po4yka.lenswake.core.RecordingSchedule
 import dev.po4yka.lenswake.core.RecordingScheduler
 import dev.po4yka.lenswake.core.LenswakeClock
@@ -161,6 +163,58 @@ class LenswakeViewModelTest {
         assertEquals("stop-incident", incident.id)
         assertEquals(AlarmTransportIncidentUiAction.OPEN_PIXEL_CAMERA, incident.action)
         assertEquals("Scheduled STOP needs manual action", incident.title)
+    }
+
+    @Test
+    fun mapperKeepsCorruptProfileEntryVisibleInDiagnostics() {
+        val state = LenswakeUiStateMapper.map(
+            schedules = emptyList(),
+            profiles = emptyList(),
+            events = emptyList(),
+            profileIssues = listOf(
+                ProfilePersistenceIssue(
+                    entryKey = "profile-corrupt",
+                    code = ProfilePersistenceIssueCode.CORRUPT_ENTRY,
+                ),
+            ),
+            preflight = blockedPreflight(),
+            strings = TestUiStringProvider,
+        )
+
+        val issue = state.profilePersistenceIssues.single()
+        assertEquals("profile-corrupt", issue.id)
+        assertEquals("Camera profile storage issue", issue.title)
+        assertTrue(issue.detail.contains("profile-corrupt"))
+    }
+
+    @Test
+    fun viewModelCollectsProfilePersistenceIssuesIntoDiagnosticsState() = runTest {
+        val schedules = FakeScheduleRepository()
+        val profiles = FakeProfileRepository()
+        val viewModel = LenswakeViewModel(
+            schedules,
+            profiles,
+            FakeExecutionRepository(),
+            RuntimePreflightProbe { blockedPreflight() },
+            installUseCase(profiles),
+            unavailableRehearsalCoordinator(),
+            scheduleWorkflow(schedules, profiles),
+            TestUiStringProvider,
+        )
+
+        try {
+            profiles.reportIssue(
+                ProfilePersistenceIssue(
+                    entryKey = "profile-corrupt",
+                    code = ProfilePersistenceIssueCode.CORRUPT_ENTRY,
+                ),
+            )
+
+            val state = viewModel.state.first { it.profilePersistenceIssues.isNotEmpty() }
+            assertEquals("profile-corrupt", state.profilePersistenceIssues.single().id)
+        } finally {
+            viewModel.viewModelScope.cancel()
+        }
     }
 
     @Test
@@ -486,8 +540,15 @@ class LenswakeViewModelTest {
 
     private class FakeProfileRepository : AutomationProfileRepository {
         private val profiles = MutableStateFlow<List<PixelCameraProfile>>(emptyList())
+        private val issues = MutableStateFlow<List<ProfilePersistenceIssue>>(emptyList())
 
         override fun observeProfiles(): Flow<List<PixelCameraProfile>> = profiles
+        override fun observePersistenceIssues(): Flow<List<ProfilePersistenceIssue>> = issues
+
+        fun reportIssue(issue: ProfilePersistenceIssue) {
+            issues.value = listOf(issue)
+        }
+
         override suspend fun get(id: ProfileId): PixelCameraProfile? = profiles.value.firstOrNull { it.id == id }
         override suspend fun save(profile: PixelCameraProfile) {
             profiles.value = profiles.value.filterNot { it.id == profile.id } + profile

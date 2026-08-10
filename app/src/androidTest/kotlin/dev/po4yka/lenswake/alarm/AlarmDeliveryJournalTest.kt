@@ -7,6 +7,7 @@ import dev.po4yka.lenswake.core.SessionId
 import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -37,7 +38,7 @@ class AlarmDeliveryJournalTest {
         assertNotNull(start)
         assertNotNull(stop)
 
-        val restored = AlarmDeliveryJournal(context, preferenceName).entries()
+        val restored = AlarmDeliveryJournal(context, preferenceName).read().entries
 
         assertEquals(setOf(AlarmKind.START, AlarmKind.STOP), restored.map { it.scheduleTrigger.kind }.toSet())
         assertEquals(1, restored.single { it.scheduleTrigger.kind == AlarmKind.STOP }.scheduleTrigger.deliveryAttempt)
@@ -51,7 +52,7 @@ class AlarmDeliveryJournalTest {
         assertNotNull(replacement)
         assertEquals(
             1,
-            firstJournal.entries().single { it.scheduleTrigger.kind == AlarmKind.START }.scheduleTrigger.deliveryAttempt,
+            firstJournal.read().entries.single { it.scheduleTrigger.kind == AlarmKind.START }.scheduleTrigger.deliveryAttempt,
         )
         val reverted = firstJournal.replace(
             requireNotNull(replacement).key,
@@ -60,11 +61,11 @@ class AlarmDeliveryJournalTest {
         assertNotNull(reverted)
         assertEquals(
             0,
-            firstJournal.entries().single { it.scheduleTrigger.kind == AlarmKind.START }.scheduleTrigger.deliveryAttempt,
+            firstJournal.read().entries.single { it.scheduleTrigger.kind == AlarmKind.START }.scheduleTrigger.deliveryAttempt,
         )
 
-        firstJournal.entries().forEach { firstJournal.remove(it.key) }
-        assertEquals(emptyList<AlarmDeliveryJournal.Entry>(), firstJournal.entries())
+        firstJournal.read().entries.forEach { firstJournal.remove(it.key) }
+        assertEquals(emptyList<AlarmDeliveryJournal.Entry>(), firstJournal.read().entries)
     }
 
     @Test
@@ -80,7 +81,7 @@ class AlarmDeliveryJournalTest {
             firstJournal.persist(RehearsalStopAlarmContract.triggerIntent(context, trigger)),
         )
 
-        val restored = AlarmDeliveryJournal(context, preferenceName).entries().single()
+        val restored = AlarmDeliveryJournal(context, preferenceName).read().entries.single()
         val restoredTrigger = (restored.work as AlarmDeliveryWork.RehearsalStop).trigger
 
         assertEquals(trigger, restoredTrigger)
@@ -105,14 +106,39 @@ class AlarmDeliveryJournalTest {
         requireNotNull(journal.persist(AlarmContract.triggerIntent(context, initial)))
         requireNotNull(journal.persist(AlarmContract.triggerIntent(context, retry)))
 
-        val restored = AlarmDeliveryJournal(context, preferenceName).entries()
+        val restored = AlarmDeliveryJournal(context, preferenceName).read().entries
 
         assertEquals(1, restored.size)
         assertEquals(1, restored.single().scheduleTrigger.deliveryAttempt)
         assertEquals(true, journal.remove(restored.single().key))
         assertEquals(
             emptyList<AlarmDeliveryJournal.Entry>(),
-            AlarmDeliveryJournal(context, preferenceName).entries(),
+            AlarmDeliveryJournal(context, preferenceName).read().entries,
+        )
+    }
+
+    @Test
+    fun corruptEntryIsReportedWithoutHidingValidStop() {
+        val preferenceName = "alarm-journal-corrupt-${System.nanoTime()}"
+        val journal = AlarmDeliveryJournal(context, preferenceName)
+        val schedule = testSchedule()
+        requireNotNull(journal.persist(AlarmContract.intent(context, schedule, AlarmKind.STOP)))
+        context.getSharedPreferences(preferenceName, Context.MODE_PRIVATE)
+            .edit()
+            .putLong("corrupt-entry", 42L)
+            .commit()
+
+        val snapshot = journal.read()
+
+        assertEquals(listOf(AlarmKind.STOP), snapshot.entries.map { it.scheduleTrigger.kind })
+        assertEquals("corrupt-entry", snapshot.corruptEntries.single().key)
+        assertTrue(
+            snapshot.corruptEntries.single().reason is
+                AlarmDeliveryJournal.CorruptionReason.NonStringValue,
+        )
+        assertTrue(
+            context.getSharedPreferences(preferenceName, Context.MODE_PRIVATE)
+                .contains("corrupt-entry"),
         )
     }
 }

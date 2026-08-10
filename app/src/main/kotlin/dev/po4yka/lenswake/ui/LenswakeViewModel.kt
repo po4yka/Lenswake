@@ -30,6 +30,7 @@ import dev.po4yka.lenswake.core.PreflightReport
 import dev.po4yka.lenswake.core.PreflightSeverity
 import dev.po4yka.lenswake.core.PreflightStatus
 import dev.po4yka.lenswake.core.ProfileCompatibility
+import dev.po4yka.lenswake.core.ProfilePersistenceIssue
 import dev.po4yka.lenswake.core.RecordingSchedule
 import dev.po4yka.lenswake.core.RehearsalRequest
 import dev.po4yka.lenswake.core.ScheduleReadiness
@@ -80,6 +81,7 @@ class LenswakeViewModel internal constructor(
     private val pendingDeleteScheduleId = MutableStateFlow<String?>(null)
     private val setupRemediationMessage = MutableStateFlow<String?>(null)
     private val profiles = profileRepository.observeProfiles()
+    private val profilePersistenceIssues = profileRepository.observePersistenceIssues()
     private val preflightInvalidations = merge(
         preflightRefresh.map { Unit },
         runtimePreflightProbe.invalidations,
@@ -119,7 +121,12 @@ class LenswakeViewModel internal constructor(
     val state: StateFlow<LenswakeUiState> = combine(
         scheduleRepository.observeSchedules(),
         profiles,
-        combine(diagnosticEvents, alarmTransportIncidents, ::DiagnosticsUiData),
+        combine(
+            diagnosticEvents,
+            alarmTransportIncidents,
+            profilePersistenceIssues,
+            ::DiagnosticsUiData,
+        ),
         combine(profiles, preflightInvalidations) { currentProfiles, _ ->
             runtimePreflightProbe.inspect(currentProfiles)
         },
@@ -130,6 +137,7 @@ class LenswakeViewModel internal constructor(
             profiles = currentProfiles,
             events = diagnostics.events,
             incidents = diagnostics.incidents,
+            profileIssues = diagnostics.profileIssues,
             preflight = preflight,
             profileInstall = transientState.profileInstall,
             rehearsal = transientState.rehearsal,
@@ -414,6 +422,7 @@ private data class TransientUiState(
 private data class DiagnosticsUiData(
     val events: List<AutomationEvent>,
     val incidents: List<AlarmTransportIncident>,
+    val profileIssues: List<ProfilePersistenceIssue>,
 )
 
 private fun SetupRemediationAction.remediationLabel(strings: UiStringProvider): String = strings.get(
@@ -525,6 +534,7 @@ private fun InstallKnownPixelCameraProfileResult.toUiState(
 
 internal object LenswakeUiStateMapper {
     private val eventTimeFormatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
+    private const val MAX_VISIBLE_PERSISTENCE_KEY_LENGTH = 64
 
     fun initial(strings: UiStringProvider): LenswakeUiState = LenswakeUiState(
         readiness = ReadinessUiState.Blocked(
@@ -545,6 +555,7 @@ internal object LenswakeUiStateMapper {
         profiles: List<PixelCameraProfile>,
         events: List<AutomationEvent>,
         incidents: List<AlarmTransportIncident> = emptyList(),
+        profileIssues: List<ProfilePersistenceIssue> = emptyList(),
         preflight: PreflightReport,
         profileInstall: ProfileInstallUiState = ProfileInstallUiState.Idle,
         rehearsal: RehearsalActionUiState = RehearsalActionUiState.Idle,
@@ -564,6 +575,7 @@ internal object LenswakeUiStateMapper {
         capabilities = preflight.checks.map { capability(it, strings) },
         diagnosticEvents = events.map(::eventSummary),
         alarmTransportIncidents = incidents.map(::incidentSummary),
+        profilePersistenceIssues = profileIssues.map { profilePersistenceIssueSummary(it, strings) },
         profileInstall = profileInstall,
         rehearsal = rehearsal,
         scheduleEditor = scheduleEditor,
@@ -782,6 +794,22 @@ internal object LenswakeUiStateMapper {
                 null -> null
             },
         )
+
+    private fun profilePersistenceIssueSummary(
+        issue: ProfilePersistenceIssue,
+        strings: UiStringProvider,
+    ): ProfilePersistenceIssueUiState {
+        val displayKey = issue.entryKey
+            .take(MAX_VISIBLE_PERSISTENCE_KEY_LENGTH)
+            .map { character -> if (character.isISOControl()) '\uFFFD' else character }
+            .joinToString("")
+            .ifBlank { strings.get(R.string.profile_storage_issue_blank_key) }
+        return ProfilePersistenceIssueUiState(
+            id = issue.entryKey,
+            title = strings.get(R.string.profile_storage_issue_title),
+            detail = strings.get(R.string.profile_storage_issue_detail, displayKey),
+        )
+    }
 
     private fun initialCapabilities(strings: UiStringProvider): List<CapabilityUiState> = listOf(
         CapabilityUiState(

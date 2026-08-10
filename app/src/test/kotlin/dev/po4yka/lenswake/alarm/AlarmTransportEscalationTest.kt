@@ -10,6 +10,71 @@ import org.junit.jupiter.api.Test
 
 class AlarmTransportEscalationTest {
     @Test
+    fun corruptJournalEntryPersistsStableCameraSafetyIncident() {
+        val persistence = FakeFailurePersistence()
+        val escalator = AlarmTransportEscalator(
+            persistence = persistence,
+            notifier = FakeFailureNotifier(),
+            nowEpochMillis = { 5_000L },
+        )
+        val corruptEntry = AlarmDeliveryJournal.CorruptEntry(
+            key = "private-preference-key",
+            reason = AlarmDeliveryJournal.CorruptionReason.UnrecognizedDeliveryWork,
+        )
+
+        escalator.escalateJournalCorruption(corruptEntry)
+        escalator.escalateJournalCorruption(corruptEntry)
+
+        val marker = persistence.single()
+        assertEquals(AlarmTransportFailureCode.JOURNAL_ENTRY_CORRUPT, marker.code)
+        assertEquals(
+            AlarmTransportEscalator.journalCorruptionMarkerId(corruptEntry.key),
+            marker.id,
+        )
+        assertTrue(marker.cameraAction)
+        assertTrue(marker.message.contains("unknown START or STOP"))
+        assertTrue(!marker.id.contains(corruptEntry.key))
+    }
+
+    @Test
+    fun corruptJournalIncidentPersistenceFailureDurablyRequeuesRecoveryOnce() {
+        val failurePersistence = FakeFailurePersistence(persistSucceeds = false)
+        val checkpoint = FakeRecoveryCheckpointPersistence()
+        val recoveryBackend = FakeRecoveryRetryBackend()
+        val escalator = AlarmTransportEscalator(
+            persistence = failurePersistence,
+            notifier = FakeFailureNotifier(),
+            nowEpochMillis = { 5_000L },
+        )
+        val handler = AlarmJournalCorruptionDeliveryHandler(
+            escalator = escalator,
+            recoveryCoordinator = AlarmRecoveryRetryCoordinator(
+                persistence = checkpoint,
+                backend = recoveryBackend,
+                escalator = escalator,
+                nowEpochMillis = { 1_000L },
+            ),
+        )
+        val corruptEntries = listOf(
+            AlarmDeliveryJournal.CorruptEntry(
+                key = "corrupt-one",
+                reason = AlarmDeliveryJournal.CorruptionReason.NonStringValue,
+            ),
+            AlarmDeliveryJournal.CorruptEntry(
+                key = "corrupt-two",
+                reason = AlarmDeliveryJournal.CorruptionReason.UnrecognizedDeliveryWork,
+            ),
+        )
+
+        val result = handler.handle(corruptEntries)
+
+        assertTrue(result.escalations.all { !it.markerPersisted })
+        assertEquals(AlarmRecoveryRetryResult.Scheduled(1, 31_000L), result.recovery)
+        assertEquals(1, checkpoint.checkpoint()?.attempt)
+        assertEquals(listOf(31_000L), recoveryBackend.scheduled)
+    }
+
+    @Test
     fun initialJournalFailureRequeuesStopWithoutJournalReplacement() {
         val persistence = FakeFailurePersistence()
         val backend = FakeDeliveryRetryBackend(canSchedule = true)
@@ -343,10 +408,13 @@ class AlarmRecoveryRetryCoordinatorTest {
     )
 }
 
-private class FakeFailurePersistence : AlarmTransportFailurePersistence {
+private class FakeFailurePersistence(
+    private val persistSucceeds: Boolean = true,
+) : AlarmTransportFailurePersistence {
     private val values = linkedMapOf<String, AlarmTransportFailureMarker>()
 
     override fun persist(marker: AlarmTransportFailureMarker): Boolean {
+        if (!persistSucceeds) return false
         values[marker.id] = marker
         return true
     }

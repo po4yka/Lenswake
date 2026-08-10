@@ -35,13 +35,38 @@ internal class AlarmDeliveryJournal(
         }
     }
 
-    fun entries(): List<Entry> {
-        val decoded = preferences.all.mapNotNull { (key, value) ->
-            val encodedIntent = value as? String ?: return@mapNotNull null
-            val work = runCatching {
-                AlarmDeliveryWorkContract.parse(Intent.parseUri(encodedIntent, Intent.URI_INTENT_SCHEME))
-            }.getOrNull() ?: return@mapNotNull null
-            Entry(key, work)
+    fun read(): Snapshot {
+        val decoded = mutableListOf<Entry>()
+        val corruptEntries = mutableListOf<CorruptEntry>()
+        preferences.all.forEach { (key, value) ->
+            val encodedIntent = value as? String
+            if (encodedIntent == null) {
+                corruptEntries += CorruptEntry(key, CorruptionReason.NonStringValue)
+                return@forEach
+            }
+            val intent = try {
+                Intent.parseUri(encodedIntent, Intent.URI_INTENT_SCHEME)
+            } catch (error: Exception) {
+                corruptEntries += CorruptEntry(
+                    key,
+                    CorruptionReason.InvalidIntentUri(error.javaClass.simpleName),
+                )
+                return@forEach
+            }
+            val work = try {
+                AlarmDeliveryWorkContract.parse(intent)
+            } catch (error: Exception) {
+                corruptEntries += CorruptEntry(
+                    key,
+                    CorruptionReason.InvalidDeliveryWork(error.javaClass.simpleName),
+                )
+                return@forEach
+            }
+            if (work == null) {
+                corruptEntries += CorruptEntry(key, CorruptionReason.UnrecognizedDeliveryWork)
+                return@forEach
+            }
+            decoded += Entry(key, work)
         }
         val winners = decoded
             .groupBy { it.work.markerId }
@@ -58,7 +83,10 @@ internal class AlarmDeliveryJournal(
             staleKeys.forEach(cleanup::remove)
             cleanup.commit()
         }
-        return winners
+        return Snapshot(
+            entries = winners,
+            corruptEntries = corruptEntries.sortedBy(CorruptEntry::key),
+        )
     }
 
     fun remove(key: String): Boolean = preferences.edit().remove(key).commit()
@@ -85,6 +113,23 @@ internal class AlarmDeliveryJournal(
     ) {
         val deliveryAttempt: Int
             get() = work.deliveryAttempt
+    }
+
+    data class Snapshot(
+        val entries: List<Entry>,
+        val corruptEntries: List<CorruptEntry>,
+    )
+
+    data class CorruptEntry(
+        val key: String,
+        val reason: CorruptionReason,
+    )
+
+    sealed interface CorruptionReason {
+        data object NonStringValue : CorruptionReason
+        data class InvalidIntentUri(val causeType: String) : CorruptionReason
+        data class InvalidDeliveryWork(val causeType: String) : CorruptionReason
+        data object UnrecognizedDeliveryWork : CorruptionReason
     }
 
     private fun key(encodedIntent: String): String {

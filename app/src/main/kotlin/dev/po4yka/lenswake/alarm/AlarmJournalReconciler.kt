@@ -4,9 +4,21 @@ import android.app.AlarmManager
 import android.content.Context
 
 internal sealed interface JournalRearmResult {
-    data class Rearmed(val count: Int) : JournalRearmResult
-    data object ExactAlarmsUnavailable : JournalRearmResult
-    data class Failed(val cause: Throwable) : JournalRearmResult
+    val corruptEntries: List<AlarmDeliveryJournal.CorruptEntry>
+
+    data class Rearmed(
+        val count: Int,
+        override val corruptEntries: List<AlarmDeliveryJournal.CorruptEntry> = emptyList(),
+    ) : JournalRearmResult
+
+    data class ExactAlarmsUnavailable(
+        override val corruptEntries: List<AlarmDeliveryJournal.CorruptEntry>,
+    ) : JournalRearmResult
+
+    data class Failed(
+        val cause: Throwable,
+        override val corruptEntries: List<AlarmDeliveryJournal.CorruptEntry>,
+    ) : JournalRearmResult
 }
 
 internal interface ExactAlarmRearmBackend {
@@ -51,17 +63,20 @@ internal class AlarmJournalReconciler(
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
 ) {
     fun rearmAll(): JournalRearmResult {
-        val entries = journal.entries()
-        if (entries.isEmpty()) return JournalRearmResult.Rearmed(0)
-        if (!backend.canScheduleExactAlarms()) return JournalRearmResult.ExactAlarmsUnavailable
+        val snapshot = journal.read()
+        val entries = snapshot.entries
+        if (entries.isEmpty()) return JournalRearmResult.Rearmed(0, snapshot.corruptEntries)
+        if (!backend.canScheduleExactAlarms()) {
+            return JournalRearmResult.ExactAlarmsUnavailable(snapshot.corruptEntries)
+        }
         return try {
             val firstTriggerAt = nowEpochMillis() + REARM_DELAY_MILLIS
             entries.forEachIndexed { index, entry ->
                 backend.rearm(entry.work, firstTriggerAt + index * REARM_STAGGER_MILLIS)
             }
-            JournalRearmResult.Rearmed(entries.size)
+            JournalRearmResult.Rearmed(entries.size, snapshot.corruptEntries)
         } catch (error: RuntimeException) {
-            JournalRearmResult.Failed(error)
+            JournalRearmResult.Failed(error, snapshot.corruptEntries)
         }
     }
 

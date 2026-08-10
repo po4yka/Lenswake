@@ -355,6 +355,8 @@ class DefaultRehearsalCoordinatorTest {
 private class FakeProfileRepository(initial: PixelCameraProfile) : AutomationProfileRepository {
     var saved: PixelCameraProfile = initial
     override fun observeProfiles(): Flow<List<PixelCameraProfile>> = flowOf(listOf(saved))
+    override fun observePersistenceIssues(): Flow<List<dev.po4yka.lenswake.core.ProfilePersistenceIssue>> =
+        flowOf(emptyList())
     override suspend fun get(id: ProfileId): PixelCameraProfile? = saved.takeIf { it.id == id }
     override suspend fun save(profile: PixelCameraProfile) { saved = profile }
     override suspend fun delete(id: ProfileId) = Unit

@@ -195,6 +195,8 @@ class InstallKnownPixelCameraProfileTest {
             get() = profiles.value.singleOrNull()
 
         override fun observeProfiles(): Flow<List<PixelCameraProfile>> = profiles
+        override fun observePersistenceIssues(): Flow<List<dev.po4yka.lenswake.core.ProfilePersistenceIssue>> =
+            kotlinx.coroutines.flow.flowOf(emptyList())
 
         override suspend fun get(id: ProfileId): PixelCameraProfile? {
             getCount += 1

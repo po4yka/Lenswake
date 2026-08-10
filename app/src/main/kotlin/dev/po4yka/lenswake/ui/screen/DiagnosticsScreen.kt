@@ -70,6 +70,20 @@ fun DiagnosticsScreen(
                 )
             }
         }
+        if (state.profilePersistenceIssues.isNotEmpty()) {
+            item { SectionHeading(stringResource(R.string.section_profile_storage_issues)) }
+            items(
+                state.profilePersistenceIssues.size,
+                key = { state.profilePersistenceIssues[it].id },
+            ) { index ->
+                val issue = state.profilePersistenceIssues[index]
+                SummaryCard(
+                    title = issue.title,
+                    detail = issue.detail,
+                    status = stringResource(R.string.status_needs_attention),
+                )
+            }
+        }
         item { SectionHeading(stringResource(R.string.section_activity)) }
         if (state.diagnosticEvents.isEmpty()) {
             item {

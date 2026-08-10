@@ -12,6 +12,9 @@ internal object TestUiStringProvider : UiStringProvider {
         R.string.profile_compatibility_needs_test to "Needs test",
         R.string.profile_compatibility_verified to "Verified for scheduling",
         R.string.profile_installed to "Camera profile installed. Test recording is required before scheduling.",
+        R.string.profile_storage_issue_title to "Camera profile storage issue",
+        R.string.profile_storage_issue_detail to
+            "Stored profile entry “%1\$s” is corrupt and was excluded. Lenswake cannot repair this entry.",
         R.string.profile_unsupported_environment to
             "No camera profile is available for %1\$s with this Pixel Camera version and language.",
         R.string.status_enabled to "Enabled",

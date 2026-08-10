@@ -23,6 +23,7 @@ internal enum class AlarmTransportFailureCode {
     RECOVERY_ATTEMPTS_EXHAUSTED,
     RECOVERY_REQUEUE_FAILED,
     RECOVERY_CAPABILITY_UNAVAILABLE,
+    JOURNAL_ENTRY_CORRUPT,
 }
 
 internal data class AlarmTransportFailureMarker(
@@ -56,6 +57,33 @@ internal data class AlarmTransportEscalationResult(
     val markerPersisted: Boolean,
     val notification: FailureNotificationResult,
 )
+
+internal data class AlarmJournalCorruptionHandlingResult(
+    val escalations: List<AlarmTransportEscalationResult>,
+    val recovery: AlarmRecoveryRetryResult?,
+)
+
+/** Persists every integrity incident and durably requeues recovery once if persistence failed. */
+internal class AlarmJournalCorruptionDeliveryHandler(
+    private val escalator: AlarmTransportEscalator,
+    private val recoveryCoordinator: AlarmRecoveryRetryCoordinator,
+) {
+    fun handle(
+        entries: List<AlarmDeliveryJournal.CorruptEntry>,
+    ): AlarmJournalCorruptionHandlingResult {
+        val escalations = entries.map(escalator::escalateJournalCorruption)
+        val recovery = if (escalations.any { !it.markerPersisted }) {
+            recoveryCoordinator.retry(
+                detail = "A corrupt alarm journal entry was detected, but its durable incident " +
+                    "could not be saved.",
+                capabilityUnavailable = false,
+            )
+        } else {
+            null
+        }
+        return AlarmJournalCorruptionHandlingResult(escalations, recovery)
+    }
+}
 
 /** Durable failure state is authoritative; the notification is a permission-dependent signal. */
 internal class AlarmTransportEscalator(
@@ -103,6 +131,22 @@ internal class AlarmTransportEscalator(
         ),
     )
 
+    fun escalateJournalCorruption(
+        entry: AlarmDeliveryJournal.CorruptEntry,
+    ): AlarmTransportEscalationResult = escalate(
+        AlarmTransportFailureMarker(
+            id = journalCorruptionMarkerId(entry.key),
+            code = AlarmTransportFailureCode.JOURNAL_ENTRY_CORRUPT,
+            title = "Scheduled camera action could not be restored",
+            message = "Lenswake found a corrupt durable alarm entry. An unknown START or STOP " +
+                "could not be restored; Pixel Camera may still be recording. Open Pixel Camera " +
+                "and verify its recording state.",
+            actionLabel = "Open Pixel Camera",
+            cameraAction = true,
+            recordedAtEpochMillis = nowEpochMillis(),
+        ),
+    )
+
     fun resolveDelivery(work: AlarmDeliveryWork): Boolean = resolve(work.markerId)
 
     fun resolveRecovery(): Boolean = resolve(RECOVERY_MARKER_ID)
@@ -127,6 +171,14 @@ internal class AlarmTransportEscalator(
 
         fun deliveryMarkerId(trigger: AlarmTrigger): String =
             AlarmDeliveryWork.Schedule(trigger).markerId
+
+        fun journalCorruptionMarkerId(entryKey: String): String {
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(entryKey.toByteArray(StandardCharsets.UTF_8))
+            return "journal-corrupt-" + java.util.Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(digest)
+        }
     }
 }
 

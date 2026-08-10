@@ -56,6 +56,7 @@
     <string name="section_readiness_checks">Readiness checks</string>
     <string name="section_capabilities">Capabilities</string>
     <string name="section_scheduled_alarm_failures">Scheduled alarm failures</string>
+    <string name="section_profile_storage_issues">Profile storage issues</string>
     <string name="section_activity">Activity</string>
 
     <string name="profiles_camera_profile_title">Camera profile</string>
@@ -73,6 +74,9 @@
     <string name="profiles_waiting_for_stop_title">Waiting for Pixel Camera to stop</string>
 
     <string name="diagnostics_no_activity_title">No activity yet</string>
+    <string name="profile_storage_issue_title">Camera profile storage issue</string>
+    <string name="profile_storage_issue_detail">Stored profile entry “%1$s” is corrupt and was excluded. Lenswake cannot repair this entry. To remove it, clear Lenswake storage in Android settings; this permanently deletes all schedules, profiles, and history.</string>
+    <string name="profile_storage_issue_blank_key">blank id</string>
     <string name="diagnostics_no_activity_detail">Recording activity and errors will appear here after Lenswake runs.</string>
     <string name="diagnostics_timed_detail">%1$s · %2$s</string>
 

@@ -16,6 +16,7 @@ data class LenswakeUiState(
     val capabilities: List<CapabilityUiState> = emptyList(),
     val diagnosticEvents: List<DiagnosticEventUiState> = emptyList(),
     val alarmTransportIncidents: List<AlarmTransportIncidentUiState> = emptyList(),
+    val profilePersistenceIssues: List<ProfilePersistenceIssueUiState> = emptyList(),
     val profileInstall: ProfileInstallUiState = ProfileInstallUiState.Idle,
     val rehearsal: RehearsalActionUiState = RehearsalActionUiState.Idle,
     val scheduleEditor: ScheduleEditorUiState = ScheduleEditorUiState.Closed,
@@ -201,6 +202,13 @@ data class AlarmTransportIncidentUiState(
     val detail: String,
     val occurredAt: String,
     val action: AlarmTransportIncidentUiAction? = null,
+)
+
+@Immutable
+data class ProfilePersistenceIssueUiState(
+    val id: String,
+    val title: String,
+    val detail: String,
 )
 
 enum class AlarmTransportIncidentUiAction {

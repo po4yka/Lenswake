@@ -29,6 +29,7 @@ import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
 import dev.po4yka.lenswake.core.PixelCameraStateSignal
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
+import dev.po4yka.lenswake.core.ProfilePersistenceIssueCode
 import dev.po4yka.lenswake.core.RecordingSchedule
 import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.SessionId
@@ -42,10 +43,14 @@ import dev.po4yka.lenswake.data.internal.mapping.toEntity
 import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -135,6 +140,72 @@ class RoomRepositoriesTest {
         assertThrows(IllegalArgumentException::class.java) {
             JsonColumnCodec.decodeStateSignals("""{"schemaVersion":1,"signals":[]}""")
         }
+    }
+
+    @Test
+    fun corruptProfileIsReportedWithoutTerminatingValidProfileFlow() = runBlocking {
+        val validProfile = profile()
+        database.automationProfileDao().upsert(validProfile.toEntity())
+        database.automationProfileDao().upsert(
+            validProfile.toEntity().copy(
+                id = "corrupt-profile",
+                targetsJson = "not-json",
+            ),
+        )
+        database.automationProfileDao().upsert(
+            validProfile.toEntity().copy(id = ""),
+        )
+
+        val profileEmissions = mutableListOf<List<PixelCameraProfile>>()
+        val firstProfiles = CompletableDeferred<Unit>()
+        val profileCollection = launch {
+            profiles.observeProfiles().take(2).collect { emission ->
+                profileEmissions += emission
+                firstProfiles.complete(Unit)
+            }
+        }
+        firstProfiles.await()
+        val updatedProfile = validProfile.copy(compatibility = ProfileCompatibility.NEEDS_REHEARSAL)
+        profiles.save(updatedProfile)
+        profileCollection.join()
+
+        assertEquals(listOf(validProfile), profileEmissions.first())
+        assertEquals(listOf(updatedProfile), profileEmissions.last())
+        assertEquals(
+            listOf(
+                dev.po4yka.lenswake.core.ProfilePersistenceIssue(
+                    entryKey = "",
+                    code = ProfilePersistenceIssueCode.CORRUPT_ENTRY,
+                ),
+                dev.po4yka.lenswake.core.ProfilePersistenceIssue(
+                    entryKey = "corrupt-profile",
+                    code = ProfilePersistenceIssueCode.CORRUPT_ENTRY,
+                ),
+            ),
+            profiles.observePersistenceIssues().first(),
+        )
+        assertTrue(
+            runCatching { profiles.get(ProfileId("corrupt-profile")) }
+                .exceptionOrNull() is dev.po4yka.lenswake.core.CorruptProfileEntryException,
+        )
+
+        val issueEmissions = mutableListOf<List<dev.po4yka.lenswake.core.ProfilePersistenceIssue>>()
+        val firstIssues = CompletableDeferred<Unit>()
+        val issueCollection = launch {
+            profiles.observePersistenceIssues().take(2).collect { emission ->
+                issueEmissions += emission
+                firstIssues.complete(Unit)
+            }
+        }
+        firstIssues.await()
+        database.automationProfileDao().delete("")
+        issueCollection.join()
+
+        assertEquals(2, issueEmissions.first().size)
+        assertEquals(
+            listOf("corrupt-profile"),
+            issueEmissions.last().map(dev.po4yka.lenswake.core.ProfilePersistenceIssue::entryKey),
+        )
     }
 
     @Test
