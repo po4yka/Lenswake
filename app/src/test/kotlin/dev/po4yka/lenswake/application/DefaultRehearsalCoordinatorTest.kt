@@ -7,7 +7,9 @@ import dev.po4yka.lenswake.automation.AutomationEngine
 import dev.po4yka.lenswake.automation.AutomationRunResult
 import dev.po4yka.lenswake.automation.PortResult
 import dev.po4yka.lenswake.core.AutomationEvent
+import dev.po4yka.lenswake.core.AutomationFailureCode
 import dev.po4yka.lenswake.core.AutomationProfileRepository
+import dev.po4yka.lenswake.core.AutomationStateName
 import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.EnvironmentCapabilityStatus
 import dev.po4yka.lenswake.core.EnvironmentSnapshot
@@ -167,7 +169,7 @@ class DefaultRehearsalCoordinatorTest {
     }
 
     @Test
-    fun alarmForSessionWithoutRecordingOwnershipDoesNotTouchCamera() = runBlocking {
+    fun alarmWithoutRecordingOwnershipReleasesCameraForNextRehearsal() = runBlocking {
         val fixture = fixture(clockNow = now.plusSeconds(96))
         val owned = fixture.executions.seedRehearsal(now, request, profile.id)
         fixture.executions.sessions[owned.id] = owned.copy(
@@ -183,6 +185,72 @@ class DefaultRehearsalCoordinatorTest {
         assertInstanceOf(AlarmHandlingResult.Accepted::class.java, result)
         assertEquals(0, fixture.engine.stopCalls)
         assertEquals(1, fixture.backstop.cancelCalls)
+        val released = fixture.executions.sessions.getValue(owned.id)
+        assertEquals(SessionStatus.FAILED, released.status)
+        assertEquals(now.plusSeconds(96), released.cameraOwnershipReleasedAt)
+        assertEquals(AutomationFailureCode.AUTOMATION_TIMEOUT, released.failure?.code)
+        assertTrue(!released.ownsPixelCamera)
+        assertEquals(
+            listOf(
+                "automation.rehearsal.stop_alarm_delivered",
+                "automation.rehearsal.closed_without_recording",
+            ),
+            fixture.executions.events.map(AutomationEvent::name),
+        )
+        assertInstanceOf(RehearsalResult.Completed::class.java, fixture.coordinator.run(request))
+    }
+
+    @Test
+    fun alarmReleasesCancelledRehearsalWithConsistentFailure() = runBlocking {
+        val fixture = fixture(clockNow = now.plusSeconds(96))
+        val rehearsal = fixture.executions.seedRehearsal(now, request, profile.id)
+        fixture.executions.sessions[rehearsal.id] = rehearsal.copy(
+            status = SessionStatus.CANCELLED,
+            currentAutomationState = AutomationStateName.CANCELLED,
+            recordActionAt = null,
+            recordingVerifiedAt = null,
+        )
+
+        val result = fixture.alarmCoordinator.handle(
+            RehearsalStopTrigger(rehearsal.id, rehearsal.expectedStopAt),
+        )
+
+        assertInstanceOf(AlarmHandlingResult.Accepted::class.java, result)
+        val released = fixture.executions.sessions.getValue(rehearsal.id)
+        assertEquals(SessionStatus.CANCELLED, released.status)
+        assertEquals(AutomationFailureCode.AUTOMATION_CANCELLED, released.failure?.code)
+        assertEquals(now.plusSeconds(96), released.cameraOwnershipReleasedAt)
+        assertEquals(0, fixture.engine.stopCalls)
+        assertEquals(1, fixture.backstop.cancelCalls)
+    }
+
+    @Test
+    fun releaseConflictRetainsBackstopAndDuplicateAlarmDoesNotRepeatClosure() = runBlocking {
+        val fixture = fixture(clockNow = now.plusSeconds(96))
+        val rehearsal = fixture.executions.seedRehearsal(now, request, profile.id)
+        fixture.executions.sessions[rehearsal.id] = rehearsal.copy(
+            status = SessionStatus.PENDING,
+            recordActionAt = null,
+            recordingVerifiedAt = null,
+        )
+        fixture.executions.closeWithoutRecordingConflictsRemaining = 1
+        val trigger = RehearsalStopTrigger(rehearsal.id, rehearsal.expectedStopAt)
+
+        assertInstanceOf(AlarmHandlingResult.Retryable::class.java, fixture.alarmCoordinator.handle(trigger))
+        assertEquals(0, fixture.backstop.cancelCalls)
+        assertEquals(null, fixture.executions.sessions.getValue(rehearsal.id).cameraOwnershipReleasedAt)
+
+        assertInstanceOf(AlarmHandlingResult.Accepted::class.java, fixture.alarmCoordinator.handle(trigger))
+        val released = fixture.executions.sessions.getValue(rehearsal.id)
+        assertEquals(now.plusSeconds(96), released.cameraOwnershipReleasedAt)
+        assertEquals(1, fixture.backstop.cancelCalls)
+
+        assertInstanceOf(AlarmHandlingResult.Accepted::class.java, fixture.alarmCoordinator.handle(trigger))
+        assertEquals(released, fixture.executions.sessions.getValue(rehearsal.id))
+        assertEquals(
+            1,
+            fixture.executions.events.count { it.name == "automation.rehearsal.closed_without_recording" },
+        )
     }
 
     @Test
@@ -214,7 +282,7 @@ class DefaultRehearsalCoordinatorTest {
         val executions = FakeRehearsalRepository()
         val profiles = FakeProfileRepository(profile)
         val backstop = FakeBackstop(order, backstopScheduleFails)
-        val engine = FakeRehearsalEngine(executions, order, now, completeStopProof)
+        val engine = FakeRehearsalEngine(executions, order, clockNow, completeStopProof)
         val mutex = Mutex()
         val stopWorkflow = RehearsalStopWorkflow(
             executionRepository = executions,
@@ -297,6 +365,7 @@ private class FakeRehearsalRepository : ExecutionRepository, EnvironmentSnapshot
     val events = mutableListOf<AutomationEvent>()
     val snapshots = linkedMapOf<SessionId, EnvironmentSnapshot>()
     var failGet = false
+    var closeWithoutRecordingConflictsRemaining = 0
 
     override fun observeExecutions(): Flow<List<ExecutionSession>> = flowOf(sessions.values.toList())
     override fun observeExecution(id: SessionId): Flow<ExecutionSession?> = flowOf(sessions[id])
@@ -322,6 +391,13 @@ private class FakeRehearsalRepository : ExecutionRepository, EnvironmentSnapshot
     }
     override suspend fun apply(change: ExecutionChange, event: AutomationEvent): ExecutionApplyResult {
         val current = sessions[change.updatedSession.id]
+        if (
+            event.name == "automation.rehearsal.closed_without_recording" &&
+            closeWithoutRecordingConflictsRemaining > 0
+        ) {
+            closeWithoutRecordingConflictsRemaining -= 1
+            return ExecutionApplyResult.RevisionConflict(change.expectedRevision, current?.revision)
+        }
         if (current?.revision != change.expectedRevision) {
             return ExecutionApplyResult.RevisionConflict(change.expectedRevision, current?.revision)
         }

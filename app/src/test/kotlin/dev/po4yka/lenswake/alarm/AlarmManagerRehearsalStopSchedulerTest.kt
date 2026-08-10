@@ -84,7 +84,7 @@ class AlarmManagerRehearsalStopSchedulerTest {
     }
 
     @Test
-    fun restoreKeepsFutureBackstopsAndOnlyImmediatelyRearmsOwnedOverdueStops() = runBlocking {
+    fun restoreKeepsFutureBackstopsAndImmediatelyRearmsEveryOwnedOverdueStop() = runBlocking {
         val future = session("future", expectedStopAt = now.plusSeconds(60))
         val overdueOwned = session(
             "overdue-owned",
@@ -92,7 +92,7 @@ class AlarmManagerRehearsalStopSchedulerTest {
             recordActionAt = now.minusSeconds(90),
             status = SessionStatus.FAILED,
         )
-        val overdueUnowned = session("overdue-unowned", expectedStopAt = now.minusSeconds(20))
+        val overdueUndispatched = session("overdue-undispatched", expectedStopAt = now.minusSeconds(20))
         val alreadyStopped = session(
             "stopped",
             expectedStopAt = now.minusSeconds(10),
@@ -100,17 +100,19 @@ class AlarmManagerRehearsalStopSchedulerTest {
             stoppedVerifiedAt = now.minusSeconds(5),
             status = SessionStatus.STOPPING,
         )
-        val active = listOf(future, overdueOwned, overdueUnowned, alreadyStopped)
+        val active = listOf(future, overdueOwned, overdueUndispatched, alreadyStopped)
         val repository = FakeRehearsalExecutionRepository(active).also { it.activeRehearsals = active }
         val backend = FakeRehearsalStopAlarmBackend()
 
         assertTrue(scheduler(repository, backend).restoreAll().isSuccess)
 
-        assertEquals(listOf(overdueUnowned.id, alreadyStopped.id), backend.cancelled)
-        assertEquals(2, backend.scheduled.size)
+        assertEquals(listOf(alreadyStopped.id), backend.cancelled)
+        assertEquals(3, backend.scheduled.size)
         assertEquals(future.expectedStopAt, backend.scheduled[0].triggerAt)
         assertEquals(overdueOwned.expectedStopAt, backend.scheduled[1].trigger.expectedAt)
         assertEquals(now.plusMillis(1_000), backend.scheduled[1].triggerAt)
+        assertEquals(overdueUndispatched.expectedStopAt, backend.scheduled[2].trigger.expectedAt)
+        assertEquals(now.plusMillis(1_000), backend.scheduled[2].triggerAt)
     }
 
     private fun scheduler(

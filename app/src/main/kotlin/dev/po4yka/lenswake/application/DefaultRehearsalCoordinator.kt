@@ -641,13 +641,81 @@ class RehearsalStopWorkflow(
     }
 
     private suspend fun cancelWithoutOwnership(session: ExecutionSession): RehearsalStopOutcome {
-        return if (backstop.cancel(session.id).isSuccess) {
+        val released = if (session.cameraOwnershipReleasedAt != null) {
+            session
+        } else {
+            releaseWithoutRecording(session)
+                ?: return RehearsalStopOutcome.Retryable(
+                    "Could not release rehearsal ownership before cancelling its STOP backstop",
+                )
+        }
+        return if (backstop.cancel(released.id).isSuccess) {
             RehearsalStopOutcome.SafeFailure(
-                session,
+                released,
                 "Rehearsal never acquired recording ownership; no Camera STOP was dispatched",
             )
         } else {
             RehearsalStopOutcome.Retryable("No recording ownership exists, but backstop cancellation failed")
+        }
+    }
+
+    private suspend fun releaseWithoutRecording(session: ExecutionSession): ExecutionSession? {
+        if (session.revision == Long.MAX_VALUE) return null
+        val releasedAt = maxOf(clock.now(), session.updatedAt)
+        val status = when (session.status) {
+            SessionStatus.FAILED,
+            SessionStatus.CANCELLED,
+            -> session.status
+            else -> SessionStatus.FAILED
+        }
+        val state = if (status == SessionStatus.CANCELLED) {
+            AutomationStateName.CANCELLED
+        } else {
+            AutomationStateName.FAILED
+        }
+        val outcome = if (status == SessionStatus.CANCELLED) {
+            AutomationOutcome.CANCELLED
+        } else {
+            AutomationOutcome.FAILED
+        }
+        val failure = session.failure ?: if (status == SessionStatus.CANCELLED) {
+            AutomationFailure(
+                AutomationFailureCode.AUTOMATION_CANCELLED,
+                "Rehearsal was cancelled before recording ownership was acquired",
+            )
+        } else {
+            AutomationFailure(
+                AutomationFailureCode.AUTOMATION_TIMEOUT,
+                "Rehearsal reached its STOP deadline before recording ownership was acquired",
+            )
+        }
+        val released = session.copy(
+            status = status,
+            currentAutomationState = state,
+            cameraOwnershipReleasedAt = releasedAt,
+            failure = failure,
+            revision = session.revision + 1,
+            updatedAt = releasedAt,
+        )
+        val event = AutomationEvent(
+            id = EventId.new(),
+            sessionId = session.id,
+            name = "automation.rehearsal.closed_without_recording",
+            sequence = released.revision,
+            timestamp = releasedAt,
+            state = state,
+            outcome = outcome,
+            failure = failure,
+        )
+        return try {
+            when (val applied = executionRepository.apply(ExecutionChange(session.revision, released), event)) {
+                is ExecutionApplyResult.Applied -> applied.session
+                is ExecutionApplyResult.RevisionConflict -> null
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
         }
     }
 
