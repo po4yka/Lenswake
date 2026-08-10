@@ -4,8 +4,10 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.graphics.Rect
+import android.os.Build
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.annotation.RequiresApi
 import dev.po4yka.lenswake.automation.UiNodeSnapshot
 import dev.po4yka.lenswake.core.NormalizedBounds
 import dev.po4yka.lenswake.platform.PIXEL_CAMERA_PACKAGE
@@ -238,12 +240,7 @@ class PixelCameraAccessibilityService : AccessibilityService() {
             checked = if (!isCheckable) {
                 null
             } else {
-                when (getChecked()) {
-                    AccessibilityNodeInfo.CHECKED_STATE_TRUE -> true
-                    AccessibilityNodeInfo.CHECKED_STATE_FALSE -> false
-                    AccessibilityNodeInfo.CHECKED_STATE_PARTIAL -> null
-                    else -> null
-                }
+                checkedValue()
             },
             enabled = isEnabled,
         )
@@ -283,9 +280,18 @@ class PixelCameraAccessibilityService : AccessibilityService() {
             (!isCheckable || checkedValue() == expected.checked) &&
             isEnabled == expected.enabled
 
-    private fun AccessibilityNodeInfo.checkedValue(): Boolean? = when (getChecked()) {
+    private fun AccessibilityNodeInfo.checkedValue(): Boolean? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
+            checkedValueApi36()
+        } else {
+            isChecked
+        }
+
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    private fun AccessibilityNodeInfo.checkedValueApi36(): Boolean? = when (getChecked()) {
         AccessibilityNodeInfo.CHECKED_STATE_TRUE -> true
         AccessibilityNodeInfo.CHECKED_STATE_FALSE -> false
+        AccessibilityNodeInfo.CHECKED_STATE_PARTIAL -> null
         else -> null
     }
 
