@@ -409,6 +409,44 @@ class DefaultAutomationEngineTest {
     }
 
     @Test
+    fun `start verifies selection and recording in persistent lens-hidden picker`() = runTest {
+        val session = session(status = SessionStatus.PENDING)
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(
+            state = PixelCameraState.TimeLapse(
+                speed = TimeLapseSpeed.X30,
+                recording = false,
+                lens = LensSelection.REAR_MAIN,
+            ),
+            hideLensInSpeedPicker = true,
+            keepSpeedPickerOpenAfterSelection = true,
+        )
+
+        val result = engine(repository, FakeDeviceControl(interactive = true), camera).start(session.id)
+
+        assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        assertEquals(
+            listOf(
+                "launch",
+                "openTimeLapseSpeedControl",
+                "selectSpeed:X120",
+                "startRecording",
+            ),
+            camera.calls,
+        )
+        assertTrue(repository.events.any {
+            it.state == AutomationStateName.VERIFYING_SPEED &&
+                it.operation == AutomationOperation.SELECT_TIME_LAPSE_SPEED &&
+                it.outcome == AutomationOutcome.SUCCEEDED
+        })
+        assertTrue(repository.events.any {
+            it.state == AutomationStateName.VERIFYING_RECORDING &&
+                it.operation == AutomationOperation.VERIFY_RECORDING &&
+                it.outcome == AutomationOutcome.SUCCEEDED
+        })
+    }
+
+    @Test
     fun `start fails when initial speed picker hides lens without current run proof`() = runTest {
         val session = session(status = SessionStatus.PENDING)
         val repository = FakeExecutionRepository(session)

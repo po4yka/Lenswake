@@ -456,7 +456,8 @@ class DefaultAutomationEngine(
                                 is PixelCameraState.TimeLapseSpeedPicker ->
                                     observed.recording &&
                                         observed.speed == capture.speed &&
-                                        observed.lens == LensSelection.REAR_MAIN
+                                        (observed.lens == LensSelection.REAR_MAIN ||
+                                            context.rearMainLensObservedBeforeSpeedPicker)
                                 else -> false
                             }
                         }
@@ -482,7 +483,8 @@ class DefaultAutomationEngine(
                             is PixelCameraState.TimeLapseSpeedPicker ->
                                 !it.recording &&
                                     it.speed == capture.speed &&
-                                    it.lens == LensSelection.REAR_MAIN
+                                    (it.lens == LensSelection.REAR_MAIN ||
+                                        context.rearMainLensObservedBeforeSpeedPicker)
                             else -> false
                         }
                     }
