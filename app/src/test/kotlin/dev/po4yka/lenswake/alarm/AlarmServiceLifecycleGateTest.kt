@@ -33,4 +33,23 @@ class AlarmServiceLifecycleGateTest {
 
         assertEquals(0, gate.pendingWorkForTest())
     }
+
+    @Test
+    fun rejectedNewStartDoesNotStopPreviouslyAcceptedWork() {
+        val gate = AlarmServiceLifecycleGate()
+        val stoppedIds = mutableListOf<Int>()
+        gate.onStart(startId = 10) { gate.workAccepted() }
+
+        val stopped = gate.onStart(startId = 11) {
+            gate.stopIfIdle(stoppedIds::add)
+        }
+
+        assertEquals(false, stopped)
+        assertTrue(stoppedIds.isEmpty())
+        assertEquals(1, gate.pendingWorkForTest())
+
+        gate.complete(stoppedIds::add)
+
+        assertEquals(listOf(11), stoppedIds)
+    }
 }

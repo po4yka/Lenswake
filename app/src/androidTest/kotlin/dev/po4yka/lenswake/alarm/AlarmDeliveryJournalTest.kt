@@ -87,6 +87,34 @@ class AlarmDeliveryJournalTest {
         assertEquals(2, restoredTrigger.deliveryAttempt)
         assertEquals(true, firstJournal.remove(restored.key))
     }
+
+    @Test
+    fun restorationKeepsOnlyHighestAttemptForSameLogicalDelivery() {
+        val preferenceName = "alarm-journal-duplicate-${System.nanoTime()}"
+        val journal = AlarmDeliveryJournal(context, preferenceName)
+        val schedule = testSchedule()
+        val initial = AlarmTrigger(
+            kind = AlarmKind.STOP,
+            scheduleId = schedule.id,
+            scheduleUpdatedAt = schedule.updatedAt,
+            expectedAt = schedule.stopAt,
+            deliveryAttempt = 0,
+        )
+        val retry = initial.copy(deliveryAttempt = 1)
+
+        requireNotNull(journal.persist(AlarmContract.triggerIntent(context, initial)))
+        requireNotNull(journal.persist(AlarmContract.triggerIntent(context, retry)))
+
+        val restored = AlarmDeliveryJournal(context, preferenceName).entries()
+
+        assertEquals(1, restored.size)
+        assertEquals(1, restored.single().scheduleTrigger.deliveryAttempt)
+        assertEquals(true, journal.remove(restored.single().key))
+        assertEquals(
+            emptyList<AlarmDeliveryJournal.Entry>(),
+            AlarmDeliveryJournal(context, preferenceName).entries(),
+        )
+    }
 }
 
 private val AlarmDeliveryJournal.Entry.scheduleTrigger: AlarmTrigger

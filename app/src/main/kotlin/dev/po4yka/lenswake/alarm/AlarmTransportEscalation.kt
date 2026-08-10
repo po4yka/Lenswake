@@ -325,6 +325,40 @@ internal class AlarmDeliveryRetryCoordinator(
         )
     }
 
+    /**
+     * Re-establishes system-owned transport when the alarm intent was valid but its first journal
+     * write failed. There is deliberately no journal mutation here: the replacement exact alarm
+     * must survive independently and will attempt the normal durable admission path again.
+     */
+    fun scheduleUnjournaledRetry(
+        work: AlarmDeliveryWork,
+        detail: String,
+    ): AlarmDeliveryRetryResult {
+        if (work.deliveryAttempt >= maxAttempts) {
+            return escalate(work, AlarmTransportFailureCode.RETRY_ATTEMPTS_EXHAUSTED, detail)
+        }
+        val exactAlarmsAvailable = runCatching { backend.canScheduleExactAlarms() }
+            .getOrElse { error ->
+                return escalate(
+                    work,
+                    AlarmTransportFailureCode.EXACT_ALARM_UNAVAILABLE,
+                    "$detail Exact-alarm capability check failed: ${error.message.orEmpty()}",
+                )
+            }
+        if (!exactAlarmsAvailable) {
+            return escalate(work, AlarmTransportFailureCode.EXACT_ALARM_UNAVAILABLE, detail)
+        }
+        val retryWork = work.nextAttempt()
+        val scheduling = backend.schedule(retryWork, nowEpochMillis() + RETRY_DELAY_MILLIS)
+        if (scheduling.isSuccess) return AlarmDeliveryRetryResult.Scheduled
+
+        return escalate(
+            work,
+            AlarmTransportFailureCode.EXACT_ALARM_SCHEDULING_FAILED,
+            "$detail ${scheduling.exceptionOrNull()?.message.orEmpty()}".trim(),
+        )
+    }
+
     fun resolve(work: AlarmDeliveryWork): Boolean {
         runCatching { backend.cancel(work) }
         return escalator.resolveDelivery(work)

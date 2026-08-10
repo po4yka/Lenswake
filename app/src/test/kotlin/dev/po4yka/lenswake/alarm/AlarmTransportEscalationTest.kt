@@ -10,6 +10,83 @@ import org.junit.jupiter.api.Test
 
 class AlarmTransportEscalationTest {
     @Test
+    fun initialJournalFailureRequeuesStopWithoutJournalReplacement() {
+        val persistence = FakeFailurePersistence()
+        val backend = FakeDeliveryRetryBackend(canSchedule = true)
+        val coordinator = deliveryCoordinator(
+            persistence,
+            FakeFailureNotifier(),
+            backend,
+        )
+        val work = AlarmDeliveryWork.Schedule(trigger(kind = AlarmKind.STOP))
+
+        val result = coordinator.scheduleUnjournaledRetry(
+            work,
+            "Initial durable journal write failed.",
+        )
+
+        assertTrue(result is AlarmDeliveryRetryResult.Scheduled)
+        assertTrue(backend.replaced.isEmpty())
+        val retry = backend.scheduled.single() as AlarmDeliveryWork.Schedule
+        assertEquals(AlarmKind.STOP, retry.trigger.kind)
+        assertEquals(1, retry.trigger.deliveryAttempt)
+        assertTrue(persistence.markers().isEmpty())
+    }
+
+    @Test
+    fun initialStopJournalFailureEscalatesWhenIndependentRetryCannotBeScheduled() {
+        val persistence = FakeFailurePersistence()
+        val backend = FakeDeliveryRetryBackend(
+            canSchedule = true,
+            schedulingResult = Result.failure(IllegalStateException("alarm manager rejected")),
+        )
+        val coordinator = deliveryCoordinator(
+            persistence,
+            FakeFailureNotifier(),
+            backend,
+        )
+        val work = AlarmDeliveryWork.Schedule(trigger(kind = AlarmKind.STOP))
+
+        val result = coordinator.scheduleUnjournaledRetry(
+            work,
+            "Initial durable journal write failed.",
+        )
+
+        assertTrue(result is AlarmDeliveryRetryResult.Escalated)
+        assertEquals(
+            AlarmTransportFailureCode.EXACT_ALARM_SCHEDULING_FAILED,
+            persistence.single().code,
+        )
+        assertTrue(persistence.single().message.contains("Pixel Camera may still be recording"))
+        assertTrue(backend.replaced.isEmpty())
+        assertTrue(backend.restored.isEmpty())
+    }
+
+    @Test
+    fun repeatedInitialJournalFailureStopsAtBoundedAttemptAndEscalatesStop() {
+        val persistence = FakeFailurePersistence()
+        val backend = FakeDeliveryRetryBackend(canSchedule = true)
+        val coordinator = deliveryCoordinator(
+            persistence,
+            FakeFailureNotifier(),
+            backend,
+        )
+        val work = AlarmDeliveryWork.Schedule(trigger(kind = AlarmKind.STOP, attempt = 2))
+
+        val result = coordinator.scheduleUnjournaledRetry(
+            work,
+            "Initial durable journal write failed repeatedly.",
+        )
+
+        assertTrue(result is AlarmDeliveryRetryResult.Escalated)
+        assertEquals(
+            AlarmTransportFailureCode.RETRY_ATTEMPTS_EXHAUSTED,
+            persistence.single().code,
+        )
+        assertTrue(backend.scheduled.isEmpty())
+    }
+
+    @Test
     fun exhaustedStopPersistsManualActionMarkerWhenNotificationPermissionIsUnavailable() {
         val persistence = FakeFailurePersistence()
         val notifier = FakeFailureNotifier(FailureNotificationResult.PERMISSION_UNAVAILABLE)

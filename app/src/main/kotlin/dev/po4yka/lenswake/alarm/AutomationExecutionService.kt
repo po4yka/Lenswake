@@ -77,11 +77,21 @@ class AutomationExecutionService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int =
         lifecycleGate.onStart(startId) {
-            val currentEntry = intent?.let(journal::persist)
-            if (intent != null && currentEntry == null) {
+            val currentWork = intent?.let(AlarmDeliveryWorkContract::parse)
+            if (intent != null && currentWork == null) {
                 Log.e(TAG, "Rejected malformed foreground-service alarm intent")
-                stopSelfResult(startId)
-                return@onStart START_NOT_STICKY
+                return@onStart stopIfIdleOrPreserveActiveWork()
+            }
+            val currentEntry = intent?.let { alarmIntent ->
+                runCatching { journal.persist(alarmIntent) }
+                    .onFailure { error ->
+                        Log.e(TAG, "Initial durable alarm journal write threw", error)
+                    }
+                    .getOrNull()
+            }
+            if (currentWork != null && currentEntry == null) {
+                recoverInitialJournalFailure(currentWork)
+                return@onStart stopIfIdleOrPreserveActiveWork()
             }
             val pendingEntries = if (!journalRestored) {
                 journalRestored = true
@@ -91,14 +101,12 @@ class AutomationExecutionService : Service() {
             }
             if (pendingEntries.isEmpty()) {
                 Log.e(TAG, "No redelivered intent or durable journal entry is available")
-                stopSelfResult(startId)
-                return@onStart START_NOT_STICKY
+                return@onStart stopIfIdleOrPreserveActiveWork()
             }
             val accepted = pendingEntries.map(::enqueue).all { it }
             if (!accepted) {
                 Log.e(TAG, "Could not enqueue durable alarm journal entries")
-                stopSelfResult(startId)
-                return@onStart AUTOMATION_SERVICE_RESTART_MODE
+                return@onStart stopIfIdleOrPreserveActiveWork()
             }
             AUTOMATION_SERVICE_RESTART_MODE
         }
@@ -234,6 +242,33 @@ class AutomationExecutionService : Service() {
             )
         }
     }
+
+    private fun recoverInitialJournalFailure(work: AlarmDeliveryWork) {
+        when (
+            val result = retryCoordinator.scheduleUnjournaledRetry(
+                work,
+                "Initial durable alarm journal write failed.",
+            )
+        ) {
+            AlarmDeliveryRetryResult.Scheduled -> Log.e(
+                TAG,
+                "${work.displayKind} initial journal write failed; independent exact retry scheduled",
+            )
+            is AlarmDeliveryRetryResult.Escalated -> Log.e(
+                TAG,
+                "${work.displayKind} initial journal failure escalation ${result.code}; " +
+                    "markerPersisted=${result.result.markerPersisted}, " +
+                    "notification=${result.result.notification}",
+            )
+        }
+    }
+
+    private fun stopIfIdleOrPreserveActiveWork(): Int =
+        if (lifecycleGate.stopIfIdle { latestStartId -> stopSelfResult(latestStartId) }) {
+            START_NOT_STICKY
+        } else {
+            START_STICKY
+        }
 
     private fun createNotificationChannel() {
         notificationManager.createNotificationChannel(

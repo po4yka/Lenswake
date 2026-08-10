@@ -20,6 +20,12 @@ internal class AlarmServiceLifecycleGate {
         pendingWork -= 1
     }
 
+    fun stopIfIdle(stopLatest: (Int) -> Unit): Boolean = synchronized(lock) {
+        if (pendingWork != 0) return@synchronized false
+        stopLatest(latestStartId)
+        true
+    }
+
     fun complete(stopLatest: (Int) -> Unit) = synchronized(lock) {
         check(pendingWork > 0) { "Cannot complete work that was not accepted" }
         pendingWork -= 1

@@ -20,19 +20,45 @@ internal class AlarmDeliveryJournal(
         val work = AlarmDeliveryWorkContract.parse(intent) ?: return null
         val encodedIntent = intent.toUri(Intent.URI_INTENT_SCHEME)
         val key = key(encodedIntent)
+        val previousEncodedIntent = preferences.all[key] as? String
         return if (preferences.edit().putString(key, encodedIntent).commit()) {
             Entry(key, work)
         } else {
+            val rollback = preferences.edit()
+            if (previousEncodedIntent == null) {
+                rollback.remove(key)
+            } else {
+                rollback.putString(key, previousEncodedIntent)
+            }
+            rollback.commit()
             null
         }
     }
 
-    fun entries(): List<Entry> = preferences.all.mapNotNull { (key, value) ->
-        val encodedIntent = value as? String ?: return@mapNotNull null
-        val work = runCatching {
-            AlarmDeliveryWorkContract.parse(Intent.parseUri(encodedIntent, Intent.URI_INTENT_SCHEME))
-        }.getOrNull() ?: return@mapNotNull null
-        Entry(key, work)
+    fun entries(): List<Entry> {
+        val decoded = preferences.all.mapNotNull { (key, value) ->
+            val encodedIntent = value as? String ?: return@mapNotNull null
+            val work = runCatching {
+                AlarmDeliveryWorkContract.parse(Intent.parseUri(encodedIntent, Intent.URI_INTENT_SCHEME))
+            }.getOrNull() ?: return@mapNotNull null
+            Entry(key, work)
+        }
+        val winners = decoded
+            .groupBy { it.work.markerId }
+            .values
+            .map { duplicates ->
+                duplicates.maxWith(
+                    compareBy<Entry>(Entry::deliveryAttempt, Entry::key),
+                )
+            }
+        val winnerKeys = winners.mapTo(mutableSetOf(), Entry::key)
+        val staleKeys = decoded.mapNotNull { entry -> entry.key.takeUnless(winnerKeys::contains) }
+        if (staleKeys.isNotEmpty()) {
+            val cleanup = preferences.edit()
+            staleKeys.forEach(cleanup::remove)
+            cleanup.commit()
+        }
+        return winners
     }
 
     fun remove(key: String): Boolean = preferences.edit().remove(key).commit()
@@ -56,7 +82,10 @@ internal class AlarmDeliveryJournal(
     data class Entry(
         val key: String,
         val work: AlarmDeliveryWork,
-    )
+    ) {
+        val deliveryAttempt: Int
+            get() = work.deliveryAttempt
+    }
 
     private fun key(encodedIntent: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
