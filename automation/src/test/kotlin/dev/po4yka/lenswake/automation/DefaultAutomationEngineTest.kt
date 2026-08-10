@@ -1475,7 +1475,7 @@ class DefaultAutomationEngineTest {
         override fun observeExecution(id: SessionId): Flow<ExecutionSession?> = execution
         override fun observeEvents(sessionId: SessionId): Flow<List<AutomationEvent>> = allEvents
         override suspend fun get(id: SessionId): ExecutionSession? = execution.value?.takeIf { it.id == id }
-        override suspend fun findActiveForSchedule(scheduleId: ScheduleId): ExecutionSession? =
+        override suspend fun findPixelCameraOwnerForSchedule(scheduleId: ScheduleId): ExecutionSession? =
             execution.value?.takeIf { it.scheduleId == scheduleId }
 
         override suspend fun reservePixelCamera(session: ExecutionSession): ExecutionReservationResult {

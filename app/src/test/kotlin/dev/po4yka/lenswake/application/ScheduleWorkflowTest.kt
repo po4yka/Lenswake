@@ -1,7 +1,13 @@
 package dev.po4yka.lenswake.application
 
 import dev.po4yka.lenswake.core.AutomationProfileRepository
+import dev.po4yka.lenswake.core.AutomationEvent
 import dev.po4yka.lenswake.core.CaptureConfiguration
+import dev.po4yka.lenswake.core.ExecutionApplyResult
+import dev.po4yka.lenswake.core.ExecutionChange
+import dev.po4yka.lenswake.core.ExecutionRepository
+import dev.po4yka.lenswake.core.ExecutionReservationResult
+import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.LenswakeClock
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
@@ -17,6 +23,7 @@ import dev.po4yka.lenswake.core.PreflightSeverity
 import dev.po4yka.lenswake.core.PreflightStatus
 import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.ScheduleRepository
+import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import java.time.Instant
 import java.time.ZoneId
@@ -136,6 +143,55 @@ class ScheduleWorkflowTest {
     }
 
     @Test
+    fun expiredScheduleWithoutPixelCameraOwnershipCanBeDeleted() = runTest {
+        val previous = schedule().copy(startAt = now.minusSeconds(60), stopAt = now.minusSeconds(1))
+        val fixture = fixture(schedules = listOf(previous))
+
+        val result = fixture.workflow.delete(previous.id)
+
+        assertInstanceOf(ScheduleWorkflowResult.Deleted::class.java, result)
+        assertEquals(listOf("cancel", "delete"), fixture.events)
+    }
+
+    @Test
+    fun pixelCameraOwnerBlocksMutationBeforeSchedulerOrPersistenceChanges() = runTest {
+        val previous = schedule()
+        val fixture = fixture(schedules = listOf(previous), owner = owningSession(previous))
+
+        val result = fixture.workflow.delete(previous.id)
+
+        val rejected = assertInstanceOf(ScheduleWorkflowResult.Rejected::class.java, result)
+        assertEquals(ScheduleWorkflowFailureCode.SCHEDULE_EXECUTION_ACTIVE, rejected.code)
+        assertTrue(fixture.events.isEmpty())
+        assertEquals(previous, fixture.schedules.get(previous.id))
+    }
+
+    @Test
+    fun terminalAndReleasedExecutionsDoNotBlockExpiredScheduleMutation() = runTest {
+        val previous = schedule().copy(startAt = now.minusSeconds(60), stopAt = now.minusSeconds(1))
+        val terminal = owningSession(previous).copy(status = dev.po4yka.lenswake.core.SessionStatus.FAILED, recordActionAt = null)
+        val released = owningSession(previous).copy(cameraOwnershipReleasedAt = now)
+
+        listOf(terminal, released).forEach { execution ->
+            val fixture = fixture(schedules = listOf(previous), owner = execution)
+            assertInstanceOf(ScheduleWorkflowResult.Deleted::class.java, fixture.workflow.delete(previous.id))
+            assertEquals(listOf("cancel", "delete"), fixture.events)
+        }
+    }
+
+    @Test
+    fun unavailableExecutionStateFailsClosedBeforeSchedulerOrPersistenceChanges() = runTest {
+        val previous = schedule()
+        val fixture = fixture(schedules = listOf(previous), ownerQueryFailure = IllegalStateException("database unavailable"))
+
+        val result = fixture.workflow.setEnabled(previous.id, enabled = false)
+
+        val failed = assertInstanceOf(ScheduleWorkflowResult.Failed::class.java, result)
+        assertEquals(ScheduleWorkflowFailureCode.EXECUTION_STATE_UNAVAILABLE, failed.code)
+        assertTrue(fixture.events.isEmpty())
+    }
+
+    @Test
     fun missingExactProfileRejectsCreateWithoutPersistence() = runTest {
         val fixture = fixture(profileInstalled = false)
 
@@ -156,6 +212,7 @@ class ScheduleWorkflowTest {
         )
         val workflow = ScheduleWorkflow(
             scheduleRepository = schedules,
+            executionRepository = FakeExecutionRepository(),
             profileRepository = profiles,
             scheduler = FakeRecordingScheduler(events, stopFailures = 0),
             clock = LenswakeClock { now },
@@ -177,6 +234,7 @@ class ScheduleWorkflowTest {
         val profiles = FakeProfileRepository(listOf(profile()))
         val workflow = ScheduleWorkflow(
             scheduleRepository = schedules,
+            executionRepository = FakeExecutionRepository(),
             profileRepository = profiles,
             scheduler = FakeRecordingScheduler(events, stopFailures = 0),
             clock = LenswakeClock { now },
@@ -233,6 +291,7 @@ class ScheduleWorkflowTest {
         }
         val workflow = ScheduleWorkflow(
             scheduleRepository = schedules,
+            executionRepository = FakeExecutionRepository(),
             profileRepository = profiles,
             scheduler = scheduler,
             clock = LenswakeClock { now },
@@ -284,6 +343,7 @@ class ScheduleWorkflowTest {
         val sharedMutex = Mutex()
         val workflow = ScheduleWorkflow(
             scheduleRepository = schedules,
+            executionRepository = FakeExecutionRepository(),
             profileRepository = profiles,
             scheduler = rawScheduler,
             clock = LenswakeClock { now },
@@ -308,6 +368,8 @@ class ScheduleWorkflowTest {
         stopFailures: Int = 0,
         schedules: List<RecordingSchedule> = emptyList(),
         profileInstalled: Boolean = true,
+        owner: ExecutionSession? = null,
+        ownerQueryFailure: Exception? = null,
     ): Fixture {
         val events = mutableListOf<String>()
         val scheduleRepository = FakeScheduleRepository(schedules, events)
@@ -316,6 +378,7 @@ class ScheduleWorkflowTest {
         return Fixture(
             workflow = ScheduleWorkflow(
                 scheduleRepository = scheduleRepository,
+                executionRepository = FakeExecutionRepository(owner, ownerQueryFailure),
                 profileRepository = profiles,
                 scheduler = scheduler,
                 clock = LenswakeClock { now },
@@ -365,6 +428,24 @@ class ScheduleWorkflowTest {
         override suspend fun get(id: ProfileId): PixelCameraProfile? = profiles.value.firstOrNull { it.id == id }
         override suspend fun save(profile: PixelCameraProfile) = error("Not used")
         override suspend fun delete(id: ProfileId) = error("Not used")
+    }
+
+    private class FakeExecutionRepository(
+        private val owner: ExecutionSession? = null,
+        private val queryFailure: Exception? = null,
+    ) : ExecutionRepository {
+        override fun observeExecutions(): Flow<List<ExecutionSession>> = MutableStateFlow(emptyList())
+        override fun observeExecution(id: SessionId): Flow<ExecutionSession?> = MutableStateFlow(null)
+        override fun observeEvents(sessionId: SessionId): Flow<List<AutomationEvent>> = MutableStateFlow(emptyList())
+        override suspend fun get(id: SessionId): ExecutionSession? = null
+        override suspend fun findPixelCameraOwnerForSchedule(scheduleId: ScheduleId): ExecutionSession? {
+            queryFailure?.let { throw it }
+            return owner?.takeIf { it.scheduleId == scheduleId && it.ownsPixelCamera }
+        }
+        override suspend fun reservePixelCamera(session: ExecutionSession): ExecutionReservationResult =
+            error("Not used by ScheduleWorkflow tests")
+        override suspend fun apply(change: ExecutionChange, event: AutomationEvent): ExecutionApplyResult =
+            error("Not used by ScheduleWorkflow tests")
     }
 
     private class FakeRecordingScheduler(
@@ -424,6 +505,22 @@ class ScheduleWorkflowTest {
             enabled = true,
             createdAt = now.minusSeconds(100),
             updatedAt = now.minusSeconds(100),
+        )
+
+        fun owningSession(schedule: RecordingSchedule) = ExecutionSession(
+            id = SessionId("session-${schedule.id.value}"),
+            executionKey = "schedule/${schedule.id.value}/owner",
+            kind = dev.po4yka.lenswake.core.SessionKind.SCHEDULED,
+            scheduleId = schedule.id,
+            scheduleName = schedule.name,
+            profileId = schedule.profileId,
+            capture = schedule.capture,
+            expectedStartAt = schedule.startAt.minusSeconds(1),
+            expectedStopAt = schedule.stopAt.plusSeconds(1),
+            status = dev.po4yka.lenswake.core.SessionStatus.RECORDING,
+            recordActionAt = schedule.startAt,
+            createdAt = schedule.createdAt,
+            updatedAt = schedule.updatedAt,
         )
 
         fun profile() = PixelCameraProfile(

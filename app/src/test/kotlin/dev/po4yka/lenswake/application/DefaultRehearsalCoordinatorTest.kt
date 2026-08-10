@@ -306,7 +306,7 @@ private class FakeRehearsalRepository : ExecutionRepository, EnvironmentSnapshot
         if (failGet) error("transient read failure")
         return sessions[id]
     }
-    override suspend fun findActiveForSchedule(scheduleId: ScheduleId): ExecutionSession? = null
+    override suspend fun findPixelCameraOwnerForSchedule(scheduleId: ScheduleId): ExecutionSession? = null
     override suspend fun findActiveRehearsals(limit: Int): List<ExecutionSession> = sessions.values
         .filter { it.kind == SessionKind.REHEARSAL && it.status !in TERMINAL }
         .take(limit)

@@ -83,8 +83,8 @@ class RoomExecutionRepository(
 
     override suspend fun get(id: SessionId): ExecutionSession? = dao.get(id.value)?.toDomain()
 
-    override suspend fun findActiveForSchedule(scheduleId: ScheduleId): ExecutionSession? =
-        dao.findActiveForSchedule(scheduleId.value)?.toDomain()
+    override suspend fun findPixelCameraOwnerForSchedule(scheduleId: ScheduleId): ExecutionSession? =
+        dao.findPixelCameraOwnerForSchedule(scheduleId.value)?.toDomain()
 
     override suspend fun reservePixelCamera(session: ExecutionSession): ExecutionReservationResult =
         when (val result = dao.reservePixelCamera(session.toEntity())) {

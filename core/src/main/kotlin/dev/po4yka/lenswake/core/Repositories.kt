@@ -50,7 +50,8 @@ interface ExecutionRepository {
 
     suspend fun get(id: SessionId): ExecutionSession?
 
-    suspend fun findActiveForSchedule(scheduleId: ScheduleId): ExecutionSession?
+    /** Returns the schedule execution that currently owns, or may still own, Pixel Camera. */
+    suspend fun findPixelCameraOwnerForSchedule(scheduleId: ScheduleId): ExecutionSession?
 
     /**
      * Atomically reserves global Pixel Camera ownership for [session].

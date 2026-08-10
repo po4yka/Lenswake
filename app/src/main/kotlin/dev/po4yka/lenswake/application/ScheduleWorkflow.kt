@@ -2,6 +2,7 @@ package dev.po4yka.lenswake.application
 
 import dev.po4yka.lenswake.core.AutomationProfileRepository
 import dev.po4yka.lenswake.core.CaptureConfiguration
+import dev.po4yka.lenswake.core.ExecutionRepository
 import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.LenswakeClock
 import dev.po4yka.lenswake.core.ProfileId
@@ -45,7 +46,8 @@ enum class ScheduleWorkflowFailureCode {
     RUNTIME_NOT_READY,
     PREFLIGHT_FAILED,
     INVALID_SCHEDULE,
-    SCHEDULE_ALREADY_STARTED,
+    SCHEDULE_EXECUTION_ACTIVE,
+    EXECUTION_STATE_UNAVAILABLE,
     CANCEL_FAILED,
     PERSIST_FAILED,
     START_ALARM_FAILED,
@@ -85,6 +87,7 @@ sealed interface ScheduleWorkflowResult {
  */
 class ScheduleWorkflow(
     private val scheduleRepository: ScheduleRepository,
+    private val executionRepository: ExecutionRepository,
     private val profileRepository: AutomationProfileRepository,
     private val scheduler: RecordingScheduler,
     private val clock: LenswakeClock,
@@ -141,10 +144,8 @@ class ScheduleWorkflow(
         } catch (failure: Exception) {
             return loadFailed(scheduleId, failure)
         } ?: return notFound(scheduleId)
+        pixelCameraOwnerBlock(scheduleId, "edit")?.let { return it }
         val now = clock.now()
-        if (previous.enabled && !previous.startAt.isAfter(now)) {
-            return alreadyStarted(scheduleId, "edit")
-        }
         val candidate = previous.copy(
             name = command.name.trim(),
             startAt = command.startAt,
@@ -180,10 +181,8 @@ class ScheduleWorkflow(
                 schedule = previous,
             )
         }
+        pixelCameraOwnerBlock(scheduleId, "disable")?.let { return it }
         val now = clock.now()
-        if (!enabled && !previous.startAt.isAfter(now)) {
-            return alreadyStarted(scheduleId, "disable")
-        }
         val candidate = previous.copy(
             enabled = enabled,
             updatedAt = nextRevision(now, previous.updatedAt),
@@ -208,9 +207,7 @@ class ScheduleWorkflow(
         } catch (failure: Exception) {
             return loadFailed(scheduleId, failure)
         } ?: return notFound(scheduleId)
-        if (previous.enabled && !previous.startAt.isAfter(clock.now())) {
-            return alreadyStarted(scheduleId, "delete")
-        }
+        pixelCameraOwnerBlock(scheduleId, "delete")?.let { return it }
 
         return withContext(NonCancellable) { deletePersisted(previous) }
     }
@@ -421,10 +418,29 @@ class ScheduleWorkflow(
         message = "Schedule ${scheduleId.value} could not be loaded: ${failure.safeMessage()}.",
     )
 
-    private fun alreadyStarted(scheduleId: ScheduleId, operation: String) = ScheduleWorkflowResult.Rejected(
-        code = ScheduleWorkflowFailureCode.SCHEDULE_ALREADY_STARTED,
-        message = "Schedule ${scheduleId.value} has already reached its start time and cannot be $operation here.",
-    )
+    private suspend fun pixelCameraOwnerBlock(
+        scheduleId: ScheduleId,
+        operation: String,
+    ): ScheduleWorkflowResult? = try {
+        val owner = executionRepository.findPixelCameraOwnerForSchedule(scheduleId)
+        if (owner == null) {
+            null
+        } else {
+            ScheduleWorkflowResult.Rejected(
+                code = ScheduleWorkflowFailureCode.SCHEDULE_EXECUTION_ACTIVE,
+                message = "Schedule ${scheduleId.value} cannot be $operation while execution " +
+                    "${owner.id.value} owns or may still own Pixel Camera.",
+            )
+        }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        ScheduleWorkflowResult.Failed(
+            code = ScheduleWorkflowFailureCode.EXECUTION_STATE_UNAVAILABLE,
+            message = "Pixel Camera ownership for schedule ${scheduleId.value} could not be verified: " +
+                "${failure.safeMessage()}.",
+        )
+    }
 
     private fun nextRevision(now: Instant, previous: Instant): Instant =
         if (now.toEpochMilli() > previous.toEpochMilli()) now else previous.plusMillis(1)

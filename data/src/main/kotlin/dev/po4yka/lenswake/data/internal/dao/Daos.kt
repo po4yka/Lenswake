@@ -99,12 +99,17 @@ internal interface ExecutionDao {
         """
         SELECT * FROM execution_sessions
         WHERE schedule_id = :scheduleId
-          AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED')
+          AND stopped_verified_at_epoch_ms IS NULL
+          AND camera_ownership_released_at_epoch_ms IS NULL
+          AND (
+            status IN ('PENDING', 'STARTING', 'RECORDING', 'STOPPING')
+            OR (status = 'FAILED' AND record_action_at_epoch_ms IS NOT NULL)
+          )
         ORDER BY created_at_epoch_ms DESC, id DESC
         LIMIT 1
         """,
     )
-    suspend fun findActiveForSchedule(scheduleId: String): ExecutionSessionEntity?
+    suspend fun findPixelCameraOwnerForSchedule(scheduleId: String): ExecutionSessionEntity?
 
     @Query(
         """

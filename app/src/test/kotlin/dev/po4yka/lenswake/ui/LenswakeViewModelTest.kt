@@ -378,6 +378,7 @@ class LenswakeViewModelTest {
             unavailableRehearsalCoordinator(),
             ScheduleWorkflow(
                 scheduleRepository = schedules,
+                executionRepository = FakeExecutionRepository(),
                 profileRepository = profiles,
                 scheduler = scheduler,
                 clock = LenswakeClock { now.minusSeconds(60) },
@@ -451,8 +452,8 @@ class LenswakeViewModelTest {
             events.getOrPut(sessionId) { MutableStateFlow(emptyList()) }
 
         override suspend fun get(id: SessionId): ExecutionSession? = executions.value.firstOrNull { it.id == id }
-        override suspend fun findActiveForSchedule(scheduleId: ScheduleId): ExecutionSession? =
-            executions.value.firstOrNull { it.scheduleId == scheduleId }
+        override suspend fun findPixelCameraOwnerForSchedule(scheduleId: ScheduleId): ExecutionSession? =
+            executions.value.firstOrNull { it.scheduleId == scheduleId && it.ownsPixelCamera }
 
         override suspend fun reservePixelCamera(session: ExecutionSession): ExecutionReservationResult {
             executions.value = executions.value.filterNot { it.id == session.id } + session
@@ -669,6 +670,7 @@ class LenswakeViewModelTest {
             scheduleRepository = schedules,
             profileRepository = profiles,
             scheduler = FakeRecordingScheduler(),
+            executionRepository = FakeExecutionRepository(),
             clock = LenswakeClock { now.minusSeconds(60) },
             preflightProbe = RuntimePreflightProbe { scheduleEligiblePreflight() },
         )

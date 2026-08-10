@@ -184,7 +184,7 @@ private class FakeRehearsalExecutionRepository(
     override suspend fun get(id: SessionId): ExecutionSession? =
         sessions.value.singleOrNull { it.id == id }
 
-    override suspend fun findActiveForSchedule(scheduleId: ScheduleId): ExecutionSession? = null
+    override suspend fun findPixelCameraOwnerForSchedule(scheduleId: ScheduleId): ExecutionSession? = null
 
     override suspend fun findActiveRehearsals(limit: Int): List<ExecutionSession> =
         activeRehearsals.take(limit)

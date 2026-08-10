@@ -32,6 +32,8 @@ import java.util.UUID
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /** Validates exact-alarm identity and bridges a persisted execution plan into the engine. */
 class DefaultAlarmTriggerCoordinator(
@@ -43,12 +45,19 @@ class DefaultAlarmTriggerCoordinator(
     private val startReadiness: suspend (ProfileId) -> Result<Unit>,
     private val clock: LenswakeClock,
     private val snapshotCollectionTimeoutMillis: Long = SNAPSHOT_COLLECTION_TIMEOUT_MILLIS,
+    private val scheduleMutationMutex: Mutex = Mutex(),
 ) : AlarmTriggerCoordinator {
     init {
         require(snapshotCollectionTimeoutMillis > 0) { "Snapshot collection timeout must be positive" }
     }
 
     override suspend fun handle(trigger: AlarmTrigger): AlarmHandlingResult {
+        if (trigger.kind == AlarmKind.START) {
+            return when (val admission = scheduleMutationMutex.withLock { admitStart(trigger) }) {
+                is StartAdmission.Reserved -> continueStart(admission.schedule, admission.session)
+                is StartAdmission.Failed -> admission.result
+            }
+        }
         val schedule = try {
             scheduleRepository.get(trigger.scheduleId)
         } catch (error: Exception) {
@@ -57,13 +66,17 @@ class DefaultAlarmTriggerCoordinator(
         } ?: return terminal("The alarm schedule no longer exists")
 
         validateTrigger(trigger, schedule)?.let { return it }
-        return when (trigger.kind) {
-            AlarmKind.START -> handleStart(schedule)
-            AlarmKind.STOP -> handleStop(schedule)
-        }
+        return handleStop(schedule)
     }
 
-    private suspend fun handleStart(schedule: RecordingSchedule): AlarmHandlingResult {
+    private suspend fun admitStart(trigger: AlarmTrigger): StartAdmission {
+        val schedule = try {
+            scheduleRepository.get(trigger.scheduleId)
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            return StartAdmission.Failed(retryable("Could not load the alarm schedule", error))
+        } ?: return StartAdmission.Failed(terminal("The alarm schedule no longer exists"))
+        validateTrigger(trigger, schedule)?.let { return StartAdmission.Failed(it) }
         val executionKey = executionKey(schedule)
         val sessionId = deterministicSessionId(executionKey)
         val now = clock.now()
@@ -82,18 +95,14 @@ class DefaultAlarmTriggerCoordinator(
             createdAt = now,
             updatedAt = now,
         )
-        val reservation = try {
-            executionRepository.reservePixelCamera(candidate)
-        } catch (error: Exception) {
-            if (error is CancellationException) throw error
-            return retryable("Could not reserve Pixel Camera for the execution", error)
-        }
-        val existing = when (reservation) {
-            is ExecutionReservationResult.Reserved -> reservation.session
-            is ExecutionReservationResult.CameraBusy -> return terminal(
-                "Pixel Camera is owned by execution ${reservation.owner.id.value}",
-            )
-        }
+        return reserveStart(schedule, candidate)
+    }
+
+    private suspend fun continueStart(
+        schedule: RecordingSchedule,
+        existing: ExecutionSession,
+    ): AlarmHandlingResult {
+        val executionKey = executionKey(schedule)
         validateExecution(existing, schedule, executionKey)?.let { return it }
         if (existing.recordActionAt == null && existing.cameraOwnershipReleasedAt == null) {
             val readinessFailure = try {
@@ -111,6 +120,21 @@ class DefaultAlarmTriggerCoordinator(
             is SnapshotCheckpoint.Failed -> return snapshot.result
         }
         return runEngine(AlarmKind.START) { automationEngine.start(snapshottedSession.id) }
+    }
+
+    private suspend fun reserveStart(
+        schedule: RecordingSchedule,
+        candidate: ExecutionSession,
+    ): StartAdmission = try {
+        when (val reservation = executionRepository.reservePixelCamera(candidate)) {
+            is ExecutionReservationResult.Reserved -> StartAdmission.Reserved(schedule, reservation.session)
+            is ExecutionReservationResult.CameraBusy -> StartAdmission.Failed(
+                terminal("Pixel Camera is owned by execution ${reservation.owner.id.value}"),
+            )
+        }
+    } catch (error: Exception) {
+        if (error is CancellationException) throw error
+        StartAdmission.Failed(retryable("Could not reserve Pixel Camera for the execution", error))
     }
 
     private suspend fun failStartReadiness(
@@ -262,7 +286,7 @@ class DefaultAlarmTriggerCoordinator(
         val executionKey = executionKey(schedule)
         val deterministicId = deterministicSessionId(executionKey)
         val active = try {
-            executionRepository.findActiveForSchedule(schedule.id)
+            executionRepository.findPixelCameraOwnerForSchedule(schedule.id)
         } catch (error: Exception) {
             if (error is CancellationException) throw error
             return retryable("Could not locate the active execution session", error)
@@ -526,6 +550,11 @@ class DefaultAlarmTriggerCoordinator(
     private sealed interface StopDeliveryResult {
         data class Persisted(val session: ExecutionSession) : StopDeliveryResult
         data class Failed(val result: AlarmHandlingResult) : StopDeliveryResult
+    }
+
+    private sealed interface StartAdmission {
+        data class Reserved(val schedule: RecordingSchedule, val session: ExecutionSession) : StartAdmission
+        data class Failed(val result: AlarmHandlingResult) : StartAdmission
     }
 
     private sealed interface StopReconciliation {

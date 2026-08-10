@@ -203,7 +203,7 @@ class RoomRepositoriesTest {
         assertEquals(ExecutionApplyResult.RevisionConflict(1, 0), result)
         assertEquals(session, executions.get(session.id))
         assertTrue(executions.observeEvents(session.id).first().isEmpty())
-        assertNotNull(executions.findActiveForSchedule(schedule.id))
+        assertNotNull(executions.findPixelCameraOwnerForSchedule(schedule.id))
     }
 
     @Test

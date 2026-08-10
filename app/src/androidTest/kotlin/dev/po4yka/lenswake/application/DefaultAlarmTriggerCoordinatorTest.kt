@@ -417,8 +417,8 @@ private class FakeExecutionRepository : ExecutionRepository, EnvironmentSnapshot
     override fun observeExecution(id: SessionId): Flow<ExecutionSession?> = flowOf(sessions[id])
     override fun observeEvents(sessionId: SessionId): Flow<List<AutomationEvent>> = flowOf(emptyList())
     override suspend fun get(id: SessionId): ExecutionSession? = sessions[id]
-    override suspend fun findActiveForSchedule(scheduleId: ScheduleId): ExecutionSession? =
-        sessions.values.firstOrNull { it.scheduleId == scheduleId }
+    override suspend fun findPixelCameraOwnerForSchedule(scheduleId: ScheduleId): ExecutionSession? =
+        sessions.values.firstOrNull { it.scheduleId == scheduleId && it.ownsPixelCamera }
 
     override suspend fun reservePixelCamera(session: ExecutionSession): ExecutionReservationResult {
         sessions.values.firstOrNull {

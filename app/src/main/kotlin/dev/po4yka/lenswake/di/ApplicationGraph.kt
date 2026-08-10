@@ -79,6 +79,7 @@ class ApplicationGraph(application: Application) {
     )
     val scheduleWorkflow = ScheduleWorkflow(
         scheduleRepository = scheduleRepository,
+        executionRepository = executionRepository,
         profileRepository = profileRepository,
         scheduler = alarmManagerRecordingScheduler,
         clock = clock,
@@ -155,6 +156,7 @@ class ApplicationGraph(application: Application) {
             }
         },
         clock = clock,
+        scheduleMutationMutex = scheduleMutationMutex,
     )
     val alarmRecoveryCoordinator = SchedulerAlarmRecoveryCoordinator(
         scheduler = recordingScheduler,
