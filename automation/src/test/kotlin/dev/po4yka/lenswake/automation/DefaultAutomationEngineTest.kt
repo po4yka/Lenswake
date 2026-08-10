@@ -389,6 +389,43 @@ class DefaultAutomationEngineTest {
     }
 
     @Test
+    fun `start accepts already open picker after opener reports no safe target`() = runTest {
+        val session = session(status = SessionStatus.PENDING)
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(
+            state = PixelCameraState.TimeLapse(
+                speed = TimeLapseSpeed.X30,
+                recording = false,
+                lens = LensSelection.REAR_MAIN,
+            ),
+            speedPickerDispatch = ActionDispatch.Rejected(
+                AutomationFailure(
+                    AutomationFailureCode.TIME_LAPSE_SPEED_NOT_FOUND,
+                    "No safe target",
+                ),
+            ),
+        )
+
+        val result = engine(
+            repository,
+            FakeDeviceControl(interactive = true),
+            camera,
+            attempts = 2,
+        ).start(session.id)
+
+        assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        assertEquals(1, camera.calls.count { it == "openTimeLapseSpeedControl" })
+        assertEquals(1, camera.calls.count { it == "selectSpeed:X120" })
+        assertEquals(1, camera.calls.count { it == "startRecording" })
+        assertTrue(repository.events.any {
+            it.state == AutomationStateName.VERIFYING_TIME_LAPSE_SPEED_CONTROL &&
+                it.operation == AutomationOperation.OPEN_TIME_LAPSE_SPEED_CONTROL &&
+                it.outcome == AutomationOutcome.SUCCEEDED &&
+                it.attempt == 2
+        })
+    }
+
+    @Test
     fun `start accepts picker that hides lens after rear main was confirmed before opening`() = runTest {
         val session = session(status = SessionStatus.PENDING)
         val repository = FakeExecutionRepository(session)
@@ -1297,6 +1334,7 @@ class DefaultAutomationEngineTest {
         private val confirmLens: Boolean = true,
         private val confirmSpeedPicker: Boolean = true,
         private val speedPickerOpensOnAttempt: Int? = null,
+        private val speedPickerDispatch: ActionDispatch? = null,
         private val hideLensInSpeedPicker: Boolean = false,
         private val keepSpeedPickerOpenAfterSelection: Boolean = false,
         private val suspendLaunch: Boolean = false,
@@ -1370,7 +1408,7 @@ class DefaultAutomationEngineTest {
                     lens = if (hideLensInSpeedPicker) null else current.lens,
                 )
             }
-            return dispatched()
+            return speedPickerDispatch ?: dispatched()
         }
 
         override suspend fun selectTimeLapseSpeed(

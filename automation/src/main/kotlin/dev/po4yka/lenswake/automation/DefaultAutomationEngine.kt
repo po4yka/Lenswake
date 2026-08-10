@@ -671,11 +671,50 @@ class DefaultAutomationEngine(
         val policy = config.policyFor(operation)
         var lastFailure: AutomationFailure? = null
 
+        suspend fun pickerIsOpen(attempt: Int): Boolean {
+            context.transition(
+                state = verificationState,
+                operation = operation,
+                outcome = AutomationOutcome.STARTED,
+                attempt = attempt,
+            )
+            val inspection = try {
+                when (val timed = timed(operation) { pixelCamera.inspect(context.profileUse) }) {
+                    is TimedCall.Completed -> timed.value
+                    TimedCall.TimedOut -> PortResult.Unavailable(timeoutFailure(operation))
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                PortResult.Unavailable(
+                    operationFailure(verificationFailure.code, verificationFailure.message, error),
+                )
+            }
+            return when (inspection) {
+                is PortResult.Observed -> predicate(inspection.value).also { open ->
+                    if (open) {
+                        context.transition(
+                            state = verificationState,
+                            operation = operation,
+                            outcome = AutomationOutcome.SUCCEEDED,
+                            attempt = attempt,
+                        )
+                    }
+                }
+
+                is PortResult.Unavailable -> {
+                    lastFailure = inspection.failure
+                    false
+                }
+            }
+        }
+
         for (attempt in 1..policy.maxAttempts) {
             if (attempt > 1) {
                 retryTransition(context, operation, attempt, actionState)
                 sleeper.sleep(policy.delayBeforeAttempt(attempt))
             }
+
+            if (pickerIsOpen(attempt)) return
 
             context.transition(
                 state = actionState,
@@ -711,36 +750,7 @@ class DefaultAutomationEngine(
                 }
             }
 
-            context.transition(
-                state = verificationState,
-                operation = operation,
-                outcome = AutomationOutcome.STARTED,
-                attempt = attempt,
-            )
-            val inspection = try {
-                when (val timed = timed(operation) { pixelCamera.inspect(context.profileUse) }) {
-                    is TimedCall.Completed -> timed.value
-                    TimedCall.TimedOut -> PortResult.Unavailable(timeoutFailure(operation))
-                }
-            } catch (error: Exception) {
-                if (error is CancellationException) throw error
-                PortResult.Unavailable(
-                    operationFailure(verificationFailure.code, verificationFailure.message, error),
-                )
-            }
-            when (inspection) {
-                is PortResult.Observed -> if (predicate(inspection.value)) {
-                    context.transition(
-                        state = verificationState,
-                        operation = operation,
-                        outcome = AutomationOutcome.SUCCEEDED,
-                        attempt = attempt,
-                    )
-                    return
-                }
-
-                is PortResult.Unavailable -> lastFailure = inspection.failure
-            }
+            if (pickerIsOpen(attempt)) return
         }
 
         fail(context, lastFailure ?: verificationFailure)
