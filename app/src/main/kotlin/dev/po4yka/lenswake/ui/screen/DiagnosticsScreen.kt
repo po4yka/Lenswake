@@ -21,6 +21,7 @@ fun DiagnosticsScreen(
     state: LenswakeUiState,
     contentPadding: PaddingValues,
     onOpenSetup: () -> Unit,
+    onOpenPixelCamera: () -> Unit = {},
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -49,6 +50,27 @@ fun DiagnosticsScreen(
             CapabilityRow(capability = state.capabilities[index])
             if (index < state.capabilities.lastIndex) {
                 HorizontalDivider()
+            }
+        }
+        if (state.alarmTransportIncidents.isNotEmpty()) {
+            item { SectionHeading("Scheduled alarm failures") }
+            items(state.alarmTransportIncidents.size, key = { state.alarmTransportIncidents[it].id }) { index ->
+                val incident = state.alarmTransportIncidents[index]
+                SummaryCard(
+                    title = incident.title,
+                    detail = "${incident.occurredAt} · ${incident.detail}",
+                    status = "Needs attention",
+                    actionLabel = if (incident.action == dev.po4yka.lenswake.ui.AlarmTransportIncidentUiAction.OPEN_PIXEL_CAMERA) {
+                        "Open Pixel Camera"
+                    } else {
+                        null
+                    },
+                    onAction = if (incident.action == dev.po4yka.lenswake.ui.AlarmTransportIncidentUiAction.OPEN_PIXEL_CAMERA) {
+                        onOpenPixelCamera
+                    } else {
+                        null
+                    },
+                )
             }
         }
         item { SectionHeading("Execution history") }

@@ -34,6 +34,8 @@ import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.application.RuntimePreflightProbe
+import dev.po4yka.lenswake.application.AlarmTransportIncident
+import dev.po4yka.lenswake.application.AlarmTransportIncidentAction
 import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfile
 import dev.po4yka.lenswake.application.KnownPixelCameraProfileCatalog
 import dev.po4yka.lenswake.application.RehearsalCoordinator
@@ -129,6 +131,52 @@ class LenswakeViewModelTest {
             SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION,
             state.capabilities.single().remediation,
         )
+    }
+
+    @Test
+    fun mapperKeepsDurableAlarmIncidentAndItsTypedCameraAction() {
+        val state = LenswakeUiStateMapper.map(
+            schedules = emptyList(),
+            profiles = emptyList(),
+            events = emptyList(),
+            incidents = listOf(
+                AlarmTransportIncident(
+                    id = "stop-incident",
+                    code = dev.po4yka.lenswake.alarm.AlarmTransportFailureCode.STOP_TERMINAL_REJECTED,
+                    title = "Scheduled STOP needs manual action",
+                    detail = "Camera may still be recording.",
+                    recordedAtEpochMillis = 1_000L,
+                    action = AlarmTransportIncidentAction.OPEN_PIXEL_CAMERA,
+                ),
+            ),
+            preflight = blockedPreflight(),
+        )
+
+        val incident = state.alarmTransportIncidents.single()
+        assertEquals("stop-incident", incident.id)
+        assertEquals(AlarmTransportIncidentUiAction.OPEN_PIXEL_CAMERA, incident.action)
+        assertEquals("Scheduled STOP needs manual action", incident.title)
+    }
+
+    @Test
+    fun defaultEmptyIncidentSourceEmitsAndDoesNotBlockInitialState() = runTest {
+        val schedules = FakeScheduleRepository()
+        val profiles = FakeProfileRepository()
+        val viewModel = LenswakeViewModel(
+            schedules,
+            profiles,
+            FakeExecutionRepository(),
+            RuntimePreflightProbe { blockedPreflight() },
+            installUseCase(profiles),
+            unavailableRehearsalCoordinator(),
+            scheduleWorkflow(schedules, profiles),
+        )
+
+        try {
+            assertTrue(viewModel.state.first().alarmTransportIncidents.isEmpty())
+        } finally {
+            viewModel.viewModelScope.cancel()
+        }
     }
 
     @Test

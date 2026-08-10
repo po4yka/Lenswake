@@ -11,12 +11,14 @@ import dev.po4yka.lenswake.alarm.SchedulerAlarmRecoveryCoordinator
 import dev.po4yka.lenswake.application.DefaultAlarmTriggerCoordinator
 import dev.po4yka.lenswake.application.DefaultRehearsalCoordinator
 import dev.po4yka.lenswake.application.DefaultRehearsalStopTriggerCoordinator
+import dev.po4yka.lenswake.application.AlarmTransportIncidentSource
 import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfile
 import dev.po4yka.lenswake.application.RehearsalCoordinator
 import dev.po4yka.lenswake.application.RehearsalStopWorkflow
 import dev.po4yka.lenswake.application.RuntimePreflightProbe
 import dev.po4yka.lenswake.application.ScheduleWorkflow
 import dev.po4yka.lenswake.application.MutexRecordingScheduler
+import dev.po4yka.lenswake.application.SharedPreferencesAlarmTransportIncidentSource
 import dev.po4yka.lenswake.automation.DefaultAutomationEngine
 import dev.po4yka.lenswake.automation.SelectorMatcher
 import dev.po4yka.lenswake.core.AutomationProfileRepository
@@ -43,6 +45,8 @@ import kotlinx.coroutines.flow.first
 
 /** Small explicit process-wide composition root; no dependency reports synthetic availability. */
 class ApplicationGraph(application: Application) {
+    internal val alarmTransportIncidentSource: AlarmTransportIncidentSource =
+        SharedPreferencesAlarmTransportIncidentSource(application)
     val database: LenswakeDatabase = LenswakeDatabase.create(application)
     val scheduleRepository: ScheduleRepository = RoomScheduleRepository(database)
     val profileRepository: AutomationProfileRepository = RoomAutomationProfileRepository(database)

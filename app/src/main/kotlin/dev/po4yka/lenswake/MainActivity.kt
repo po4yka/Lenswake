@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
                 LenswakeApp(
                     viewModel = viewModel,
                     onRemediate = ::remediate,
+                    onOpenPixelCamera = ::openPixelCamera,
                 )
             }
         }
@@ -44,6 +45,15 @@ class MainActivity : ComponentActivity() {
                 notificationPermissionRequest.launch(android.Manifest.permission.POST_NOTIFICATIONS)
 
             else -> startRemediationActivity(action)
+        }
+    }
+
+    private fun openPixelCamera() {
+        val intent = packageManager.getLaunchIntentForPackage(PIXEL_CAMERA_PACKAGE) ?: return
+        try {
+            startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            // Opening Camera is an optional manual aid; it must never resolve the incident.
         }
     }
 
@@ -73,5 +83,9 @@ class MainActivity : ComponentActivity() {
         } catch (_: ActivityNotFoundException) {
             viewModel.reportSetupRemediationUnavailable(action)
         }
+    }
+
+    private companion object {
+        const val PIXEL_CAMERA_PACKAGE = "com.google.android.GoogleCamera"
     }
 }

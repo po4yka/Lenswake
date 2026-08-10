@@ -5,6 +5,10 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfile
 import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfileResult
+import dev.po4yka.lenswake.application.AlarmTransportIncident
+import dev.po4yka.lenswake.application.AlarmTransportIncidentAction
+import dev.po4yka.lenswake.application.AlarmTransportIncidentSource
+import dev.po4yka.lenswake.application.EmptyAlarmTransportIncidentSource
 import dev.po4yka.lenswake.application.RehearsalCoordinator
 import dev.po4yka.lenswake.application.RehearsalResult
 import dev.po4yka.lenswake.application.RuntimePreflightProbe
@@ -53,7 +57,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class LenswakeViewModel(
+class LenswakeViewModel internal constructor(
     private val scheduleRepository: ScheduleRepository,
     private val profileRepository: AutomationProfileRepository,
     executionRepository: ExecutionRepository,
@@ -61,6 +65,7 @@ class LenswakeViewModel(
     private val installKnownPixelCameraProfile: InstallKnownPixelCameraProfile,
     private val rehearsalCoordinator: RehearsalCoordinator,
     private val scheduleWorkflow: ScheduleWorkflow,
+    alarmTransportIncidentSource: AlarmTransportIncidentSource = EmptyAlarmTransportIncidentSource,
 ) : ViewModel() {
     private val preflightRefresh = MutableStateFlow(0L)
     private val profileInstall = MutableStateFlow<ProfileInstallUiState>(ProfileInstallUiState.Idle)
@@ -95,6 +100,7 @@ class LenswakeViewModel(
                 }
             }
         }
+    private val alarmTransportIncidents = alarmTransportIncidentSource.incidents
     private val transientUiState = combine(
         profileInstall,
         rehearsal,
@@ -108,16 +114,17 @@ class LenswakeViewModel(
     val state: StateFlow<LenswakeUiState> = combine(
         scheduleRepository.observeSchedules(),
         profiles,
-        diagnosticEvents,
+        combine(diagnosticEvents, alarmTransportIncidents, ::DiagnosticsUiData),
         combine(profiles, preflightInvalidations) { currentProfiles, _ ->
             runtimePreflightProbe.inspect(currentProfiles)
         },
         transientUiState,
-    ) { schedules, currentProfiles, events, preflight, transientState ->
+    ) { schedules, currentProfiles, diagnostics, preflight, transientState ->
         LenswakeUiStateMapper.map(
             schedules = schedules,
             profiles = currentProfiles,
-            events = events,
+            events = diagnostics.events,
+            incidents = diagnostics.incidents,
             preflight = preflight,
             profileInstall = transientState.profileInstall,
             rehearsal = transientState.rehearsal,
@@ -314,7 +321,7 @@ class LenswakeViewModel(
         }
     }
 
-    class Factory(
+    class Factory internal constructor(
         private val scheduleRepository: ScheduleRepository,
         private val profileRepository: AutomationProfileRepository,
         private val executionRepository: ExecutionRepository,
@@ -322,11 +329,13 @@ class LenswakeViewModel(
         private val installKnownPixelCameraProfile: InstallKnownPixelCameraProfile,
         private val rehearsalCoordinator: RehearsalCoordinator,
         private val scheduleWorkflow: ScheduleWorkflow,
+        private val alarmTransportIncidentSource: AlarmTransportIncidentSource = EmptyAlarmTransportIncidentSource,
     ) : ViewModelProvider.Factory {
         constructor(graph: ApplicationGraph) : this(
             scheduleRepository = graph.scheduleRepository,
             profileRepository = graph.profileRepository,
             executionRepository = graph.executionRepository,
+            alarmTransportIncidentSource = graph.alarmTransportIncidentSource,
             runtimePreflightProbe = graph.runtimePreflightProbe,
             installKnownPixelCameraProfile = graph.installKnownPixelCameraProfile,
             rehearsalCoordinator = graph.rehearsalCoordinator,
@@ -342,6 +351,7 @@ class LenswakeViewModel(
                 scheduleRepository = scheduleRepository,
                 profileRepository = profileRepository,
                 executionRepository = executionRepository,
+                alarmTransportIncidentSource = alarmTransportIncidentSource,
                 runtimePreflightProbe = runtimePreflightProbe,
                 installKnownPixelCameraProfile = installKnownPixelCameraProfile,
                 rehearsalCoordinator = rehearsalCoordinator,
@@ -369,6 +379,11 @@ private data class TransientUiState(
     val profileInstall: ProfileInstallUiState,
     val rehearsal: RehearsalActionUiState,
     val schedule: ScheduleTransientUiState,
+)
+
+private data class DiagnosticsUiData(
+    val events: List<AutomationEvent>,
+    val incidents: List<AlarmTransportIncident>,
 )
 
 private val SetupRemediationAction.remediationLabel: String
@@ -483,6 +498,7 @@ internal object LenswakeUiStateMapper {
         schedules: List<RecordingSchedule>,
         profiles: List<PixelCameraProfile>,
         events: List<AutomationEvent>,
+        incidents: List<AlarmTransportIncident> = emptyList(),
         preflight: PreflightReport,
         profileInstall: ProfileInstallUiState = ProfileInstallUiState.Idle,
         rehearsal: RehearsalActionUiState = RehearsalActionUiState.Idle,
@@ -500,6 +516,7 @@ internal object LenswakeUiStateMapper {
             .map(::profileSummary),
         capabilities = preflight.checks.map(::capability),
         diagnosticEvents = events.map(::eventSummary),
+        alarmTransportIncidents = incidents.map(::incidentSummary),
         profileInstall = profileInstall,
         rehearsal = rehearsal,
         scheduleEditor = scheduleEditor,
@@ -675,6 +692,20 @@ internal object LenswakeUiStateMapper {
             occurredAt = event.timestamp.atOffset(ZoneOffset.UTC).format(eventTimeFormatter),
         )
     }
+
+    private fun incidentSummary(incident: AlarmTransportIncident): AlarmTransportIncidentUiState =
+        AlarmTransportIncidentUiState(
+            id = incident.id,
+            title = incident.title,
+            detail = incident.detail,
+            occurredAt = java.time.Instant.ofEpochMilli(incident.recordedAtEpochMillis)
+                .atOffset(ZoneOffset.UTC)
+                .format(eventTimeFormatter),
+            action = when (incident.action) {
+                AlarmTransportIncidentAction.OPEN_PIXEL_CAMERA -> AlarmTransportIncidentUiAction.OPEN_PIXEL_CAMERA
+                null -> null
+            },
+        )
 
     private val rehearsalRequiredChecks = setOf(
         PreflightCheckType.EXACT_ALARMS,

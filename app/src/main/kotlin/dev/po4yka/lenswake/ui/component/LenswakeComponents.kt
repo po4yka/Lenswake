@@ -231,6 +231,8 @@ fun SummaryCard(
     title: String,
     detail: String,
     status: String,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Card(
@@ -262,6 +264,14 @@ fun SummaryCard(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (actionLabel != null && onAction != null) {
+                    OutlinedButton(
+                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                        onClick = onAction,
+                    ) {
+                        Text(actionLabel)
+                    }
+                }
             }
         }
     }

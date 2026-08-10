@@ -134,7 +134,11 @@ internal class SharedPreferencesAlarmTransportFailurePersistence(
     context: Context,
     preferenceName: String = PREFERENCE_NAME,
 ) : AlarmTransportFailurePersistence {
-    private val preferences = context.getSharedPreferences(preferenceName, Context.MODE_PRIVATE)
+    private val storageContext = context.createDeviceProtectedStorageContext()
+    private val preferences = storageContext.getSharedPreferences(preferenceName, Context.MODE_PRIVATE)
+
+    internal val isDeviceProtectedStorage: Boolean
+        get() = storageContext.isDeviceProtectedStorage
 
     override fun persist(marker: AlarmTransportFailureMarker): Boolean = preferences.edit()
         .putString(marker.id, encode(marker))
@@ -180,7 +184,7 @@ internal class SharedPreferencesAlarmTransportFailurePersistence(
         StandardCharsets.UTF_8,
     )
 
-    private companion object {
+    internal companion object {
         const val PREFERENCE_NAME = "alarm_transport_failures"
         const val FORMAT_VERSION = "1"
         const val SEPARATOR = "|"

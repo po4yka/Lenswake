@@ -4,6 +4,8 @@ import android.content.Context
 import android.util.Base64
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import dev.po4yka.lenswake.application.AlarmTransportIncidentAction
+import dev.po4yka.lenswake.application.SharedPreferencesAlarmTransportIncidentSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -30,8 +32,33 @@ class AlarmTransportPersistenceTest {
 
         assertTrue(first.persist(marker))
         assertEquals(marker, SharedPreferencesAlarmTransportFailurePersistence(context, preferenceName).markers().single())
+        assertTrue(first.isDeviceProtectedStorage)
         assertTrue(first.remove(marker.id))
         assertTrue(first.markers().isEmpty())
+    }
+
+    @Test
+    fun diagnosticsIncidentSurvivesRecreationAndDisappearsOnlyAfterPersistenceResolution() {
+        val preferenceName = "alarm-incident-test-${System.nanoTime()}"
+        val persistence = SharedPreferencesAlarmTransportFailurePersistence(context, preferenceName)
+        val marker = AlarmTransportFailureMarker(
+            id = "delivery/stop",
+            code = AlarmTransportFailureCode.STOP_TERMINAL_REJECTED,
+            title = "Scheduled STOP needs manual action",
+            message = "Camera may still be recording.",
+            actionLabel = "Open Pixel Camera",
+            cameraAction = true,
+            recordedAtEpochMillis = 10_000L,
+        )
+
+        assertTrue(persistence.persist(marker))
+        val recreated = SharedPreferencesAlarmTransportIncidentSource(context, preferenceName)
+        assertEquals(marker.id, recreated.incidents.value.single().id)
+        assertEquals(AlarmTransportIncidentAction.OPEN_PIXEL_CAMERA, recreated.incidents.value.single().action)
+
+        // A UI action does not mutate this store; only the alarm recovery resolution does.
+        assertTrue(persistence.remove(marker.id))
+        assertTrue(recreated.incidents.value.isEmpty())
     }
 
     @Test

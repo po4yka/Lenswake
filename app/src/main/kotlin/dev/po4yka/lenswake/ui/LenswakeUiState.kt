@@ -13,6 +13,7 @@ data class LenswakeUiState(
     val profiles: List<ProfileSummaryUiState> = emptyList(),
     val capabilities: List<CapabilityUiState> = defaultCapabilities,
     val diagnosticEvents: List<DiagnosticEventUiState> = emptyList(),
+    val alarmTransportIncidents: List<AlarmTransportIncidentUiState> = emptyList(),
     val profileInstall: ProfileInstallUiState = ProfileInstallUiState.Idle,
     val rehearsal: RehearsalActionUiState = RehearsalActionUiState.Idle,
     val scheduleEditor: ScheduleEditorUiState = ScheduleEditorUiState.Closed,
@@ -190,6 +191,19 @@ data class DiagnosticEventUiState(
     val detail: String,
     val occurredAt: String,
 )
+
+@Immutable
+data class AlarmTransportIncidentUiState(
+    val id: String,
+    val title: String,
+    val detail: String,
+    val occurredAt: String,
+    val action: AlarmTransportIncidentUiAction? = null,
+)
+
+enum class AlarmTransportIncidentUiAction {
+    OPEN_PIXEL_CAMERA,
+}
 
 @Immutable
 data class UiActionAvailability(

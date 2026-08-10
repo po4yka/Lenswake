@@ -50,6 +50,7 @@ private val topLevelDestinations = listOf(
 fun LenswakeApp(
     viewModel: LenswakeViewModel,
     onRemediate: (SetupRemediationAction) -> Unit,
+    onOpenPixelCamera: () -> Unit,
 ) {
     LifecycleResumeEffect(viewModel) {
         viewModel.refreshPreflight()
@@ -71,6 +72,7 @@ fun LenswakeApp(
         onConfirmDeleteSchedule = viewModel::confirmDeleteSchedule,
         onClearScheduleOutcome = viewModel::clearScheduleOutcome,
         onRemediate = onRemediate,
+        onOpenPixelCamera = onOpenPixelCamera,
         onClearRemediationMessage = viewModel::clearSetupRemediationMessage,
     )
 }
@@ -92,6 +94,7 @@ fun LenswakeApp(
     onConfirmDeleteSchedule: (String) -> Unit = {},
     onClearScheduleOutcome: () -> Unit = {},
     onRemediate: (SetupRemediationAction) -> Unit = {},
+    onOpenPixelCamera: () -> Unit = {},
     onClearRemediationMessage: () -> Unit = {},
 ) {
     val backStack = rememberNavBackStack(SchedulesRoute)
@@ -152,6 +155,7 @@ fun LenswakeApp(
                         state = state,
                         contentPadding = contentPadding,
                         onOpenSetup = { backStack.add(SetupRoute) },
+                        onOpenPixelCamera = onOpenPixelCamera,
                     )
                 }
                 entry<SetupRoute> {
