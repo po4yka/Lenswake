@@ -17,6 +17,7 @@ import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.RehearsalRequest
+import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.TimeLapseSpeed
@@ -160,12 +161,23 @@ class PhysicalDeviceWakeFixtureTest {
             instrumentationArgument("physicalWakeCleanup") == "true",
         )
         val graph = application.graph
-        val matchingSchedules = graph.scheduleRepository.observeSchedules().first()
+        val requestedScheduleId = instrumentationArgument("physicalWakeScheduleId")?.let(::ScheduleId)
+        val ownedSchedules = graph.scheduleRepository.observeSchedules().first()
             .filter { it.name == FIXTURE_SCHEDULE_NAME }
-        require(matchingSchedules.size <= 1) {
-            "Refusing to delete physical DEVICE_WAKE fixtures: ${matchingSchedules.size} schedules share the ownership name"
+        val matchingSchedules = if (requestedScheduleId == null) {
+            ownedSchedules
+        } else {
+            ownedSchedules.filter { it.id == requestedScheduleId }
         }
-        val schedule = matchingSchedules.singleOrNull() ?: return@runBlocking
+        require(matchingSchedules.size <= 1) {
+            "Refusing to delete physical DEVICE_WAKE fixtures: ${matchingSchedules.size} schedules match the cleanup request"
+        }
+        val schedule = matchingSchedules.singleOrNull()
+            ?: if (requestedScheduleId == null) {
+                return@runBlocking
+            } else {
+                error("No owned physical DEVICE_WAKE fixture has id ${requestedScheduleId.value}")
+            }
         require(schedule.profileId == CURRENT_PROFILE.id && schedule.enabled) {
             "Refusing to delete schedule ${schedule.id.value}: fixture ownership data does not match"
         }
