@@ -116,7 +116,7 @@ class AlarmManagerRecordingScheduler internal constructor(
             code = SchedulingFailureCode.SCHEDULE_NOT_PERSISTED,
             message = "Schedule ${schedule.id.value} must be persisted before staged alarm registration",
         )
-        if (persisted != schedule.copy(enabled = false)) {
+        if (persisted != schedule.canonicalPersistedSnapshot(enabled = false)) {
             throw SchedulingException(
                 code = SchedulingFailureCode.STALE_SCHEDULE_REVISION,
                 message = "Staged alarm registration requires the exact disabled schedule revision",
@@ -124,6 +124,14 @@ class AlarmManagerRecordingScheduler internal constructor(
         }
         register(schedule, kind, clock.now())
     }
+
+    private fun RecordingSchedule.canonicalPersistedSnapshot(enabled: Boolean): RecordingSchedule = copy(
+        startAt = Instant.ofEpochMilli(startAt.toEpochMilli()),
+        stopAt = Instant.ofEpochMilli(stopAt.toEpochMilli()),
+        enabled = enabled,
+        createdAt = Instant.ofEpochMilli(createdAt.toEpochMilli()),
+        updatedAt = Instant.ofEpochMilli(updatedAt.toEpochMilli()),
+    )
 
     private fun register(
         schedule: RecordingSchedule,

@@ -75,6 +75,31 @@ class AlarmManagerRecordingSchedulerTest {
     }
 
     @Test
+    fun stagedRegistrationUsesRoomMillisecondPrecisionForExactContentComparison() = runBlocking {
+        val requested = schedule.copy(
+            startAt = schedule.startAt.plusNanos(123_456),
+            stopAt = schedule.stopAt.plusNanos(654_321),
+            createdAt = schedule.createdAt.plusNanos(111_111),
+            updatedAt = schedule.updatedAt.plusNanos(222_222),
+        )
+        val persisted = requested.copy(
+            startAt = Instant.ofEpochMilli(requested.startAt.toEpochMilli()),
+            stopAt = Instant.ofEpochMilli(requested.stopAt.toEpochMilli()),
+            enabled = false,
+            createdAt = Instant.ofEpochMilli(requested.createdAt.toEpochMilli()),
+            updatedAt = Instant.ofEpochMilli(requested.updatedAt.toEpochMilli()),
+        )
+        val scheduler = scheduler(
+            persisted = persisted,
+            capability = ExactAlarmCapability { false },
+        )
+
+        val failure = scheduler.stageStop(requested).exceptionOrNull() as SchedulingException
+
+        assertEquals(SchedulingFailureCode.EXACT_ALARM_UNAVAILABLE, failure.code)
+    }
+
+    @Test
     fun ordinaryRegistrationStillRejectsDisabledSchedule() = runBlocking {
         val disabled = schedule.copy(enabled = false)
         val scheduler = scheduler(
