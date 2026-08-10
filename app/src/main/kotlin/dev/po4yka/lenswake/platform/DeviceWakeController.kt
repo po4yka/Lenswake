@@ -86,12 +86,12 @@ class AndroidDeviceWakeController(context: Context) : DeviceWakeController {
     }
 
     override suspend fun wakeDevice(): PlatformCapability<Unit> {
-        val readiness = availability()
-        if (readiness is PlatformCapability.Unavailable) return readiness
         if (powerManager.isInteractive) {
             DeviceWakeNotificationContract.cancel(notificationManager)
             return PlatformCapability.Available(Unit)
         }
+        val readiness = availability()
+        if (readiness is PlatformCapability.Unavailable) return readiness
 
         try {
             notificationManager.notify(
