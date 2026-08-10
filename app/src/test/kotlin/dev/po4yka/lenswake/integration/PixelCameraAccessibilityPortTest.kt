@@ -10,7 +10,10 @@ import dev.po4yka.lenswake.automation.SelectorMatcher
 import dev.po4yka.lenswake.automation.UiNodeSnapshot
 import dev.po4yka.lenswake.core.AutomationAction
 import dev.po4yka.lenswake.core.AutomationFailureCode
+import dev.po4yka.lenswake.core.GestureProfile
+import dev.po4yka.lenswake.core.InteractionMethod
 import dev.po4yka.lenswake.core.LensSelection
+import dev.po4yka.lenswake.core.NormalizedPoint
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
@@ -27,6 +30,111 @@ import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Test
 
 class PixelCameraAccessibilityPortTest {
+    @Test
+    fun `configured profile gesture is dispatched when no semantic target is available`() = runTest {
+        val fallbackPoint = NormalizedPoint(x = 0.5f, y = 0.85f)
+        val gateway = FakeAccessibilityGateway(nodes = emptyList())
+        val profile = profile().copy(
+            fallbackGestures = mapOf(
+                AutomationAction.START_RECORDING to GestureProfile(fallbackPoint),
+            ),
+        )
+
+        val result = port(gateway = gateway).startRecording(profileUse(profile))
+
+        val dispatched = assertInstanceOf(ActionDispatch.Dispatched::class.java, result)
+        assertEquals(InteractionMethod.ACCESSIBILITY_PROFILE_GESTURE, dispatched.method)
+        assertEquals(fallbackPoint, gateway.profileGesturePoint)
+    }
+
+    @Test
+    fun `configured speed profile gesture is dispatched when speed selector is absent`() = runTest {
+        val fallbackPoint = NormalizedPoint(x = 0.72f, y = 0.88f)
+        val gateway = FakeAccessibilityGateway(nodes = emptyList())
+        val profile = profile().copy(
+            speedTargets = emptyMap(),
+            fallbackGestures = mapOf(
+                AutomationAction.SELECT_TIME_LAPSE_SPEED to GestureProfile(fallbackPoint),
+            ),
+        )
+
+        val result = port(gateway = gateway).selectTimeLapseSpeed(
+            speed = TimeLapseSpeed.X120,
+            profileUse = profileUse(profile),
+        )
+
+        val dispatched = assertInstanceOf(ActionDispatch.Dispatched::class.java, result)
+        assertEquals(InteractionMethod.ACCESSIBILITY_PROFILE_GESTURE, dispatched.method)
+        assertEquals(fallbackPoint, gateway.profileGesturePoint)
+    }
+
+    @Test
+    fun `configured profile gesture follows a rejected node-bounds gesture`() = runTest {
+        val fallbackPoint = NormalizedPoint(x = 0.44f, y = 0.66f)
+        val gateway = FakeAccessibilityGateway(
+            nodes = listOf(node(LENS_ACTION_RESOURCE)),
+            dispatchResult = AccessibilityDispatchResult.GestureRejected,
+        )
+        val profile = profile().copy(
+            fallbackGestures = mapOf(
+                AutomationAction.SELECT_REAR_MAIN_LENS to GestureProfile(fallbackPoint),
+            ),
+        )
+
+        val result = port(gateway = gateway).selectRearMainLens(profileUse(profile))
+
+        val dispatched = assertInstanceOf(ActionDispatch.Dispatched::class.java, result)
+        assertEquals(InteractionMethod.ACCESSIBILITY_PROFILE_GESTURE, dispatched.method)
+        assertEquals(fallbackPoint, gateway.profileGesturePoint)
+    }
+
+    @Test
+    fun `ambiguous semantic target does not fall through to profile gesture`() = runTest {
+        val fallbackPoint = NormalizedPoint(x = 0.44f, y = 0.66f)
+        val target = node(LENS_ACTION_RESOURCE)
+        val gateway = FakeAccessibilityGateway(
+            nodes = listOf(
+                target.copy(id = "duplicate-lens-a"),
+                target.copy(id = "duplicate-lens-b"),
+            ),
+        )
+        val profile = profile().copy(
+            fallbackGestures = mapOf(
+                AutomationAction.SELECT_REAR_MAIN_LENS to GestureProfile(fallbackPoint),
+            ),
+        )
+
+        val result = port(gateway = gateway).selectRearMainLens(profileUse(profile))
+
+        val rejected = assertInstanceOf(ActionDispatch.Rejected::class.java, result)
+        assertEquals(AutomationFailureCode.UI_TARGET_AMBIGUOUS, rejected.failure.code)
+        assertEquals(null, gateway.profileGesturePoint)
+        assertEquals(null, gateway.clickedNode)
+    }
+
+    @Test
+    fun `below-threshold semantic candidate does not fall through to profile gesture`() = runTest {
+        val fallbackPoint = NormalizedPoint(x = 0.44f, y = 0.66f)
+        val gateway = FakeAccessibilityGateway(nodes = listOf(node(LENS_ACTION_RESOURCE)))
+        val profile = profile().copy(
+            targets = profile().targets + mapOf(
+                AutomationAction.SELECT_REAR_MAIN_LENS to selectorSet(LENS_ACTION_RESOURCE).copy(
+                    minimumScore = 110,
+                ),
+            ),
+            fallbackGestures = mapOf(
+                AutomationAction.SELECT_REAR_MAIN_LENS to GestureProfile(fallbackPoint),
+            ),
+        )
+
+        val result = port(gateway = gateway).selectRearMainLens(profileUse(profile))
+
+        val rejected = assertInstanceOf(ActionDispatch.Rejected::class.java, result)
+        assertEquals(AutomationFailureCode.UI_TARGET_CONFIDENCE_TOO_LOW, rejected.failure.code)
+        assertEquals(null, gateway.profileGesturePoint)
+        assertEquals(null, gateway.clickedNode)
+    }
+
     @Test
     fun `time lapse reports rear main lens only when its profile signal matches`() = runTest {
         val gateway = FakeAccessibilityGateway(
@@ -83,12 +191,55 @@ class PixelCameraAccessibilityPortTest {
             nodes = listOf(node(LENS_ACTION_RESOURCE)),
             dispatchResult = AccessibilityDispatchResult.TargetIdentityChanged,
         )
+        val profile = profile().copy(
+            fallbackGestures = mapOf(
+                AutomationAction.SELECT_REAR_MAIN_LENS to GestureProfile(NormalizedPoint(0.4f, 0.6f)),
+            ),
+        )
 
-        val result = port(gateway = gateway).selectRearMainLens(profileUse())
+        val result = port(gateway = gateway).selectRearMainLens(profileUse(profile))
 
         val rejected = assertInstanceOf(ActionDispatch.Rejected::class.java, result)
         assertEquals(AutomationFailureCode.UI_TARGET_CHANGED, rejected.failure.code)
         assertEquals(AutomationAction.SELECT_REAR_MAIN_LENS.name, rejected.failure.context["action"])
+        assertEquals(null, gateway.profileGesturePoint)
+    }
+
+    @Test
+    fun `semantic action remains preferred over configured profile gesture`() = runTest {
+        val gateway = FakeAccessibilityGateway(
+            nodes = listOf(node(LENS_ACTION_RESOURCE)),
+            dispatchResult = AccessibilityDispatchResult.SemanticActionDispatched,
+        )
+        val profile = profile().copy(
+            fallbackGestures = mapOf(
+                AutomationAction.SELECT_REAR_MAIN_LENS to GestureProfile(NormalizedPoint(0.4f, 0.6f)),
+            ),
+        )
+
+        val result = port(gateway = gateway).selectRearMainLens(profileUse(profile))
+
+        val dispatched = assertInstanceOf(ActionDispatch.Dispatched::class.java, result)
+        assertEquals(InteractionMethod.ACCESSIBILITY_ACTION, dispatched.method)
+        assertEquals(null, gateway.profileGesturePoint)
+    }
+
+    @Test
+    fun `profile gesture fails when Pixel Camera is no longer foreground`() = runTest {
+        val gateway = FakeAccessibilityGateway(
+            nodes = emptyList(),
+            profileGestureResult = AccessibilityDispatchResult.TargetNotEligible,
+        )
+        val profile = profile().copy(
+            fallbackGestures = mapOf(
+                AutomationAction.START_RECORDING to GestureProfile(NormalizedPoint(0.5f, 0.85f)),
+            ),
+        )
+
+        val result = port(gateway = gateway).startRecording(profileUse(profile))
+
+        val rejected = assertInstanceOf(ActionDispatch.Rejected::class.java, result)
+        assertEquals(AutomationFailureCode.PIXEL_CAMERA_NOT_FOREGROUND, rejected.failure.code)
     }
 
     @Test
@@ -621,6 +772,7 @@ class PixelCameraAccessibilityPortTest {
     private class FakeAccessibilityGateway(
         private val nodes: List<UiNodeSnapshot> = emptyList(),
         private val dispatchResult: AccessibilityDispatchResult = AccessibilityDispatchResult.TargetNotFound,
+        private val profileGestureResult: AccessibilityDispatchResult = AccessibilityDispatchResult.GestureSubmitted,
         private val globalBackResult: AccessibilityDispatchResult = AccessibilityDispatchResult.GlobalActionRejected,
         private val snapshotResult: AccessibilitySnapshotResult? = null,
     ) : PixelCameraAccessibilityGateway {
@@ -633,6 +785,8 @@ class PixelCameraAccessibilityPortTest {
             private set
         var globalBackNode: UiNodeSnapshot? = null
             private set
+        var profileGesturePoint: NormalizedPoint? = null
+            private set
 
         override suspend fun snapshot(): AccessibilitySnapshotResult {
             snapshotCalls += 1
@@ -643,6 +797,11 @@ class PixelCameraAccessibilityPortTest {
             clickedNode = node
             clickedNodes += node
             return dispatchResult
+        }
+
+        override suspend fun dispatchProfileGesture(point: NormalizedPoint): AccessibilityDispatchResult {
+            profileGesturePoint = point
+            return profileGestureResult
         }
 
         override suspend fun dispatchGlobalBack(pickerNode: UiNodeSnapshot): AccessibilityDispatchResult {

@@ -16,6 +16,7 @@ import dev.po4yka.lenswake.core.AutomationFailure
 import dev.po4yka.lenswake.core.AutomationFailureCode
 import dev.po4yka.lenswake.core.InteractionMethod
 import dev.po4yka.lenswake.core.LensSelection
+import dev.po4yka.lenswake.core.NormalizedPoint
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
@@ -283,9 +284,9 @@ class PixelCameraAccessibilityPort internal constructor(
             val requestedSpeed = requireNotNull(speed) {
                 "A Time Lapse speed is required for the speed-selection action"
             }
-            val selectors = profile.speedTargets[requestedSpeed]
-                ?: return ActionDispatch.Rejected(missingActionFailure(action))
-            selectorMatcher.match(selectors, profile, snapshot.nodes)
+            profile.speedTargets[requestedSpeed]?.let { selectors ->
+                selectorMatcher.match(selectors, profile, snapshot.nodes)
+            } ?: SelectorMatchResult.TargetNotConfigured
         } else {
             selectorMatcher.match(action, profile, snapshot.nodes)
         }
@@ -310,7 +311,8 @@ class PixelCameraAccessibilityPort internal constructor(
             )
             SelectorMatchResult.NoEligibleNodes,
             SelectorMatchResult.TargetNotConfigured,
-            -> return ActionDispatch.Rejected(missingActionFailure(action))
+            -> return dispatchProfileGesture(action, profile)
+                ?: ActionDispatch.Rejected(missingActionFailure(action))
         }
 
         return when (accessibilityGateway.dispatchClick(targetNode)) {
@@ -344,6 +346,45 @@ class PixelCameraAccessibilityPort internal constructor(
             )
             AccessibilityDispatchResult.TargetNotFound,
             AccessibilityDispatchResult.TargetNotEligible,
+            AccessibilityDispatchResult.GlobalActionRejected,
+            -> ActionDispatch.Rejected(missingActionFailure(action))
+            AccessibilityDispatchResult.GestureRejected -> dispatchProfileGesture(action, profile)
+                ?: ActionDispatch.Rejected(missingActionFailure(action))
+        }
+    }
+
+    private suspend fun dispatchProfileGesture(
+        action: AutomationAction,
+        profile: PixelCameraProfile,
+    ): ActionDispatch? {
+        val gesture = profile.fallbackGestures[action] ?: return null
+        return when (accessibilityGateway.dispatchProfileGesture(gesture.point)) {
+            AccessibilityDispatchResult.GestureSubmitted -> ActionDispatch.Dispatched(
+                InteractionMethod.ACCESSIBILITY_PROFILE_GESTURE,
+            )
+            AccessibilityDispatchResult.ServiceDisconnected -> ActionDispatch.Rejected(
+                failure(
+                    AutomationFailureCode.ACCESSIBILITY_DISABLED,
+                    "Lenswake Accessibility Service disconnected before profile gesture dispatch",
+                ),
+            )
+            AccessibilityDispatchResult.RefreshFailed -> ActionDispatch.Rejected(
+                failure(
+                    AutomationFailureCode.ACCESSIBILITY_REFRESH_FAILED,
+                    "The active Pixel Camera window could not be refreshed before profile gesture dispatch",
+                ),
+            )
+            AccessibilityDispatchResult.TargetNotFound,
+            AccessibilityDispatchResult.TargetNotEligible,
+            -> ActionDispatch.Rejected(
+                failure(
+                    AutomationFailureCode.PIXEL_CAMERA_NOT_FOREGROUND,
+                    "Pixel Camera was no longer the active window before profile gesture dispatch",
+                ),
+            )
+            AccessibilityDispatchResult.SemanticActionDispatched,
+            AccessibilityDispatchResult.GlobalActionDispatched,
+            AccessibilityDispatchResult.TargetIdentityChanged,
             AccessibilityDispatchResult.GestureRejected,
             AccessibilityDispatchResult.GlobalActionRejected,
             -> ActionDispatch.Rejected(missingActionFailure(action))
@@ -574,6 +615,8 @@ internal interface PixelCameraAccessibilityGateway {
 
     suspend fun dispatchClick(node: UiNodeSnapshot): AccessibilityDispatchResult
 
+    suspend fun dispatchProfileGesture(point: NormalizedPoint): AccessibilityDispatchResult
+
     suspend fun dispatchGlobalBack(pickerNode: UiNodeSnapshot): AccessibilityDispatchResult
 }
 
@@ -582,6 +625,9 @@ private object RuntimePixelCameraAccessibilityGateway : PixelCameraAccessibility
 
     override suspend fun dispatchClick(node: UiNodeSnapshot): AccessibilityDispatchResult =
         PixelCameraAccessibilityRuntime.dispatchClick(node)
+
+    override suspend fun dispatchProfileGesture(point: NormalizedPoint): AccessibilityDispatchResult =
+        PixelCameraAccessibilityRuntime.dispatchProfileGesture(point)
 
     override suspend fun dispatchGlobalBack(pickerNode: UiNodeSnapshot): AccessibilityDispatchResult =
         PixelCameraAccessibilityRuntime.dispatchGlobalBack(pickerNode)

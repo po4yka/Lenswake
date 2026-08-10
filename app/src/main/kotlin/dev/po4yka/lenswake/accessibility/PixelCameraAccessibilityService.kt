@@ -10,6 +10,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import androidx.annotation.RequiresApi
 import dev.po4yka.lenswake.automation.UiNodeSnapshot
 import dev.po4yka.lenswake.core.NormalizedBounds
+import dev.po4yka.lenswake.core.NormalizedPoint
 import dev.po4yka.lenswake.platform.PIXEL_CAMERA_PACKAGE
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -138,7 +139,26 @@ class PixelCameraAccessibilityService : AccessibilityService() {
 
         val bounds = Rect().also(target::getBoundsInScreen)
         if (bounds.isEmpty) return AccessibilityDispatchResult.TargetNotEligible
-        val path = Path().apply { moveTo(bounds.exactCenterX(), bounds.exactCenterY()) }
+        return dispatchTap(bounds.exactCenterX(), bounds.exactCenterY())
+    }
+
+    internal fun dispatchProfileGesture(point: NormalizedPoint): AccessibilityDispatchResult {
+        val root = rootInActiveWindow ?: return AccessibilityDispatchResult.TargetNotFound
+        if (!root.refreshSafely()) return AccessibilityDispatchResult.RefreshFailed
+        if (root.packageName?.toString() != PIXEL_CAMERA_PACKAGE) {
+            return AccessibilityDispatchResult.TargetNotEligible
+        }
+        val metrics = resources.displayMetrics
+        val maxX = (metrics.widthPixels.coerceAtLeast(1) - 1).toFloat()
+        val maxY = (metrics.heightPixels.coerceAtLeast(1) - 1).toFloat()
+        return dispatchTap(
+            x = (point.x * metrics.widthPixels).coerceIn(0f, maxX),
+            y = (point.y * metrics.heightPixels).coerceIn(0f, maxY),
+        )
+    }
+
+    private fun dispatchTap(x: Float, y: Float): AccessibilityDispatchResult {
+        val path = Path().apply { moveTo(x, y) }
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, GESTURE_DURATION_MS))
             .build()
@@ -378,6 +398,12 @@ object PixelCameraAccessibilityRuntime {
     suspend fun dispatchClick(node: UiNodeSnapshot): AccessibilityDispatchResult =
         withContext(Dispatchers.Main.immediate) {
             serviceReference.get()?.get()?.dispatchClick(node)
+                ?: AccessibilityDispatchResult.ServiceDisconnected
+        }
+
+    suspend fun dispatchProfileGesture(point: NormalizedPoint): AccessibilityDispatchResult =
+        withContext(Dispatchers.Main.immediate) {
+            serviceReference.get()?.get()?.dispatchProfileGesture(point)
                 ?: AccessibilityDispatchResult.ServiceDisconnected
         }
 
