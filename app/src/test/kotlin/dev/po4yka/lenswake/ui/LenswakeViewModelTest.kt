@@ -51,6 +51,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -389,10 +390,13 @@ class LenswakeViewModelTest {
             viewModel.state.collect()
         }
 
-        viewModel.state.first { it.actions.canCreateSchedule }
+        withTimeout(Duration.ofSeconds(2).toMillis()) {
+            viewModel.state.first { it.actions.canCreateSchedule }
+        }
         viewModel.beginCreateSchedule()
-        val editor = viewModel.state.first { it.scheduleEditor is ScheduleEditorUiState.Open }
-            .scheduleEditor as ScheduleEditorUiState.Open
+        val editor = withTimeout(Duration.ofSeconds(2).toMillis()) {
+            viewModel.state.first { it.scheduleEditor is ScheduleEditorUiState.Open }
+        }.scheduleEditor as ScheduleEditorUiState.Open
         viewModel.updateScheduleForm(
             editor.form.copy(
                 name = "Dawn",
@@ -403,8 +407,10 @@ class LenswakeViewModelTest {
         )
         viewModel.submitSchedule()
 
-        val succeeded = viewModel.state.first {
-            it.scheduleAction is ScheduleActionUiState.Succeeded && it.schedules.size == 1
+        val succeeded = withTimeout(Duration.ofSeconds(2).toMillis()) {
+            viewModel.state.first {
+                it.scheduleAction is ScheduleActionUiState.Succeeded && it.schedules.size == 1
+            }
         }
         assertEquals(listOf("start", "stop"), scheduler.events)
         assertEquals("Dawn", succeeded.schedules.single().title)
@@ -592,6 +598,8 @@ class LenswakeViewModelTest {
         fun rehearsalEligiblePreflight() = PreflightReport(
             checks = listOf(
                 PreflightCheckType.EXACT_ALARMS,
+                PreflightCheckType.NOTIFICATIONS,
+                PreflightCheckType.FULL_SCREEN_INTENT,
                 PreflightCheckType.PIXEL_CAMERA_INSTALLED,
                 PreflightCheckType.SECURE_CAMERA_RESOLVES,
                 PreflightCheckType.ACCESSIBILITY_ENABLED,
@@ -629,6 +637,8 @@ class LenswakeViewModelTest {
         fun scheduleEligiblePreflight() = PreflightReport(
             checks = listOf(
                 PreflightCheckType.EXACT_ALARMS,
+                PreflightCheckType.NOTIFICATIONS,
+                PreflightCheckType.FULL_SCREEN_INTENT,
                 PreflightCheckType.PIXEL_CAMERA_INSTALLED,
                 PreflightCheckType.SECURE_CAMERA_RESOLVES,
                 PreflightCheckType.DEVICE_WAKE,
@@ -668,9 +678,9 @@ class LenswakeViewModelTest {
             profiles: AutomationProfileRepository,
         ) = ScheduleWorkflow(
             scheduleRepository = schedules,
+            executionRepository = FakeExecutionRepository(),
             profileRepository = profiles,
             scheduler = FakeRecordingScheduler(),
-            executionRepository = FakeExecutionRepository(),
             clock = LenswakeClock { now.minusSeconds(60) },
             preflightProbe = RuntimePreflightProbe { scheduleEligiblePreflight() },
         )
