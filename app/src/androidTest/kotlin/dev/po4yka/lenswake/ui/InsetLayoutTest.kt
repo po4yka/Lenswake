@@ -68,6 +68,30 @@ class InsetLayoutTest {
         assertDpEquals(root.top + 37.dp, viewport.top)
     }
 
+    @Test
+    fun scrollViewportEndsAboveNavigationInset() {
+        val (root, _) = renderProfileScreen(LayoutDirection.Ltr)
+
+        val viewport = composeRule.onNode(hasScrollToIndexAction()).getUnclippedBoundsInRoot()
+
+        assertDpEquals(root.bottom - 47.dp, viewport.bottom)
+    }
+
+    @Test
+    fun lastContentRemainsReachableAboveNavigationInset() {
+        val (root, _) = renderProfileScreen(LayoutDirection.Ltr)
+
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(3)
+        val lastContent = composeRule
+            .onNodeWithText("Production rehearsal not run")
+            .getUnclippedBoundsInRoot()
+
+        assertTrue(
+            "Last content entered the 47dp navigation inset: ${lastContent.bottom}",
+            lastContent.bottom <= root.bottom - 47.dp,
+        )
+    }
+
     private fun renderProfileScreen(layoutDirection: LayoutDirection): Pair<DpRect, DpRect> {
         composeRule.setContent {
             CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
