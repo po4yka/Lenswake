@@ -99,7 +99,7 @@ class DefaultAlarmTriggerCoordinatorTest {
     }
 
     @Test
-    fun runtimeReadinessFailureReleasesOwnershipAndMakesLaterStopAuditOnly() = runBlocking {
+    fun runtimeReadinessFailureReleasesOwnershipAndMakesLaterAlarmsAuditOnly() = runBlocking {
         val executions = FakeExecutionRepository()
         val engine = FakeAutomationEngine(executions)
         val collector = FakeEnvironmentSnapshotCollector()
@@ -117,6 +117,18 @@ class DefaultAlarmTriggerCoordinatorTest {
         assertTrue(failed.cameraOwnershipReleasedAt != null)
         assertTrue(engine.startIds.isEmpty())
         assertEquals(0, collector.calls)
+
+        val duplicateStart = coordinator(
+            executions = executions,
+            engine = engine,
+            collector = collector,
+        ).handle(startTrigger(schedule.updatedAt))
+
+        assertTrue(duplicateStart is AlarmHandlingResult.Accepted)
+        assertTrue(engine.startIds.isEmpty())
+        assertEquals(0, collector.calls)
+        assertTrue(executions.snapshots.isEmpty())
+        assertEquals(failed, executions.sessions.values.single())
 
         val stopped = coordinator(
             executions = executions,

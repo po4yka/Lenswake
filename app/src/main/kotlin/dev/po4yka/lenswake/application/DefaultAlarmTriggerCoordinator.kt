@@ -104,7 +104,10 @@ class DefaultAlarmTriggerCoordinator(
     ): AlarmHandlingResult {
         val executionKey = executionKey(schedule)
         validateExecution(existing, schedule, executionKey)?.let { return it }
-        if (existing.recordActionAt == null && existing.cameraOwnershipReleasedAt == null) {
+        if (existing.cameraOwnershipReleasedAt != null) {
+            return AlarmHandlingResult.Accepted
+        }
+        if (existing.recordActionAt == null) {
             val readinessFailure = try {
                 startReadiness(existing.profileId).exceptionOrNull()
             } catch (error: Exception) {
