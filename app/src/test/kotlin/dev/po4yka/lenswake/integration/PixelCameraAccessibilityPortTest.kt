@@ -74,7 +74,7 @@ class PixelCameraAccessibilityPortTest {
 
         val rejected = assertInstanceOf(ActionDispatch.Rejected::class.java, result)
         assertEquals(AutomationFailureCode.ACCESSIBILITY_REFRESH_FAILED, rejected.failure.code)
-        assertEquals("node-$LENS_ACTION_RESOURCE", gateway.clickedNodePath)
+        assertEquals("node-$LENS_ACTION_RESOURCE", gateway.clickedNode?.id)
     }
 
     @Test
@@ -94,7 +94,7 @@ class PixelCameraAccessibilityPortTest {
         assertEquals(dev.po4yka.lenswake.core.InteractionMethod.ACCESSIBILITY_ACTION, dispatched.method)
         assertEquals(1, gateway.globalBackCalls)
         assertEquals(1, gateway.snapshotCalls)
-        assertEquals(null, gateway.clickedNodePath)
+        assertEquals(null, gateway.clickedNode)
         assertEquals(
             "node-${PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN.name}",
             gateway.globalBackNode?.id,
@@ -179,15 +179,21 @@ class PixelCameraAccessibilityPortTest {
 
     @Test
     fun `rear main lens action dispatches only its profile-defined target`() = runTest {
+        val target = node(LENS_ACTION_RESOURCE).copy(
+            role = "android.widget.Button",
+            contentDescription = "1x",
+            text = "Main lens",
+            selected = true,
+        )
         val gateway = FakeAccessibilityGateway(
-            nodes = listOf(node(LENS_ACTION_RESOURCE)),
+            nodes = listOf(target),
             dispatchResult = AccessibilityDispatchResult.SemanticActionDispatched,
         )
 
         val result = port(gateway = gateway).selectRearMainLens(profileUse())
 
         assertInstanceOf(ActionDispatch.Dispatched::class.java, result)
-        assertEquals("node-$LENS_ACTION_RESOURCE", gateway.clickedNodePath)
+        assertEquals(target, gateway.clickedNode)
     }
 
     @Test
@@ -199,7 +205,7 @@ class PixelCameraAccessibilityPortTest {
         val port = port(gateway = gateway)
 
         assertInstanceOf(ActionDispatch.Dispatched::class.java, port.openTimeLapseSpeedControl(profileUse()))
-        assertEquals(listOf("node-$SPEED_CONTROL_ACTION_RESOURCE"), gateway.clickedNodePaths)
+        assertEquals(listOf("node-$SPEED_CONTROL_ACTION_RESOURCE"), gateway.clickedNodes.map(UiNodeSnapshot::id))
 
         assertInstanceOf(
             ActionDispatch.Dispatched::class.java,
@@ -207,7 +213,7 @@ class PixelCameraAccessibilityPortTest {
         )
         assertEquals(
             listOf("node-$SPEED_CONTROL_ACTION_RESOURCE", "node-$SPEED_X120_ACTION_RESOURCE"),
-            gateway.clickedNodePaths,
+            gateway.clickedNodes.map(UiNodeSnapshot::id),
         )
     }
 
@@ -485,9 +491,9 @@ class PixelCameraAccessibilityPortTest {
     ) : PixelCameraAccessibilityGateway {
         var snapshotCalls: Int = 0
             private set
-        var clickedNodePath: String? = null
+        var clickedNode: UiNodeSnapshot? = null
             private set
-        val clickedNodePaths = mutableListOf<String>()
+        val clickedNodes = mutableListOf<UiNodeSnapshot>()
         var globalBackCalls: Int = 0
             private set
         var globalBackNode: UiNodeSnapshot? = null
@@ -498,9 +504,9 @@ class PixelCameraAccessibilityPortTest {
             return snapshotResult ?: AccessibilitySnapshotResult.Available(nodes = nodes, truncated = false)
         }
 
-        override suspend fun dispatchClick(nodePath: String): AccessibilityDispatchResult {
-            clickedNodePath = nodePath
-            clickedNodePaths += nodePath
+        override suspend fun dispatchClick(node: UiNodeSnapshot): AccessibilityDispatchResult {
+            clickedNode = node
+            clickedNodes += node
             return dispatchResult
         }
 

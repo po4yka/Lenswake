@@ -289,8 +289,8 @@ class PixelCameraAccessibilityPort internal constructor(
         } else {
             selectorMatcher.match(action, profile, snapshot.nodes)
         }
-        val nodePath = when (match) {
-            is SelectorMatchResult.Match -> match.node.id
+        val targetNode = when (match) {
+            is SelectorMatchResult.Match -> match.node
             is SelectorMatchResult.Ambiguous -> return ActionDispatch.Rejected(
                 failure(
                     AutomationFailureCode.UI_TARGET_AMBIGUOUS,
@@ -313,7 +313,7 @@ class PixelCameraAccessibilityPort internal constructor(
             -> return ActionDispatch.Rejected(missingActionFailure(action))
         }
 
-        return when (accessibilityGateway.dispatchClick(nodePath)) {
+        return when (accessibilityGateway.dispatchClick(targetNode)) {
             AccessibilityDispatchResult.SemanticActionDispatched -> ActionDispatch.Dispatched(
                 InteractionMethod.ACCESSIBILITY_ACTION,
             )
@@ -535,7 +535,7 @@ class PixelCameraAccessibilityPort internal constructor(
 internal interface PixelCameraAccessibilityGateway {
     suspend fun snapshot(): AccessibilitySnapshotResult
 
-    suspend fun dispatchClick(nodePath: String): AccessibilityDispatchResult
+    suspend fun dispatchClick(node: UiNodeSnapshot): AccessibilityDispatchResult
 
     suspend fun dispatchGlobalBack(pickerNode: UiNodeSnapshot): AccessibilityDispatchResult
 }
@@ -543,8 +543,8 @@ internal interface PixelCameraAccessibilityGateway {
 private object RuntimePixelCameraAccessibilityGateway : PixelCameraAccessibilityGateway {
     override suspend fun snapshot(): AccessibilitySnapshotResult = PixelCameraAccessibilityRuntime.snapshot()
 
-    override suspend fun dispatchClick(nodePath: String): AccessibilityDispatchResult =
-        PixelCameraAccessibilityRuntime.dispatchClick(nodePath)
+    override suspend fun dispatchClick(node: UiNodeSnapshot): AccessibilityDispatchResult =
+        PixelCameraAccessibilityRuntime.dispatchClick(node)
 
     override suspend fun dispatchGlobalBack(pickerNode: UiNodeSnapshot): AccessibilityDispatchResult =
         PixelCameraAccessibilityRuntime.dispatchGlobalBack(pickerNode)

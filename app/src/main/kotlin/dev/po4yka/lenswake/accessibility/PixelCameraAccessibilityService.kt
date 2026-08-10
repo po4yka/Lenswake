@@ -110,13 +110,13 @@ class PixelCameraAccessibilityService : AccessibilityService() {
         }
     }
 
-    internal fun dispatchClick(nodePath: String): AccessibilityDispatchResult {
+    internal fun dispatchClick(expectedNode: UiNodeSnapshot): AccessibilityDispatchResult {
         val root = rootInActiveWindow ?: return AccessibilityDispatchResult.TargetNotFound
         if (!root.refreshSafely()) return AccessibilityDispatchResult.RefreshFailed
         if (root.packageName?.toString() != PIXEL_CAMERA_PACKAGE) {
             return AccessibilityDispatchResult.TargetNotEligible
         }
-        val target = when (val resolution = resolvePath(root, nodePath)) {
+        val target = when (val resolution = resolvePath(root, expectedNode.id)) {
             is PathResolution.Found -> resolution.node
             PathResolution.RefreshFailed -> return AccessibilityDispatchResult.RefreshFailed
             PathResolution.NotFound -> return AccessibilityDispatchResult.TargetNotFound
@@ -126,6 +126,9 @@ class PixelCameraAccessibilityService : AccessibilityService() {
             !target.isVisibleToUser ||
             !target.isEnabled
         ) {
+            return AccessibilityDispatchResult.TargetNotEligible
+        }
+        if (!target.matchesSemanticFingerprint(expectedNode)) {
             return AccessibilityDispatchResult.TargetNotEligible
         }
         if (target.isClickable && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
@@ -355,9 +358,9 @@ object PixelCameraAccessibilityRuntime {
             ?: AccessibilitySnapshotResult.ServiceDisconnected
     }
 
-    suspend fun dispatchClick(nodePath: String): AccessibilityDispatchResult =
+    suspend fun dispatchClick(node: UiNodeSnapshot): AccessibilityDispatchResult =
         withContext(Dispatchers.Main.immediate) {
-            serviceReference.get()?.get()?.dispatchClick(nodePath)
+            serviceReference.get()?.get()?.dispatchClick(node)
                 ?: AccessibilityDispatchResult.ServiceDisconnected
         }
 
