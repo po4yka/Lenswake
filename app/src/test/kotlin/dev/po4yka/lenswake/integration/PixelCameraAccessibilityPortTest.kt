@@ -78,6 +78,20 @@ class PixelCameraAccessibilityPortTest {
     }
 
     @Test
+    fun `dispatch reports a typed failure when the live node no longer matches the selected target`() = runTest {
+        val gateway = FakeAccessibilityGateway(
+            nodes = listOf(node(LENS_ACTION_RESOURCE)),
+            dispatchResult = AccessibilityDispatchResult.TargetIdentityChanged,
+        )
+
+        val result = port(gateway = gateway).selectRearMainLens(profileUse())
+
+        val rejected = assertInstanceOf(ActionDispatch.Rejected::class.java, result)
+        assertEquals(AutomationFailureCode.UI_TARGET_CHANGED, rejected.failure.code)
+        assertEquals(AutomationAction.SELECT_REAR_MAIN_LENS.name, rejected.failure.context["action"])
+    }
+
+    @Test
     fun `close speed control dispatches global Back without selecting a node`() = runTest {
         val gateway = FakeAccessibilityGateway(
             nodes = activeSignals(

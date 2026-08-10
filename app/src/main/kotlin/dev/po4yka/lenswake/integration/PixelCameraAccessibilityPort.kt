@@ -335,6 +335,13 @@ class PixelCameraAccessibilityPort internal constructor(
                     "The active Pixel Camera accessibility window could not be refreshed before dispatch",
                 ),
             )
+            AccessibilityDispatchResult.TargetIdentityChanged -> ActionDispatch.Rejected(
+                AutomationFailure(
+                    code = AutomationFailureCode.UI_TARGET_CHANGED,
+                    message = "The selected Pixel Camera target changed before dispatch",
+                    context = mapOf("action" to action.name),
+                ),
+            )
             AccessibilityDispatchResult.TargetNotFound,
             AccessibilityDispatchResult.TargetNotEligible,
             AccessibilityDispatchResult.GestureRejected,

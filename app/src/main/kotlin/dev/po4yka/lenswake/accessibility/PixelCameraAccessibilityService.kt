@@ -54,10 +54,27 @@ sealed interface AccessibilityDispatchResult {
 
     data object TargetNotEligible : AccessibilityDispatchResult
 
+    /** The old path now resolves to a different interaction target. */
+    data object TargetIdentityChanged : AccessibilityDispatchResult
+
     data object GestureRejected : AccessibilityDispatchResult
 
     data object GlobalActionRejected : AccessibilityDispatchResult
 }
+
+internal fun UiNodeSnapshot.hasSameInteractionIdentityAs(expected: UiNodeSnapshot): Boolean =
+    packageName == expected.packageName &&
+        resourceId == expected.resourceId &&
+        role == expected.role &&
+        contentDescription == expected.contentDescription &&
+        text == expected.text &&
+        bounds == expected.bounds &&
+        visible == expected.visible &&
+        clickable == expected.clickable &&
+        selected == expected.selected &&
+        checkable == expected.checkable &&
+        (!checkable || checked == expected.checked) &&
+        enabled == expected.enabled
 
 /**
  * Narrow Pixel Camera accessibility boundary. It creates ephemeral platform-neutral snapshots and
@@ -111,25 +128,9 @@ class PixelCameraAccessibilityService : AccessibilityService() {
     }
 
     internal fun dispatchClick(expectedNode: UiNodeSnapshot): AccessibilityDispatchResult {
-        val root = rootInActiveWindow ?: return AccessibilityDispatchResult.TargetNotFound
-        if (!root.refreshSafely()) return AccessibilityDispatchResult.RefreshFailed
-        if (root.packageName?.toString() != PIXEL_CAMERA_PACKAGE) {
-            return AccessibilityDispatchResult.TargetNotEligible
-        }
-        val target = when (val resolution = resolvePath(root, expectedNode.id)) {
-            is PathResolution.Found -> resolution.node
-            PathResolution.RefreshFailed -> return AccessibilityDispatchResult.RefreshFailed
-            PathResolution.NotFound -> return AccessibilityDispatchResult.TargetNotFound
-        }
-        if (
-            target.packageName?.toString() != PIXEL_CAMERA_PACKAGE ||
-            !target.isVisibleToUser ||
-            !target.isEnabled
-        ) {
-            return AccessibilityDispatchResult.TargetNotEligible
-        }
-        if (!target.matchesSemanticFingerprint(expectedNode)) {
-            return AccessibilityDispatchResult.TargetNotEligible
+        val target = when (val resolution = resolveExpectedNode(expectedNode)) {
+            is ExpectedNodeResolution.Found -> resolution.node
+            is ExpectedNodeResolution.Rejected -> return resolution.result
         }
         if (target.isClickable && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
             return AccessibilityDispatchResult.SemanticActionDispatched
@@ -149,31 +150,53 @@ class PixelCameraAccessibilityService : AccessibilityService() {
     }
 
     internal fun dispatchGlobalBack(expectedPicker: UiNodeSnapshot): AccessibilityDispatchResult {
-        val root = rootInActiveWindow ?: return AccessibilityDispatchResult.TargetNotFound
-        if (!root.refreshSafely()) return AccessibilityDispatchResult.RefreshFailed
-        if (root.packageName?.toString() != PIXEL_CAMERA_PACKAGE) {
-            return AccessibilityDispatchResult.TargetNotEligible
-        }
-        val pickerNode = when (val resolution = resolvePath(root, expectedPicker.id)) {
-            is PathResolution.Found -> resolution.node
-            PathResolution.RefreshFailed -> return AccessibilityDispatchResult.RefreshFailed
-            PathResolution.NotFound -> return AccessibilityDispatchResult.TargetNotFound
-        }
-        if (
-            pickerNode.packageName?.toString() != PIXEL_CAMERA_PACKAGE ||
-            !pickerNode.isVisibleToUser ||
-            !pickerNode.isEnabled
-        ) {
-            return AccessibilityDispatchResult.TargetNotEligible
-        }
-        if (!pickerNode.matchesSemanticFingerprint(expectedPicker)) {
-            return AccessibilityDispatchResult.TargetNotEligible
+        when (val resolution = resolveExpectedNode(expectedPicker)) {
+            is ExpectedNodeResolution.Found -> Unit
+            is ExpectedNodeResolution.Rejected -> return resolution.result
         }
         return if (performGlobalAction(GLOBAL_ACTION_BACK)) {
             AccessibilityDispatchResult.GlobalActionDispatched
         } else {
             AccessibilityDispatchResult.GlobalActionRejected
         }
+    }
+
+    private fun resolveExpectedNode(expected: UiNodeSnapshot): ExpectedNodeResolution {
+        val root = rootInActiveWindow ?: return ExpectedNodeResolution.Rejected(
+            AccessibilityDispatchResult.TargetNotFound,
+        )
+        if (!root.refreshSafely()) {
+            return ExpectedNodeResolution.Rejected(AccessibilityDispatchResult.RefreshFailed)
+        }
+        if (root.packageName?.toString() != PIXEL_CAMERA_PACKAGE) {
+            return ExpectedNodeResolution.Rejected(AccessibilityDispatchResult.TargetNotEligible)
+        }
+        val target = when (val resolution = resolvePath(root, expected.id)) {
+            is PathResolution.Found -> resolution.node
+            PathResolution.RefreshFailed -> return ExpectedNodeResolution.Rejected(
+                AccessibilityDispatchResult.RefreshFailed,
+            )
+            PathResolution.NotFound -> return ExpectedNodeResolution.Rejected(
+                AccessibilityDispatchResult.TargetNotFound,
+            )
+        }
+        if (
+            target.packageName?.toString() != PIXEL_CAMERA_PACKAGE ||
+            !target.isVisibleToUser ||
+            !target.isEnabled
+        ) {
+            return ExpectedNodeResolution.Rejected(AccessibilityDispatchResult.TargetNotEligible)
+        }
+        val metrics = resources.displayMetrics
+        val observed = target.toSnapshot(
+            path = expected.id,
+            screenWidth = metrics.widthPixels.coerceAtLeast(1),
+            screenHeight = metrics.heightPixels.coerceAtLeast(1),
+        )
+        if (!observed.hasSameInteractionIdentityAs(expected)) {
+            return ExpectedNodeResolution.Rejected(AccessibilityDispatchResult.TargetIdentityChanged)
+        }
+        return ExpectedNodeResolution.Found(target)
     }
 
     private fun collectSnapshots(
@@ -271,18 +294,6 @@ class PixelCameraAccessibilityService : AccessibilityService() {
         false
     }
 
-    private fun AccessibilityNodeInfo.matchesSemanticFingerprint(expected: UiNodeSnapshot): Boolean =
-        packageName?.toString() == expected.packageName &&
-            viewIdResourceName == expected.resourceId &&
-            className?.toString() == expected.role &&
-            contentDescription?.toString() == expected.contentDescription &&
-            text?.toString() == expected.text &&
-            isClickable == expected.clickable &&
-            isSelected == expected.selected &&
-            isCheckable == expected.checkable &&
-            (!isCheckable || checkedValue() == expected.checked) &&
-            isEnabled == expected.enabled
-
     private fun AccessibilityNodeInfo.checkedValue(): Boolean? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
             checkedValueApi36()
@@ -312,6 +323,12 @@ class PixelCameraAccessibilityService : AccessibilityService() {
         data object NotFound : PathResolution
 
         data object RefreshFailed : PathResolution
+    }
+
+    private sealed interface ExpectedNodeResolution {
+        data class Found(val node: AccessibilityNodeInfo) : ExpectedNodeResolution
+
+        data class Rejected(val result: AccessibilityDispatchResult) : ExpectedNodeResolution
     }
 
     private companion object {
