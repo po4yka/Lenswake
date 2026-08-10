@@ -9,36 +9,42 @@ import android.content.pm.ServiceInfo
 import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
+import dev.po4yka.lenswake.core.ScheduleId
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 internal const val AUTOMATION_SERVICE_RESTART_MODE: Int = Service.START_REDELIVER_INTENT
 
 /**
  * Exact alarms enter the durable automation path through this system-exempted foreground service.
- * Work is serialized, bounded, and always revalidated by the persisted [AlarmTriggerCoordinator].
- * Foreground-service admission does not prove background activity launch or Pixel Camera support.
+ * Work is bounded and always revalidated by the persisted [AlarmTriggerCoordinator]. A matching
+ * STOP preempts in-flight START work; unrelated triggers remain independent. Foreground-service
+ * admission does not prove background activity launch or Pixel Camera support.
  */
 class AutomationExecutionService : Service() {
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(
         serviceJob + Dispatchers.IO + CoroutineName("lenswake-alarm-execution"),
     )
-    private val queue = Channel<QueuedTrigger>(Channel.UNLIMITED)
     private val queuedKeys = ConcurrentHashMap.newKeySet<String>()
     private val lifecycleGate = AlarmServiceLifecycleGate()
     private lateinit var notificationManager: NotificationManager
     private lateinit var journal: AlarmDeliveryJournal
     private lateinit var retryCoordinator: AlarmDeliveryRetryCoordinator
+    private lateinit var dispatcher: AlarmWorkDispatcher
     private var journalRestored = false
 
     override fun onCreate() {
@@ -52,15 +58,21 @@ class AutomationExecutionService : Service() {
                 notifier = AndroidAlarmTransportFailureNotifier(this),
             ),
         )
+        dispatcher = AlarmWorkDispatcher(
+            scope = serviceScope,
+            execute = ::process,
+            onPreemptionTimeout = { queued ->
+                scheduleRetry(queued, "STOP could not preempt matching START within its finite deadline.")
+                complete(queued, removeFromJournal = false)
+            },
+            onCancelled = { queued -> complete(queued, removeFromJournal = false) },
+        )
         createNotificationChannel()
         startForeground(
             NOTIFICATION_ID,
             notification("Preparing scheduled Pixel Camera automation"),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED,
         )
-        serviceScope.launch {
-            for (queued in queue) process(queued)
-        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int =
@@ -73,7 +85,7 @@ class AutomationExecutionService : Service() {
             }
             val pendingEntries = if (!journalRestored) {
                 journalRestored = true
-                journal.entries()
+                journal.entries().causalRestorationOrder()
             } else {
                 listOfNotNull(currentEntry)
             }
@@ -94,7 +106,6 @@ class AutomationExecutionService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        queue.close()
         serviceScope.cancel()
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
@@ -195,13 +206,14 @@ class AutomationExecutionService : Service() {
             entry = entry,
             enqueuedAtElapsedRealtime = SystemClock.elapsedRealtime(),
         )
-        if (queue.trySend(queued).isSuccess) return true
+        if (dispatcher.dispatch(queued)) return true
         queuedKeys.remove(entry.key)
         lifecycleGate.workRejected()
         return false
     }
 
     private fun complete(queued: QueuedTrigger, removeFromJournal: Boolean) {
+        if (!queued.completed.compareAndSet(false, true)) return
         if (removeFromJournal && !journal.remove(queued.entry.key)) {
             Log.e(TAG, "Could not clear completed durable alarm journal entry")
         }
@@ -245,15 +257,84 @@ class AutomationExecutionService : Service() {
         .setOngoing(true)
         .build()
 
-    private data class QueuedTrigger(
-        val entry: AlarmDeliveryJournal.Entry,
-        val enqueuedAtElapsedRealtime: Long,
-    )
-
     private companion object {
         const val TAG = "LenswakeAlarm"
         const val CHANNEL_ID = "scheduled_automation"
         const val NOTIFICATION_ID = 1_001
         const val EXECUTION_DEADLINE_MILLIS = 120_000L
+    }
+}
+
+internal data class QueuedTrigger(
+    val entry: AlarmDeliveryJournal.Entry,
+    val enqueuedAtElapsedRealtime: Long,
+    val completed: AtomicBoolean = AtomicBoolean(false),
+)
+
+/** Registers every restored schedule START before any STOP can attempt preemption. */
+internal fun List<AlarmDeliveryJournal.Entry>.causalRestorationOrder(): List<AlarmDeliveryJournal.Entry> =
+    sortedWith(
+        compareBy<AlarmDeliveryJournal.Entry>(
+            { entry ->
+                val schedule = entry.work as? AlarmDeliveryWork.Schedule
+                if (schedule?.trigger?.kind == AlarmKind.START) 0 else 1
+            },
+            { it.work.expectedAt },
+            AlarmDeliveryJournal.Entry::key,
+        ),
+    )
+
+internal class AlarmWorkDispatcher(
+    private val scope: CoroutineScope,
+    private val preemptionTimeoutMillis: Long = PREEMPTION_TIMEOUT_MILLIS,
+    private val execute: suspend (QueuedTrigger) -> Unit,
+    private val onPreemptionTimeout: (QueuedTrigger) -> Unit,
+    private val onCancelled: (QueuedTrigger) -> Unit,
+) {
+    private val activeStarts = ConcurrentHashMap<String, ActiveStart>()
+
+    init {
+        require(preemptionTimeoutMillis > 0) { "Preemption timeout must be positive" }
+    }
+
+    fun dispatch(queued: QueuedTrigger): Boolean {
+        if (!scope.isActive) return false
+        val work = queued.entry.work
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            if (work is AlarmDeliveryWork.Schedule && work.trigger.kind == AlarmKind.STOP) {
+                val matchingStarts = activeStarts.values
+                    .filter { it.scheduleId == work.trigger.scheduleId }
+                    .map(ActiveStart::job)
+                matchingStarts.forEach(Job::cancel)
+                try {
+                    withTimeout(preemptionTimeoutMillis) { matchingStarts.joinAll() }
+                } catch (_: TimeoutCancellationException) {
+                    onPreemptionTimeout(queued)
+                    return@launch
+                }
+            }
+            execute(queued)
+        }
+
+        if (work is AlarmDeliveryWork.Schedule && work.trigger.kind == AlarmKind.START) {
+            activeStarts[queued.entry.key] = ActiveStart(work.trigger.scheduleId, job)
+            job.invokeOnCompletion {
+                activeStarts.remove(queued.entry.key, ActiveStart(work.trigger.scheduleId, job))
+            }
+        }
+        job.invokeOnCompletion { cause ->
+            if (cause is CancellationException) onCancelled(queued)
+        }
+        job.start()
+        return true
+    }
+
+    private data class ActiveStart(
+        val scheduleId: ScheduleId,
+        val job: Job,
+    )
+
+    private companion object {
+        const val PREEMPTION_TIMEOUT_MILLIS = 5_000L
     }
 }

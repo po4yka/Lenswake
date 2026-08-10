@@ -7,6 +7,8 @@ import dev.po4yka.lenswake.alarm.AlarmTriggerCoordinator
 import dev.po4yka.lenswake.automation.AutomationEngine
 import dev.po4yka.lenswake.automation.AutomationRunResult
 import dev.po4yka.lenswake.core.AutomationEvent
+import dev.po4yka.lenswake.core.AutomationFailure
+import dev.po4yka.lenswake.core.AutomationFailureCode
 import dev.po4yka.lenswake.core.AutomationOutcome
 import dev.po4yka.lenswake.core.AutomationStateName
 import dev.po4yka.lenswake.core.EventId
@@ -222,7 +224,82 @@ class DefaultAlarmTriggerCoordinator(
             is StopDeliveryResult.Persisted -> delivery.session
             is StopDeliveryResult.Failed -> return delivery.result
         }
-        return runEngine(AlarmKind.STOP) { automationEngine.stop(deliveredSession.id) }
+        return when (val reconciliation = reconcileStopDelivery(deliveredSession)) {
+            StopReconciliation.NoCameraWork -> AlarmHandlingResult.Accepted
+            is StopReconciliation.StopRequired -> runEngine(AlarmKind.STOP) {
+                automationEngine.stop(reconciliation.session.id)
+            }
+            is StopReconciliation.Failed -> reconciliation.result
+        }
+    }
+
+    private suspend fun reconcileStopDelivery(session: ExecutionSession): StopReconciliation {
+        if (session.stoppedVerifiedAt != null) return StopReconciliation.NoCameraWork
+        if (session.recordActionAt != null) return StopReconciliation.StopRequired(session)
+        if (session.status in TERMINAL_STATUSES) return StopReconciliation.NoCameraWork
+        if (session.status !in setOf(SessionStatus.PENDING, SessionStatus.STARTING)) {
+            return StopReconciliation.Failed(
+                terminal("Persisted recording state has no Pixel Camera ownership checkpoint"),
+            )
+        }
+        if (session.revision == Long.MAX_VALUE) {
+            return StopReconciliation.Failed(
+                terminal("STOP reconciliation cannot increment the execution revision"),
+            )
+        }
+
+        val reconciledAt = maxOf(clock.now(), session.updatedAt)
+        val failure = AutomationFailure(
+            AutomationFailureCode.AUTOMATION_CANCELLED,
+            "Scheduled STOP became due before recording ownership was acquired",
+        )
+        val cancelled = session.copy(
+            status = SessionStatus.CANCELLED,
+            currentAutomationState = AutomationStateName.CANCELLED,
+            failure = failure,
+            revision = session.revision + 1,
+            updatedAt = reconciledAt,
+        )
+        val event = AutomationEvent(
+            id = EventId.new(),
+            sessionId = session.id,
+            name = STOP_RECONCILED_WITHOUT_OWNERSHIP_EVENT,
+            sequence = cancelled.revision,
+            timestamp = reconciledAt,
+            state = AutomationStateName.CANCELLED,
+            outcome = AutomationOutcome.CANCELLED,
+            failure = failure,
+            metadata = mapOf("alarmKind" to AlarmKind.STOP.name),
+        )
+        return try {
+            when (
+                executionRepository.apply(
+                    ExecutionChange(session.revision, cancelled),
+                    event,
+                )
+            ) {
+                is ExecutionApplyResult.Applied -> StopReconciliation.NoCameraWork
+                is ExecutionApplyResult.RevisionConflict -> {
+                    val current = executionRepository.get(session.id)
+                        ?: return StopReconciliation.Failed(
+                            retryable("Execution disappeared during STOP reconciliation"),
+                        )
+                    when {
+                        current.stoppedVerifiedAt != null -> StopReconciliation.NoCameraWork
+                        current.recordActionAt != null -> StopReconciliation.StopRequired(current)
+                        current.status in TERMINAL_STATUSES -> StopReconciliation.NoCameraWork
+                        else -> StopReconciliation.Failed(
+                            retryable("STOP reconciliation lost a concurrent state transition"),
+                        )
+                    }
+                }
+            }
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            StopReconciliation.Failed(
+                retryable("Could not persist STOP reconciliation", error),
+            )
+        }
     }
 
     private suspend fun persistStopDelivery(session: ExecutionSession): StopDeliveryResult {
@@ -393,6 +470,12 @@ class DefaultAlarmTriggerCoordinator(
         data class Failed(val result: AlarmHandlingResult) : StopDeliveryResult
     }
 
+    private sealed interface StopReconciliation {
+        data object NoCameraWork : StopReconciliation
+        data class StopRequired(val session: ExecutionSession) : StopReconciliation
+        data class Failed(val result: AlarmHandlingResult) : StopReconciliation
+    }
+
     private sealed interface SnapshotCheckpoint {
         data class Ready(val session: ExecutionSession) : SnapshotCheckpoint
         data class Failed(val result: AlarmHandlingResult) : SnapshotCheckpoint
@@ -400,6 +483,13 @@ class DefaultAlarmTriggerCoordinator(
 
     private companion object {
         const val STOP_DELIVERED_EVENT = "automation.alarm.stop_delivered"
+        const val STOP_RECONCILED_WITHOUT_OWNERSHIP_EVENT =
+            "automation.alarm.stop_reconciled_without_ownership"
         const val SNAPSHOT_COLLECTION_TIMEOUT_MILLIS = 5_000L
+        val TERMINAL_STATUSES = setOf(
+            SessionStatus.COMPLETED,
+            SessionStatus.FAILED,
+            SessionStatus.CANCELLED,
+        )
     }
 }

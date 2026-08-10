@@ -256,6 +256,36 @@ class DefaultAlarmTriggerCoordinatorTest {
         assertEquals(listOf(true, true), engine.stopSawPersistedDelivery)
     }
 
+    @Test
+    fun stopDueAfterPreemptedStartReconcilesPersistedSessionWithoutCameraStop() = runBlocking {
+        val pending = recordingSession().copy(
+            status = SessionStatus.STARTING,
+            recordActionAt = null,
+            recordingVerifiedAt = null,
+        )
+        val executions = FakeExecutionRepository().apply { seed(pending) }
+        val engine = FakeAutomationEngine(executions)
+
+        val result = coordinator(
+            executions = executions,
+            engine = engine,
+            now = stopAt.plusSeconds(1),
+        ).handle(stopTrigger())
+
+        assertTrue(result is AlarmHandlingResult.Accepted)
+        assertTrue(engine.stopSawPersistedDelivery.isEmpty())
+        val reconciled = executions.sessions.getValue(pending.id)
+        assertEquals(SessionStatus.CANCELLED, reconciled.status)
+        assertEquals(stopAt.plusSeconds(1), reconciled.alarmStopDeliveredAt)
+        assertEquals(
+            listOf(
+                "automation.alarm.stop_delivered",
+                "automation.alarm.stop_reconciled_without_ownership",
+            ),
+            executions.events.map(AutomationEvent::name),
+        )
+    }
+
     private fun coordinator(
         executions: FakeExecutionRepository,
         engine: FakeAutomationEngine,
@@ -298,6 +328,7 @@ class DefaultAlarmTriggerCoordinatorTest {
         expectedStopAt = schedule.stopAt,
         alarmStartDeliveredAt = startAt,
         status = SessionStatus.RECORDING,
+        recordActionAt = startAt.plusSeconds(9),
         recordingVerifiedAt = startAt.plusSeconds(10),
         revision = 0,
         createdAt = startAt,
