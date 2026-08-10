@@ -22,8 +22,8 @@ DEVICE_WAKE code:       364d73c
 Physical wake fixture:  f2dcf3b
 Physical acceptance:    65a5236
 Installed APK SHA-256:  926218feb27b4778f76e35bc786c6bbfd93ed259838a0bcc4c6b4c084728bcb3
-Hardened rehearsal:     01f4e53
-Hardened APK SHA-256:   c3c1c694970f5ba1a996966cbd738fbafb936668aa21226f19e986574582b1f8
+Hardened rehearsal:     e699afd
+Hardened APK SHA-256:   7549e641615aadf431e1de5498f4659d33d82bcfe19a29eb28c83d06ac2c7b05
 Lenswake version:        0.1.0 debug
 ```
 
@@ -344,20 +344,23 @@ were deleted through the production schedule workflow afterward; forced idle and
 were reset, and Lenswake plus the pre-existing Bitwarden Accessibility Service were restored.
 
 The full locked/Doze and reboot proof above is tied to its installed APK SHA and commit `65a5236`.
-The hardened artifact through `01f4e53` then passed the production physical rehearsal fixture on
+The hardened artifact through `e699afd` then passed the production physical rehearsal fixture on
 the same device and environment:
 
 ```text
-Execution session:    f3f046db-ce9d-4887-97ab-8b8dbacb0d7d
-Recording verified:   2026-08-10T15:31:12.809Z
-Stopped verified:     2026-08-10T15:31:23.770Z
+Execution session:    a9534930-8eae-40d3-931e-ef26df48061b
+Recording verified:   2026-08-10T15:42:16.451Z
+Stopped verified:     2026-08-10T15:42:27.368Z
 Profile compatibility: VERIFIED
-Instrumentation:      OK (1 test), 21.719 seconds
+Instrumentation:      OK (1 test), 26.017 seconds
 ```
 
 That run exercises the current process-death picker recovery and dispatch-time semantic fingerprint
-against real Pixel Camera. The fail-closed scheduling transaction and alarm-time resource admission
-remain platform-neutral safety changes covered by the complete local automated gate; they do not
+against real Pixel Camera. The same installed APK also passed seven focused production-scheduler
+instrumentation tests and armed an enabled fixture through the real Room + `AlarmManager` graph with
+STOP-before-START staged registration. Fixture schedule
+`faef9b1c-8fac-4d17-855f-e22f17b9d4b6` was then deleted through `ScheduleWorkflow` before its
+trigger time, and its alarm identities were absent afterward. These later checks do not
 retroactively change the identity of the longer locked/reboot artifact.
 
 ## Conclusion and remaining gates
