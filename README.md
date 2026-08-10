@@ -36,16 +36,18 @@ Implemented now:
 - profile-driven selector scoring, meaningful-discriminant enforcement, ambiguity rejection, observable state signals, per-speed targets, and verified rear-main-lens selection;
 - selector-schema and environment compatibility checks that require a current, timestamped `VERIFIED` profile for unattended execution;
 - dynamically resolved secure Pixel Camera launch and a package-scoped, bounded Accessibility adapter;
-- an honest Compose setup/status shell that never invents schedules, verified profiles, or readiness;
-- fail-closed wake and privileged seams until a capability is verified on the target device.
+- create/edit/enable/disable/delete schedule workflows with transactional alarm rollback and active-camera ownership guards;
+- a durable production-stack rehearsal with a session-bound exact STOP backstop and profile promotion only after verified start and stop;
+- setup remediation actions, local alarm-failure diagnostics, and an honest Compose status UI that never invents readiness;
+- a bounded full-screen-notification `DEVICE_WAKE` implementation that preserves keyguard and fails closed when its capability is unavailable.
 
-Not yet proven or shipped as reliable behavior:
+Still intentionally outside the implemented baseline:
 
-- waking a locked Pixel 8 Pro;
-- a calibrated selector profile for the installed Pixel Camera version;
-- locked-screen Time Lapse start/stop, Doze behavior, secure-camera background launch, and process-death recovery on the target device;
-- schedule editing, calibration, rehearsal, diagnostics export, and Shizuku integration;
-- runtime notification-permission setup and UI presentation of durable alarm transport failure markers.
+- interactive selector calibration for arbitrary Pixel Camera environments;
+- diagnostics archive export;
+- optional Shizuku integration;
+- compatibility claims beyond the exact Pixel 8 Pro / Android 17 / Pixel Camera environment recorded in
+  `docs/research/pixel-8-pro-baseline-2026-08-09.md`.
 
 The debug APK can be built with:
 
@@ -570,9 +572,17 @@ SELECTING_TIME_LAPSE
     ↓
 VERIFYING_TIME_LAPSE
     ↓
+OPENING_TIME_LAPSE_SPEED_CONTROL
+    ↓
+VERIFYING_TIME_LAPSE_SPEED_CONTROL
+    ↓
 SELECTING_SPEED
     ↓
 VERIFYING_SPEED
+    ↓
+CLOSING_TIME_LAPSE_SPEED_CONTROL
+    ↓
+VERIFYING_TIME_LAPSE_SPEED_CLOSED
     ↓
 STARTING_RECORDING
     ↓
@@ -1890,13 +1900,13 @@ Google, Pixel, Android, and Pixel Camera are trademarks of their respective owne
 ```text
 Status: Experimental / Research
 Foundation: Implemented and buildable
-Target automation: Not yet physically verified
+Target automation: Physically verified for the recorded target environment
 Target: Pixel 8 Pro + Android 17
 Distribution: Personal use
 Root required: No
 Pixel Camera required: Yes
 Accessibility required: Yes
-Shizuku: Optional / recommended
+Shizuku: Optional
 ```
 
 The first milestone is not broad device support.

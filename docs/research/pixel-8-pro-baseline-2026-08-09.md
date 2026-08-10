@@ -20,6 +20,8 @@ Lenswake baseline:       1a153da
 Durable rehearsal code: 17dcb4a
 DEVICE_WAKE code:       364d73c
 Physical wake fixture:  f2dcf3b
+Physical acceptance:    65a5236
+Installed APK SHA-256:  926218feb27b4778f76e35bc786c6bbfd93ed259838a0bcc4c6b4c084728bcb3
 Lenswake version:        0.1.0 debug
 ```
 
@@ -256,7 +258,8 @@ security state. An earlier production rehearsal additionally showed the wake pat
 dynamically resolved secure Pixel Camera Activity while `deviceLocked=1`; that rehearsal then
 failed safely at `SELECT_TIME_LAPSE_SPEED`. Repeating it produced the same selector failure, so the
 profile/selectors remain a separate automation-calibration issue and were not weakened to obtain a
-green wake result.
+green wake result. The later acceptance run recorded below used a corrected profile interaction
+flow and supersedes that historical selector blocker.
 
 ## Observed Pixel Camera selectors
 
@@ -293,6 +296,56 @@ bound service and delivered its connection callback in the replacement process. 
 and alarm recovery were verified using screenshots without running UIAutomator in the automation
 window.
 
+## Locked exact-alarm and reboot-recovery acceptance — 2026-08-10
+
+Two production schedule sessions closed the remaining target-device acceptance gates. Both used
+the installed APK SHA-256 recorded above, the exact environment in this note, independent exact
+START and STOP alarms, the normal alarm foreground service, `DEVICE_WAKE`, secure Pixel Camera,
+profile selectors, and persisted execution events. No UIAutomator process ran during either
+automation window.
+
+The first session started with the display off, keyguard locked, Pixel Camera cold, and device idle
+forced to `IDLE`:
+
+```text
+Schedule:             988bf1b7-a9ce-4ed5-89cc-7bcb88f695d8
+Execution session:    b6c5aa05-c432-3f6e-9d8b-fb8b1e8363cc
+START delivered:      2026-08-10T06:07:20Z
+Record dispatched:    2026-08-10T06:07:27Z
+Recording verified:   2026-08-10T06:07:27Z
+STOP delivered:       2026-08-10T06:08:20Z
+Stop dispatched:      2026-08-10T06:08:20Z
+Stopped verified:     2026-08-10T06:08:21Z
+Terminal status:      COMPLETED
+```
+
+The reboot scenario persisted an enabled future schedule, rebooted the phone, observed
+`LOCKED_BOOT_COMPLETED`, and restored alarms only after the user's normal unlock produced
+`USER_UNLOCKED`. The phone was then returned to screen-off, locked, cold-Camera, forced-idle state
+before START:
+
+```text
+Schedule:             8c184b26-6b15-4008-914b-50c87626ab6b
+Execution session:    2352753d-ae7a-370d-b316-c6826b9ce875
+START delivered:      2026-08-10T14:09:23Z
+Record dispatched:    2026-08-10T14:09:29Z
+Recording verified:   2026-08-10T14:09:30Z
+STOP delivered:       2026-08-10T14:10:23Z
+Stop dispatched:      2026-08-10T14:10:23Z
+Stopped verified:     2026-08-10T14:10:24Z
+Terminal status:      COMPLETED
+```
+
+The event streams show `DEVICE_WAKE` through the standard Android API, semantic picker close,
+Record dispatch and verification, and independent Stop dispatch and verification. Test fixtures
+were deleted through the production schedule workflow afterward; forced idle and battery overrides
+were reset, and Lenswake plus the pre-existing Bitwarden Accessibility Service were restored.
+
+This proof is tied to the installed APK SHA and commit `65a5236`. Later fail-closed scheduling,
+resource-readiness, ownership, process-death picker recovery, and semantic-fingerprint hardening are
+covered by local automated gates; they do not retroactively change the identity of the physically
+tested artifact.
+
 ## Conclusion and remaining gates
 
 The application reports observed device readiness instead of static setup placeholders. Required
@@ -301,13 +354,7 @@ session-bound process-death STOP recovery are now verified on this Pixel. The ex
 profile was promoted only by the complete normal rehearsal; the incomplete process-death START
 remained failed even though its safety cleanup succeeded.
 
-The following remain deliberately unverified:
-
-1. one continuous exact-alarm-to-recording START/STOP run while screen-off, locked, and in Doze;
-2. reboot recovery on the physical device;
-3. notification-less escalation behavior;
-4. optional Shizuku capability on Android 17.
-
-Exact-alarm service delivery from forced deep idle and locked-display `DEVICE_WAKE` are each
-physically verified. The remaining continuous E2E gap is the current profile rehearsal failure at
-the time-lapse speed selector, not the wake primitive.
+Continuous locked/Doze exact-alarm START-to-STOP and reboot-before-START recovery are physically
+verified for the recorded Pixel environment and installed APK identity. The remaining deliberately
+unverified capabilities are notification-less escalation behavior and optional Shizuku support;
+neither is required by the verified standard-API target path.

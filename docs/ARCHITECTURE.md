@@ -52,14 +52,14 @@ The current implementation uses these concrete module boundaries:
     repository and scheduler contracts
 
 :data
-    Room v2 database, internal entities/DAOs, domain mappings,
+    Room v3 database, internal entities/DAOs, domain mappings,
     atomic session-transition/event persistence and immutable environment snapshots
 ```
 
 The implemented graph deliberately fails closed when the target environment has no compatible
 profile, Accessibility is disconnected, the selector result is ambiguous, or no verified wake path
-exists. This is an implementation baseline, not proof that locked-screen Pixel Camera automation is
-reliable on the target Pixel 8 Pro.
+exists. Physical reliability claims remain tied to the exact artifact and environment recorded in
+`docs/research/pixel-8-pro-baseline-2026-08-09.md`; architecture alone is never acceptance proof.
 
 ---
 
@@ -788,6 +788,10 @@ VERIFYING_REAR_MAIN_LENS
 CONVERGING_TO_SPEED
        ↓
 VERIFYING_SPEED
+       ↓
+CLOSING_TIME_LAPSE_SPEED_CONTROL
+       ↓
+VERIFYING_TIME_LAPSE_SPEED_CLOSED
        ↓
 STARTING_RECORDING
        ↓
