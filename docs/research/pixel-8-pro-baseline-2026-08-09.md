@@ -22,6 +22,8 @@ DEVICE_WAKE code:       364d73c
 Physical wake fixture:  f2dcf3b
 Physical acceptance:    65a5236
 Installed APK SHA-256:  926218feb27b4778f76e35bc786c6bbfd93ed259838a0bcc4c6b4c084728bcb3
+Hardened rehearsal:     01f4e53
+Hardened APK SHA-256:   c3c1c694970f5ba1a996966cbd738fbafb936668aa21226f19e986574582b1f8
 Lenswake version:        0.1.0 debug
 ```
 
@@ -341,10 +343,22 @@ Record dispatch and verification, and independent Stop dispatch and verification
 were deleted through the production schedule workflow afterward; forced idle and battery overrides
 were reset, and Lenswake plus the pre-existing Bitwarden Accessibility Service were restored.
 
-This proof is tied to the installed APK SHA and commit `65a5236`. Later fail-closed scheduling,
-resource-readiness, ownership, process-death picker recovery, and semantic-fingerprint hardening are
-covered by local automated gates; they do not retroactively change the identity of the physically
-tested artifact.
+The full locked/Doze and reboot proof above is tied to its installed APK SHA and commit `65a5236`.
+The hardened artifact through `01f4e53` then passed the production physical rehearsal fixture on
+the same device and environment:
+
+```text
+Execution session:    f3f046db-ce9d-4887-97ab-8b8dbacb0d7d
+Recording verified:   2026-08-10T15:31:12.809Z
+Stopped verified:     2026-08-10T15:31:23.770Z
+Profile compatibility: VERIFIED
+Instrumentation:      OK (1 test), 21.719 seconds
+```
+
+That run exercises the current process-death picker recovery and dispatch-time semantic fingerprint
+against real Pixel Camera. The fail-closed scheduling transaction and alarm-time resource admission
+remain platform-neutral safety changes covered by the complete local automated gate; they do not
+retroactively change the identity of the longer locked/reboot artifact.
 
 ## Conclusion and remaining gates
 
