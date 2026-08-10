@@ -343,7 +343,7 @@ class DefaultAutomationEngineTest {
 
         val failed = assertInstanceOf(AutomationRunResult.Failed::class.java, result)
         assertEquals(AutomationFailureCode.TIME_LAPSE_SPEED_NOT_VERIFIED, failed.failure.code)
-        assertEquals(1, camera.calls.count { it == "openTimeLapseSpeedControl" })
+        assertEquals(2, camera.calls.count { it == "openTimeLapseSpeedControl" })
         assertEquals(0, camera.calls.count { it == "selectSpeed:X120" })
         assertEquals(0, camera.calls.count { it == "startRecording" })
         assertTrue(repository.events.any {
@@ -354,6 +354,37 @@ class DefaultAutomationEngineTest {
         assertTrue(repository.events.any {
             it.state == AutomationStateName.VERIFYING_TIME_LAPSE_SPEED_CONTROL &&
                 it.operation == AutomationOperation.OPEN_TIME_LAPSE_SPEED_CONTROL
+        })
+    }
+
+    @Test
+    fun `start redispatches speed picker opener when first cold gesture does not converge`() = runTest {
+        val session = session(status = SessionStatus.PENDING)
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(
+            state = PixelCameraState.TimeLapse(
+                speed = TimeLapseSpeed.X30,
+                recording = false,
+                lens = LensSelection.REAR_MAIN,
+            ),
+            speedPickerOpensOnAttempt = 2,
+        )
+
+        val result = engine(
+            repository,
+            FakeDeviceControl(interactive = true),
+            camera,
+            attempts = 2,
+        ).start(session.id)
+
+        assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        assertEquals(2, camera.calls.count { it == "openTimeLapseSpeedControl" })
+        assertEquals(1, camera.calls.count { it == "selectSpeed:X120" })
+        assertEquals(1, camera.calls.count { it == "startRecording" })
+        assertTrue(repository.events.any {
+            it.state == AutomationStateName.RETRYING &&
+                it.operation == AutomationOperation.OPEN_TIME_LAPSE_SPEED_CONTROL &&
+                it.attempt == 2
         })
     }
 
@@ -1187,6 +1218,7 @@ class DefaultAutomationEngineTest {
         private val confirmStop: Boolean = true,
         private val confirmLens: Boolean = true,
         private val confirmSpeedPicker: Boolean = true,
+        private val speedPickerOpensOnAttempt: Int? = null,
         private val keepSpeedPickerOpenAfterSelection: Boolean = false,
         private val suspendLaunch: Boolean = false,
         private val cancelLaunch: Boolean = false,
@@ -1248,7 +1280,10 @@ class DefaultAutomationEngineTest {
         override suspend fun openTimeLapseSpeedControl(profileUse: ProfileUse): ActionDispatch {
             receivedProfileUses += profileUse
             calls += "openTimeLapseSpeedControl"
-            if (confirmSpeedPicker) {
+            if (confirmSpeedPicker &&
+                (speedPickerOpensOnAttempt == null ||
+                    calls.count { it == "openTimeLapseSpeedControl" } >= speedPickerOpensOnAttempt)
+            ) {
                 val current = state as PixelCameraState.TimeLapse
                 state = PixelCameraState.TimeLapseSpeedPicker(
                     speed = current.speed,

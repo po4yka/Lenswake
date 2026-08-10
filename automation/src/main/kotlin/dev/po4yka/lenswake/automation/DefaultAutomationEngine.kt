@@ -365,11 +365,8 @@ class DefaultAutomationEngine(
                             it.lens == LensSelection.REAR_MAIN
                     }
 
-                    state.speed != capture.speed -> dispatchAndVerify(
+                    state.speed != capture.speed -> openTimeLapseSpeedControlAndVerify(
                         context = context,
-                        operation = AutomationOperation.OPEN_TIME_LAPSE_SPEED_CONTROL,
-                        actionState = AutomationStateName.OPENING_TIME_LAPSE_SPEED_CONTROL,
-                        verificationState = AutomationStateName.VERIFYING_TIME_LAPSE_SPEED_CONTROL,
                         dispatchFailure = failure(
                             AutomationFailureCode.TIME_LAPSE_SPEED_NOT_FOUND,
                             "Pixel Camera could not open the Time Lapse speed control",
@@ -378,7 +375,6 @@ class DefaultAutomationEngine(
                             AutomationFailureCode.TIME_LAPSE_SPEED_NOT_VERIFIED,
                             "Pixel Camera did not expose the Time Lapse speed picker",
                         ),
-                        action = { pixelCamera.openTimeLapseSpeedControl(context.profileUse) },
                     ) {
                         it is PixelCameraState.TimeLapseSpeedPicker &&
                             !it.recording &&
@@ -650,6 +646,99 @@ class DefaultAutomationEngine(
             failureMessage = verificationFailure.message,
             predicate = predicate,
         )
+    }
+
+    /**
+     * The speed-picker opener is idempotent: a dispatched gesture may be ignored while Pixel
+     * Camera finishes a cold launch, so convergence retries the opener rather than only polling.
+     * This is deliberately not shared with Record or Stop, whose dispatched actions are unsafe to
+     * repeat until their external side effects have been reconciled.
+     */
+    private suspend fun openTimeLapseSpeedControlAndVerify(
+        context: RunContext,
+        dispatchFailure: AutomationFailure,
+        verificationFailure: AutomationFailure,
+        predicate: (PixelCameraState) -> Boolean,
+    ) {
+        val operation = AutomationOperation.OPEN_TIME_LAPSE_SPEED_CONTROL
+        val actionState = AutomationStateName.OPENING_TIME_LAPSE_SPEED_CONTROL
+        val verificationState = AutomationStateName.VERIFYING_TIME_LAPSE_SPEED_CONTROL
+        val policy = config.policyFor(operation)
+        var lastFailure: AutomationFailure? = null
+
+        for (attempt in 1..policy.maxAttempts) {
+            if (attempt > 1) {
+                retryTransition(context, operation, attempt, actionState)
+                sleeper.sleep(policy.delayBeforeAttempt(attempt))
+            }
+
+            context.transition(
+                state = actionState,
+                operation = operation,
+                outcome = AutomationOutcome.STARTED,
+                attempt = attempt,
+            )
+            val dispatch = try {
+                when (val timed = timed(operation) {
+                    pixelCamera.openTimeLapseSpeedControl(context.profileUse)
+                }) {
+                    is TimedCall.Completed -> timed.value
+                    TimedCall.TimedOut -> ActionDispatch.Rejected(timeoutFailure(operation))
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                ActionDispatch.Rejected(
+                    operationFailure(dispatchFailure.code, dispatchFailure.message, error),
+                )
+            }
+            when (dispatch) {
+                is ActionDispatch.Dispatched -> context.transition(
+                    state = actionState,
+                    operation = operation,
+                    outcome = AutomationOutcome.DISPATCHED,
+                    method = dispatch.method,
+                    attempt = attempt,
+                )
+
+                is ActionDispatch.Rejected -> {
+                    lastFailure = dispatch.failure
+                    continue
+                }
+            }
+
+            context.transition(
+                state = verificationState,
+                operation = operation,
+                outcome = AutomationOutcome.STARTED,
+                attempt = attempt,
+            )
+            val inspection = try {
+                when (val timed = timed(operation) { pixelCamera.inspect(context.profileUse) }) {
+                    is TimedCall.Completed -> timed.value
+                    TimedCall.TimedOut -> PortResult.Unavailable(timeoutFailure(operation))
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                PortResult.Unavailable(
+                    operationFailure(verificationFailure.code, verificationFailure.message, error),
+                )
+            }
+            when (inspection) {
+                is PortResult.Observed -> if (predicate(inspection.value)) {
+                    context.transition(
+                        state = verificationState,
+                        operation = operation,
+                        outcome = AutomationOutcome.SUCCEEDED,
+                        attempt = attempt,
+                    )
+                    return
+                }
+
+                is PortResult.Unavailable -> lastFailure = inspection.failure
+            }
+        }
+
+        fail(context, lastFailure ?: verificationFailure)
     }
 
     private suspend fun dispatchRecordingStart(context: RunContext) {
