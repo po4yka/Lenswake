@@ -64,6 +64,7 @@ object KnownPixelCameraProfileCatalog {
             AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL to actionSelector(
                 contentDescription = "Time Lapse control",
                 minimumScore = 60,
+                requiresClickable = false,
             ),
             AutomationAction.SELECT_REAR_MAIN_LENS to actionSelector(
                 resourceId = "zoom_toggle_1×",

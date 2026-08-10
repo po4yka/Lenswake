@@ -111,7 +111,7 @@ class KnownPixelCameraProfileCatalogTest {
             .selectors
             .single()
         assertEquals("Time Lapse control", speedControl.contentDescription)
-        assertTrue(speedControl.requiresClickable)
+        assertFalse(speedControl.requiresClickable)
 
         val speed = profile.speedTargets.getValue(TimeLapseSpeed.X120).selectors.single()
         assertEquals("Time Lapse 120 times speed", speed.contentDescription)
