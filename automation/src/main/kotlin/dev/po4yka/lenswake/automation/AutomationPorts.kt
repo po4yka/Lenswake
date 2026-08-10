@@ -96,6 +96,11 @@ interface PixelCameraPort {
         profileUse: ProfileUse,
     ): ActionDispatch
 
+    suspend fun closeTimeLapseSpeedControl(
+        speed: TimeLapseSpeed,
+        profileUse: ProfileUse,
+    ): ActionDispatch
+
     suspend fun selectRearMainLens(profileUse: ProfileUse): ActionDispatch
 
     suspend fun startRecording(profileUse: ProfileUse): ActionDispatch

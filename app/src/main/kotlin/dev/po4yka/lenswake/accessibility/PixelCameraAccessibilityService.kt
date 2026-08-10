@@ -40,6 +40,9 @@ sealed interface AccessibilityDispatchResult {
     /** Android accepted a gesture, not that the target was activated. */
     data object GestureSubmitted : AccessibilityDispatchResult
 
+    /** Android accepted a global navigation action, not that the UI postcondition changed. */
+    data object GlobalActionDispatched : AccessibilityDispatchResult
+
     data object ServiceDisconnected : AccessibilityDispatchResult
 
     /** An accessibility node could not be refreshed, so a path must not be resolved against it. */
@@ -50,6 +53,8 @@ sealed interface AccessibilityDispatchResult {
     data object TargetNotEligible : AccessibilityDispatchResult
 
     data object GestureRejected : AccessibilityDispatchResult
+
+    data object GlobalActionRejected : AccessibilityDispatchResult
 }
 
 /**
@@ -135,6 +140,31 @@ class PixelCameraAccessibilityService : AccessibilityService() {
             AccessibilityDispatchResult.GestureSubmitted
         } else {
             AccessibilityDispatchResult.GestureRejected
+        }
+    }
+
+    internal fun dispatchGlobalBack(pickerNodePath: String): AccessibilityDispatchResult {
+        val root = rootInActiveWindow ?: return AccessibilityDispatchResult.TargetNotFound
+        if (!root.refreshSafely()) return AccessibilityDispatchResult.RefreshFailed
+        if (root.packageName?.toString() != PIXEL_CAMERA_PACKAGE) {
+            return AccessibilityDispatchResult.TargetNotEligible
+        }
+        val pickerNode = when (val resolution = resolvePath(root, pickerNodePath)) {
+            is PathResolution.Found -> resolution.node
+            PathResolution.RefreshFailed -> return AccessibilityDispatchResult.RefreshFailed
+            PathResolution.NotFound -> return AccessibilityDispatchResult.TargetNotFound
+        }
+        if (
+            pickerNode.packageName?.toString() != PIXEL_CAMERA_PACKAGE ||
+            !pickerNode.isVisibleToUser ||
+            !pickerNode.isEnabled
+        ) {
+            return AccessibilityDispatchResult.TargetNotEligible
+        }
+        return if (performGlobalAction(GLOBAL_ACTION_BACK)) {
+            AccessibilityDispatchResult.GlobalActionDispatched
+        } else {
+            AccessibilityDispatchResult.GlobalActionRejected
         }
     }
 
@@ -301,6 +331,12 @@ object PixelCameraAccessibilityRuntime {
     suspend fun dispatchClick(nodePath: String): AccessibilityDispatchResult =
         withContext(Dispatchers.Main.immediate) {
             serviceReference.get()?.get()?.dispatchClick(nodePath)
+                ?: AccessibilityDispatchResult.ServiceDisconnected
+        }
+
+    suspend fun dispatchGlobalBack(pickerNodePath: String): AccessibilityDispatchResult =
+        withContext(Dispatchers.Main.immediate) {
+            serviceReference.get()?.get()?.dispatchGlobalBack(pickerNodePath)
                 ?: AccessibilityDispatchResult.ServiceDisconnected
         }
 }

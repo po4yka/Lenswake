@@ -431,37 +431,29 @@ class DefaultAutomationEngine(
                         )
                     }
                     if (state.speed == capture.speed) {
-                        if (context.current.hasUncertainRecordDispatch()) {
-                            fail(
-                                context,
-                                failure(
-                                    AutomationFailureCode.RECORDING_NOT_CONFIRMED,
-                                    "An uncertain prior Record dispatch must be reconciled without redispatch",
-                                ),
-                            )
-                        }
-                        dispatchRecordingStart(context)
-                        observeCamera(
+                        dispatchAndVerify(
                             context = context,
-                            operation = AutomationOperation.VERIFY_RECORDING,
-                            state = AutomationStateName.VERIFYING_RECORDING,
-                            failureCode = AutomationFailureCode.RECORDING_NOT_CONFIRMED,
-                            failureMessage = "Pixel Camera did not confirm Time Lapse recording",
+                            operation = AutomationOperation.CLOSE_TIME_LAPSE_SPEED_CONTROL,
+                            actionState = AutomationStateName.CLOSING_TIME_LAPSE_SPEED_CONTROL,
+                            verificationState = AutomationStateName.VERIFYING_TIME_LAPSE_SPEED_CLOSED,
+                            dispatchFailure = failure(
+                                AutomationFailureCode.TIME_LAPSE_SPEED_CONTROL_CLOSE_FAILED,
+                                "Pixel Camera could not close the confirmed Time Lapse speed picker",
+                            ),
+                            verificationFailure = failure(
+                                AutomationFailureCode.TIME_LAPSE_SPEED_NOT_VERIFIED,
+                                "Pixel Camera did not confirm the closed Time Lapse speed picker",
+                            ),
+                            action = {
+                                pixelCamera.closeTimeLapseSpeedControl(capture.speed, context.profileUse)
+                            },
                         ) { observed ->
-                            when (observed) {
-                                is PixelCameraState.TimeLapse ->
-                                    observed.recording &&
-                                        observed.speed == capture.speed &&
-                                        observed.lens == LensSelection.REAR_MAIN
-                                is PixelCameraState.TimeLapseSpeedPicker ->
-                                    observed.recording &&
-                                        observed.speed == capture.speed &&
-                                        (observed.lens == LensSelection.REAR_MAIN ||
-                                            context.rearMainLensObservedBeforeSpeedPicker)
-                                else -> false
-                            }
+                            observed is PixelCameraState.TimeLapse &&
+                                !observed.recording &&
+                                observed.speed == capture.speed &&
+                                observed.lens == LensSelection.REAR_MAIN
                         }
-                        return markRecordingVerified(context)
+                        return@repeat
                     }
                     dispatchAndVerify(
                         context = context,

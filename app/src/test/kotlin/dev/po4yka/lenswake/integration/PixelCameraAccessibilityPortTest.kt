@@ -78,6 +78,67 @@ class PixelCameraAccessibilityPortTest {
     }
 
     @Test
+    fun `close speed control dispatches global Back without selecting a node`() = runTest {
+        val gateway = FakeAccessibilityGateway(
+            nodes = activeSignals(
+                PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN,
+                PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE,
+                PixelCameraStateSignal.NOT_RECORDING,
+            ),
+            globalBackResult = AccessibilityDispatchResult.GlobalActionDispatched,
+        )
+
+        val result = port(gateway = gateway).closeTimeLapseSpeedControl(TimeLapseSpeed.X120, profileUse())
+
+        val dispatched = assertInstanceOf(ActionDispatch.Dispatched::class.java, result)
+        assertEquals(dev.po4yka.lenswake.core.InteractionMethod.ACCESSIBILITY_ACTION, dispatched.method)
+        assertEquals(1, gateway.globalBackCalls)
+        assertEquals(1, gateway.snapshotCalls)
+        assertEquals(null, gateway.clickedNodePath)
+        assertEquals(
+            "node-${PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN.name}",
+            gateway.globalBackNodePath,
+        )
+    }
+
+    @Test
+    fun `close speed control maps rejected global Back to typed failure`() = runTest {
+        val gateway = FakeAccessibilityGateway(
+            nodes = activeSignals(
+                PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN,
+                PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE,
+                PixelCameraStateSignal.NOT_RECORDING,
+            ),
+            globalBackResult = AccessibilityDispatchResult.GlobalActionRejected,
+        )
+
+        val result = port(gateway = gateway).closeTimeLapseSpeedControl(TimeLapseSpeed.X120, profileUse())
+
+        val rejected = assertInstanceOf(ActionDispatch.Rejected::class.java, result)
+        assertEquals(AutomationFailureCode.TIME_LAPSE_SPEED_CONTROL_CLOSE_FAILED, rejected.failure.code)
+        assertEquals(1, gateway.globalBackCalls)
+    }
+
+    @Test
+    fun `close speed control refuses global Back when fresh picker state changed`() = runTest {
+        val gateway = FakeAccessibilityGateway(
+            nodes = activeSignals(
+                PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
+                PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE,
+                PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
+                PixelCameraStateSignal.NOT_RECORDING,
+            ),
+            globalBackResult = AccessibilityDispatchResult.GlobalActionDispatched,
+        )
+
+        val result = port(gateway = gateway).closeTimeLapseSpeedControl(TimeLapseSpeed.X120, profileUse())
+
+        val rejected = assertInstanceOf(ActionDispatch.Rejected::class.java, result)
+        assertEquals(AutomationFailureCode.TIME_LAPSE_SPEED_CONTROL_CLOSE_FAILED, rejected.failure.code)
+        assertEquals(0, gateway.globalBackCalls)
+    }
+
+    @Test
     fun `time lapse lens remains unknown when configured rear main signal does not match`() = runTest {
         val gateway = FakeAccessibilityGateway(
             activeSignals(
@@ -419,6 +480,7 @@ class PixelCameraAccessibilityPortTest {
     private class FakeAccessibilityGateway(
         private val nodes: List<UiNodeSnapshot> = emptyList(),
         private val dispatchResult: AccessibilityDispatchResult = AccessibilityDispatchResult.TargetNotFound,
+        private val globalBackResult: AccessibilityDispatchResult = AccessibilityDispatchResult.GlobalActionRejected,
         private val snapshotResult: AccessibilitySnapshotResult? = null,
     ) : PixelCameraAccessibilityGateway {
         var snapshotCalls: Int = 0
@@ -426,6 +488,10 @@ class PixelCameraAccessibilityPortTest {
         var clickedNodePath: String? = null
             private set
         val clickedNodePaths = mutableListOf<String>()
+        var globalBackCalls: Int = 0
+            private set
+        var globalBackNodePath: String? = null
+            private set
 
         override suspend fun snapshot(): AccessibilitySnapshotResult {
             snapshotCalls += 1
@@ -436,6 +502,12 @@ class PixelCameraAccessibilityPortTest {
             clickedNodePath = nodePath
             clickedNodePaths += nodePath
             return dispatchResult
+        }
+
+        override suspend fun dispatchGlobalBack(pickerNodePath: String): AccessibilityDispatchResult {
+            globalBackCalls += 1
+            globalBackNodePath = pickerNodePath
+            return globalBackResult
         }
     }
 

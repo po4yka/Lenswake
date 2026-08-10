@@ -128,6 +128,109 @@ class PixelCameraAccessibilityPort internal constructor(
         profileUse: ProfileUse,
     ): ActionDispatch = dispatch(AutomationAction.SELECT_TIME_LAPSE_SPEED, profileUse, speed)
 
+    override suspend fun closeTimeLapseSpeedControl(
+        speed: TimeLapseSpeed,
+        profileUse: ProfileUse,
+    ): ActionDispatch {
+        validateProfile(profileUse)?.let { return ActionDispatch.Rejected(it) }
+        val snapshot = when (val result = accessibilityGateway.snapshot()) {
+            is AccessibilitySnapshotResult.Available -> result
+            AccessibilitySnapshotResult.ServiceDisconnected -> return ActionDispatch.Rejected(
+                failure(
+                    AutomationFailureCode.ACCESSIBILITY_DISABLED,
+                    "Lenswake Accessibility Service is not connected",
+                ),
+            )
+            AccessibilitySnapshotResult.RefreshFailed -> return ActionDispatch.Rejected(
+                failure(
+                    AutomationFailureCode.ACCESSIBILITY_REFRESH_FAILED,
+                    "The active Pixel Camera accessibility window could not be refreshed",
+                ),
+            )
+            AccessibilitySnapshotResult.NoActiveWindow,
+            AccessibilitySnapshotResult.PixelCameraNotForeground,
+            -> return ActionDispatch.Rejected(
+                failure(
+                    AutomationFailureCode.PIXEL_CAMERA_NOT_FOREGROUND,
+                    "Pixel Camera is not the active accessibility window",
+                ),
+            )
+        }
+        if (snapshot.truncated) {
+            return ActionDispatch.Rejected(
+                failure(
+                    AutomationFailureCode.CAMERA_STATE_UNKNOWN,
+                    "The bounded Pixel Camera accessibility snapshot was truncated",
+                ),
+            )
+        }
+        val freshState = when (val inferred = inferState(profileUse.profile, snapshot.nodes)) {
+            is PortResult.Observed -> inferred.value
+            is PortResult.Unavailable -> return ActionDispatch.Rejected(inferred.failure)
+        }
+        if (
+            freshState !is PixelCameraState.TimeLapseSpeedPicker ||
+            freshState.recording ||
+            freshState.speed != speed
+        ) {
+            return ActionDispatch.Rejected(
+                failure(
+                    AutomationFailureCode.TIME_LAPSE_SPEED_CONTROL_CLOSE_FAILED,
+                    "A fresh Pixel Camera snapshot did not confirm the selected Time Lapse speed picker",
+                ),
+            )
+        }
+        val pickerSelector = profileUse.profile.stateSignals[PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN]
+            ?: return ActionDispatch.Rejected(
+                failure(
+                    AutomationFailureCode.TIME_LAPSE_SPEED_CONTROL_CLOSE_FAILED,
+                    "The profile does not define an observable Time Lapse speed picker",
+                ),
+            )
+        val pickerNodePath = when (
+            val match = selectorMatcher.match(pickerSelector, profileUse.profile, snapshot.nodes)
+        ) {
+            is SelectorMatchResult.Match -> match.node.id
+            else -> return ActionDispatch.Rejected(
+                failure(
+                    AutomationFailureCode.TIME_LAPSE_SPEED_CONTROL_CLOSE_FAILED,
+                    "The open Time Lapse speed picker could not be bound to a fresh UI node",
+                ),
+            )
+        }
+        return when (accessibilityGateway.dispatchGlobalBack(pickerNodePath)) {
+            AccessibilityDispatchResult.GlobalActionDispatched -> ActionDispatch.Dispatched(
+                InteractionMethod.ACCESSIBILITY_ACTION,
+            )
+            AccessibilityDispatchResult.ServiceDisconnected -> ActionDispatch.Rejected(
+                failure(
+                    AutomationFailureCode.ACCESSIBILITY_DISABLED,
+                    "Lenswake Accessibility Service disconnected before closing the speed picker",
+                ),
+            )
+            AccessibilityDispatchResult.RefreshFailed -> ActionDispatch.Rejected(
+                failure(
+                    AutomationFailureCode.ACCESSIBILITY_REFRESH_FAILED,
+                    "The active Pixel Camera window changed before closing the speed picker",
+                ),
+            )
+            AccessibilityDispatchResult.TargetNotFound,
+            AccessibilityDispatchResult.TargetNotEligible,
+            -> ActionDispatch.Rejected(
+                failure(
+                    AutomationFailureCode.PIXEL_CAMERA_NOT_FOREGROUND,
+                    "Pixel Camera was no longer the active window before closing the speed picker",
+                ),
+            )
+            else -> ActionDispatch.Rejected(
+                failure(
+                    AutomationFailureCode.TIME_LAPSE_SPEED_CONTROL_CLOSE_FAILED,
+                    "Android rejected the global Back action for the Time Lapse speed picker",
+                ),
+            )
+        }
+    }
+
     override suspend fun selectRearMainLens(profileUse: ProfileUse): ActionDispatch =
         dispatch(AutomationAction.SELECT_REAR_MAIN_LENS, profileUse)
 
@@ -217,6 +320,9 @@ class PixelCameraAccessibilityPort internal constructor(
             AccessibilityDispatchResult.GestureSubmitted -> ActionDispatch.Dispatched(
                 InteractionMethod.ACCESSIBILITY_NODE_GESTURE,
             )
+            AccessibilityDispatchResult.GlobalActionDispatched -> error(
+                "A node click cannot return a global action dispatch",
+            )
             AccessibilityDispatchResult.ServiceDisconnected -> ActionDispatch.Rejected(
                 failure(
                     AutomationFailureCode.ACCESSIBILITY_DISABLED,
@@ -232,6 +338,7 @@ class PixelCameraAccessibilityPort internal constructor(
             AccessibilityDispatchResult.TargetNotFound,
             AccessibilityDispatchResult.TargetNotEligible,
             AccessibilityDispatchResult.GestureRejected,
+            AccessibilityDispatchResult.GlobalActionRejected,
             -> ActionDispatch.Rejected(missingActionFailure(action))
         }
     }
@@ -429,6 +536,8 @@ internal interface PixelCameraAccessibilityGateway {
     suspend fun snapshot(): AccessibilitySnapshotResult
 
     suspend fun dispatchClick(nodePath: String): AccessibilityDispatchResult
+
+    suspend fun dispatchGlobalBack(pickerNodePath: String): AccessibilityDispatchResult
 }
 
 private object RuntimePixelCameraAccessibilityGateway : PixelCameraAccessibilityGateway {
@@ -436,4 +545,7 @@ private object RuntimePixelCameraAccessibilityGateway : PixelCameraAccessibility
 
     override suspend fun dispatchClick(nodePath: String): AccessibilityDispatchResult =
         PixelCameraAccessibilityRuntime.dispatchClick(nodePath)
+
+    override suspend fun dispatchGlobalBack(pickerNodePath: String): AccessibilityDispatchResult =
+        PixelCameraAccessibilityRuntime.dispatchGlobalBack(pickerNodePath)
 }

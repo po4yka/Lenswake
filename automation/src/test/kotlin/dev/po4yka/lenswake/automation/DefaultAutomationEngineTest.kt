@@ -446,7 +446,7 @@ class DefaultAutomationEngineTest {
     }
 
     @Test
-    fun `start verifies selection and recording in persistent lens-hidden picker`() = runTest {
+    fun `start closes persistent lens-hidden picker before recording`() = runTest {
         val session = session(status = SessionStatus.PENDING)
         val repository = FakeExecutionRepository(session)
         val camera = FakePixelCamera(
@@ -467,6 +467,7 @@ class DefaultAutomationEngineTest {
                 "launch",
                 "openTimeLapseSpeedControl",
                 "selectSpeed:X120",
+                "closeTimeLapseSpeedControl",
                 "startRecording",
             ),
             camera.calls,
@@ -527,7 +528,7 @@ class DefaultAutomationEngineTest {
     }
 
     @Test
-    fun `start records once when selected speed remains in the open picker`() = runTest {
+    fun `start closes selected speed picker and records once`() = runTest {
         val session = session(status = SessionStatus.PENDING)
         val repository = FakeExecutionRepository(session)
         val camera = FakePixelCamera(
@@ -547,11 +548,61 @@ class DefaultAutomationEngineTest {
                 "launch",
                 "openTimeLapseSpeedControl",
                 "selectSpeed:X120",
+                "closeTimeLapseSpeedControl",
                 "startRecording",
             ),
             camera.calls,
         )
         assertTrue(camera.lensWasRearMainWhenRecordStarted)
+    }
+
+    @Test
+    fun `start fails without recording when closing selected speed picker is rejected`() = runTest {
+        val session = session(status = SessionStatus.PENDING)
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(
+            state = PixelCameraState.TimeLapse(
+                speed = TimeLapseSpeed.X30,
+                recording = false,
+                lens = LensSelection.REAR_MAIN,
+            ),
+            keepSpeedPickerOpenAfterSelection = true,
+            speedPickerCloseDispatch = ActionDispatch.Rejected(
+                AutomationFailure(
+                    AutomationFailureCode.TIME_LAPSE_SPEED_CONTROL_CLOSE_FAILED,
+                    "global Back rejected",
+                ),
+            ),
+        )
+
+        val result = engine(repository, FakeDeviceControl(interactive = true), camera).start(session.id)
+
+        val failed = assertInstanceOf(AutomationRunResult.Failed::class.java, result)
+        assertEquals(AutomationFailureCode.TIME_LAPSE_SPEED_CONTROL_CLOSE_FAILED, failed.failure.code)
+        assertEquals(3, camera.calls.count { it == "closeTimeLapseSpeedControl" })
+        assertEquals(0, camera.calls.count { it == "startRecording" })
+    }
+
+    @Test
+    fun `start fails without recording when selected speed picker remains open`() = runTest {
+        val session = session(status = SessionStatus.PENDING)
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(
+            state = PixelCameraState.TimeLapse(
+                speed = TimeLapseSpeed.X30,
+                recording = false,
+                lens = LensSelection.REAR_MAIN,
+            ),
+            keepSpeedPickerOpenAfterSelection = true,
+            confirmSpeedPickerClose = false,
+        )
+
+        val result = engine(repository, FakeDeviceControl(interactive = true), camera).start(session.id)
+
+        val failed = assertInstanceOf(AutomationRunResult.Failed::class.java, result)
+        assertEquals(AutomationFailureCode.TIME_LAPSE_SPEED_NOT_VERIFIED, failed.failure.code)
+        assertEquals(1, camera.calls.count { it == "closeTimeLapseSpeedControl" })
+        assertEquals(0, camera.calls.count { it == "startRecording" })
     }
 
     @Test
@@ -1365,6 +1416,8 @@ class DefaultAutomationEngineTest {
         private val speedPickerDispatch: ActionDispatch? = null,
         private val hideLensInSpeedPicker: Boolean = false,
         private val keepSpeedPickerOpenAfterSelection: Boolean = false,
+        private val confirmSpeedPickerClose: Boolean = true,
+        private val speedPickerCloseDispatch: ActionDispatch? = null,
         private val suspendLaunch: Boolean = false,
         private val cancelLaunch: Boolean = false,
         private val suspendStart: Boolean = false,
@@ -1386,6 +1439,7 @@ class DefaultAutomationEngineTest {
         val receivedProfiles: List<PixelCameraProfile>
             get() = receivedProfileUses.map(ProfileUse::profile)
         var lensWasRearMainWhenRecordStarted: Boolean = false
+        private var lensBeforeSpeedPicker: LensSelection? = null
 
         override suspend fun inspect(profileUse: ProfileUse): PortResult<PixelCameraState> {
             receivedProfileUses += profileUse
@@ -1436,6 +1490,7 @@ class DefaultAutomationEngineTest {
                     calls.count { it == "openTimeLapseSpeedControl" } >= speedPickerOpensOnAttempt)
             ) {
                 val current = state as PixelCameraState.TimeLapse
+                lensBeforeSpeedPicker = current.lens
                 state = PixelCameraState.TimeLapseSpeedPicker(
                     speed = current.speed,
                     recording = current.recording,
@@ -1459,6 +1514,25 @@ class DefaultAutomationEngineTest {
                     speed = speed,
                     recording = current.recording,
                     lens = current.lens,
+                )
+            }
+            return dispatched()
+        }
+
+        override suspend fun closeTimeLapseSpeedControl(
+            speed: TimeLapseSpeed,
+            profileUse: ProfileUse,
+        ): ActionDispatch {
+            receivedProfileUses += profileUse
+            calls += "closeTimeLapseSpeedControl"
+            speedPickerCloseDispatch?.let { return it }
+            if (confirmSpeedPickerClose) {
+                val current = state as PixelCameraState.TimeLapseSpeedPicker
+                check(current.speed == speed)
+                state = PixelCameraState.TimeLapse(
+                    speed = current.speed,
+                    recording = current.recording,
+                    lens = current.lens ?: lensBeforeSpeedPicker,
                 )
             }
             return dispatched()
