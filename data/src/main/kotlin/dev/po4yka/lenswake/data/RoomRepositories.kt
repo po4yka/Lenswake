@@ -9,6 +9,7 @@ import dev.po4yka.lenswake.core.EnvironmentSnapshotRepository
 import dev.po4yka.lenswake.core.ExecutionApplyResult
 import dev.po4yka.lenswake.core.ExecutionChange
 import dev.po4yka.lenswake.core.ExecutionRepository
+import dev.po4yka.lenswake.core.ExecutionReservationResult
 import dev.po4yka.lenswake.core.ExecutionReport
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.PixelCameraProfile
@@ -18,6 +19,7 @@ import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.ScheduleRepository
 import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.data.internal.dao.ExecutionCasResult
+import dev.po4yka.lenswake.data.internal.dao.ExecutionReservationEntityResult
 import dev.po4yka.lenswake.data.internal.dao.EnvironmentSnapshotInsertResult
 import dev.po4yka.lenswake.data.internal.mapping.toDomain
 import dev.po4yka.lenswake.data.internal.mapping.toEntity
@@ -82,9 +84,15 @@ class RoomExecutionRepository(
     override suspend fun findActiveForSchedule(scheduleId: ScheduleId): ExecutionSession? =
         dao.findActiveForSchedule(scheduleId.value)?.toDomain()
 
-    override suspend fun create(session: ExecutionSession) {
-        dao.createIdempotently(session.toEntity())
-    }
+    override suspend fun reservePixelCamera(session: ExecutionSession): ExecutionReservationResult =
+        when (val result = dao.reservePixelCamera(session.toEntity())) {
+            is ExecutionReservationEntityResult.Reserved -> ExecutionReservationResult.Reserved(
+                session = result.session.toDomain(),
+                newlyCreated = result.newlyCreated,
+            )
+            is ExecutionReservationEntityResult.CameraBusy ->
+                ExecutionReservationResult.CameraBusy(result.owner.toDomain())
+        }
 
     override suspend fun apply(
         change: ExecutionChange,

@@ -16,6 +16,7 @@ import dev.po4yka.lenswake.core.EnvironmentSnapshotRepository
 import dev.po4yka.lenswake.core.ExecutionApplyResult
 import dev.po4yka.lenswake.core.ExecutionChange
 import dev.po4yka.lenswake.core.ExecutionRepository
+import dev.po4yka.lenswake.core.ExecutionReservationResult
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.LenswakeClock
 import dev.po4yka.lenswake.core.RecordingSchedule
@@ -62,43 +63,32 @@ class DefaultAlarmTriggerCoordinator(
         val executionKey = executionKey(schedule)
         val sessionId = deterministicSessionId(executionKey)
         val now = clock.now()
-        val lookup = loadExecution(sessionId)
-        if (lookup.isFailure) {
-            return retryable("Could not load the execution session", lookup.exceptionOrNull())
+        val candidate = ExecutionSession(
+            id = sessionId,
+            executionKey = executionKey,
+            kind = SessionKind.SCHEDULED,
+            scheduleId = schedule.id,
+            scheduleName = schedule.name,
+            profileId = schedule.profileId,
+            capture = schedule.capture,
+            expectedStartAt = schedule.startAt,
+            expectedStopAt = schedule.stopAt,
+            alarmStartDeliveredAt = now,
+            status = SessionStatus.PENDING,
+            createdAt = now,
+            updatedAt = now,
+        )
+        val reservation = try {
+            executionRepository.reservePixelCamera(candidate)
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            return retryable("Could not reserve Pixel Camera for the execution", error)
         }
-        val existing = lookup.getOrNull() ?: run {
-            val session = ExecutionSession(
-                id = sessionId,
-                executionKey = executionKey,
-                kind = SessionKind.SCHEDULED,
-                scheduleId = schedule.id,
-                scheduleName = schedule.name,
-                profileId = schedule.profileId,
-                capture = schedule.capture,
-                expectedStartAt = schedule.startAt,
-                expectedStopAt = schedule.stopAt,
-                alarmStartDeliveredAt = now,
-                status = SessionStatus.PENDING,
-                createdAt = now,
-                updatedAt = now,
+        val existing = when (reservation) {
+            is ExecutionReservationResult.Reserved -> reservation.session
+            is ExecutionReservationResult.CameraBusy -> return terminal(
+                "Pixel Camera is owned by execution ${reservation.owner.id.value}",
             )
-            try {
-                executionRepository.create(session)
-                session
-            } catch (error: Exception) {
-                if (error is CancellationException) throw error
-                // A concurrent duplicate may have won the unique ID/execution-key insert.
-                val winnerLookup = loadExecution(sessionId)
-                if (winnerLookup.isFailure) {
-                    return retryable(
-                        "Could not resolve a concurrent execution insert",
-                        winnerLookup.exceptionOrNull(),
-                    )
-                }
-                val winner = winnerLookup.getOrNull()
-                    ?: return retryable("Could not persist the execution session", error)
-                winner
-            }
         }
         validateExecution(existing, schedule, executionKey)?.let { return it }
         val snapshottedSession = when (val snapshot = ensureEnvironmentSnapshot(existing)) {

@@ -5,6 +5,7 @@ import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.ExecutionApplyResult
 import dev.po4yka.lenswake.core.ExecutionChange
 import dev.po4yka.lenswake.core.ExecutionRepository
+import dev.po4yka.lenswake.core.ExecutionReservationResult
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.ScheduleId
@@ -188,7 +189,8 @@ private class FakeRehearsalExecutionRepository(
     override suspend fun findActiveRehearsals(limit: Int): List<ExecutionSession> =
         activeRehearsals.take(limit)
 
-    override suspend fun create(session: ExecutionSession) = Unit
+    override suspend fun reservePixelCamera(session: ExecutionSession): ExecutionReservationResult =
+        ExecutionReservationResult.Reserved(session, newlyCreated = true)
 
     override suspend fun apply(
         change: ExecutionChange,

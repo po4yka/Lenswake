@@ -112,8 +112,9 @@ private class FakeExecutionRepository(
 
     override suspend fun findActiveForSchedule(scheduleId: ScheduleId): ExecutionSession? = null
 
-    override suspend fun create(session: ExecutionSession) {
+    override suspend fun reservePixelCamera(session: ExecutionSession): ExecutionReservationResult {
         state.value += session
+        return ExecutionReservationResult.Reserved(session, newlyCreated = true)
     }
 
     override suspend fun apply(

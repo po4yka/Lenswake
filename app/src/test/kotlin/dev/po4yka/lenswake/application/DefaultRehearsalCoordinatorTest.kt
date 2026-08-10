@@ -18,6 +18,7 @@ import dev.po4yka.lenswake.core.ExecutionApplyResult
 import dev.po4yka.lenswake.core.ExecutionChange
 import dev.po4yka.lenswake.core.ExecutionReport
 import dev.po4yka.lenswake.core.ExecutionRepository
+import dev.po4yka.lenswake.core.ExecutionReservationResult
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.LenswakeClock
@@ -184,6 +185,24 @@ class DefaultRehearsalCoordinatorTest {
         assertEquals(1, fixture.backstop.cancelCalls)
     }
 
+    @Test
+    fun scheduledCameraOwnerMakesRehearsalTypedBusyWithoutStarting() = runBlocking {
+        val fixture = fixture()
+        val owner = fixture.executions.seedRehearsal(now, request, profile.id).copy(
+            kind = SessionKind.SCHEDULED,
+            scheduleId = ScheduleId("scheduled-owner"),
+            executionKey = "schedule/scheduled-owner",
+        )
+        fixture.executions.sessions.clear()
+        fixture.executions.sessions[owner.id] = owner
+
+        val result = fixture.coordinator.run(request)
+
+        assertEquals(RehearsalResult.Busy(owner.id), result)
+        assertEquals(0, fixture.engine.startCalls)
+        assertEquals(listOf(owner), fixture.executions.sessions.values.toList())
+    }
+
     private fun fixture(
         backstopScheduleFails: Boolean = false,
         completeStopProof: Boolean = true,
@@ -291,7 +310,16 @@ private class FakeRehearsalRepository : ExecutionRepository, EnvironmentSnapshot
     override suspend fun findActiveRehearsals(limit: Int): List<ExecutionSession> = sessions.values
         .filter { it.kind == SessionKind.REHEARSAL && it.status !in TERMINAL }
         .take(limit)
-    override suspend fun create(session: ExecutionSession) { check(sessions.putIfAbsent(session.id, session) == null) }
+    override suspend fun reservePixelCamera(session: ExecutionSession): ExecutionReservationResult {
+        sessions.values.firstOrNull {
+            it.id == session.id && it.executionKey == session.executionKey
+        }?.let { return ExecutionReservationResult.Reserved(it, newlyCreated = false) }
+        sessions.values.firstOrNull(ExecutionSession::ownsPixelCamera)?.let {
+            return ExecutionReservationResult.CameraBusy(it)
+        }
+        check(sessions.putIfAbsent(session.id, session) == null)
+        return ExecutionReservationResult.Reserved(session, newlyCreated = true)
+    }
     override suspend fun apply(change: ExecutionChange, event: AutomationEvent): ExecutionApplyResult {
         val current = sessions[change.updatedSession.id]
         if (current?.revision != change.expectedRevision) {
@@ -351,6 +379,14 @@ private class FakeRehearsalRepository : ExecutionRepository, EnvironmentSnapshot
         val TERMINAL = setOf(SessionStatus.COMPLETED, SessionStatus.FAILED, SessionStatus.CANCELLED)
     }
 }
+
+private fun ExecutionSession.ownsPixelCamera(): Boolean =
+    status in setOf(
+        SessionStatus.PENDING,
+        SessionStatus.STARTING,
+        SessionStatus.RECORDING,
+        SessionStatus.STOPPING,
+    ) || (status == SessionStatus.FAILED && recordActionAt != null && stoppedVerifiedAt == null)
 
 private class FakeBackstop(
     private val order: MutableList<String>,

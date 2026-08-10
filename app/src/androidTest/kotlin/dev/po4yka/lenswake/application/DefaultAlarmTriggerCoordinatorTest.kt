@@ -13,6 +13,7 @@ import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.ExecutionApplyResult
 import dev.po4yka.lenswake.core.ExecutionChange
 import dev.po4yka.lenswake.core.ExecutionRepository
+import dev.po4yka.lenswake.core.ExecutionReservationResult
 import dev.po4yka.lenswake.core.ExecutionReport
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.EnvironmentCapabilityStatus
@@ -163,6 +164,28 @@ class DefaultAlarmTriggerCoordinatorTest {
     }
 
     @Test
+    fun rehearsalCameraOwnerTerminallyRejectsScheduledStartBeforeSnapshotOrEngine() = runBlocking {
+        val executions = FakeExecutionRepository()
+        val owner = recordingSession().copy(
+            id = SessionId("rehearsal-owner"),
+            executionKey = "rehearsal/owner",
+            kind = SessionKind.REHEARSAL,
+            scheduleId = null,
+        )
+        executions.seed(owner)
+        val engine = FakeAutomationEngine(executions)
+        val collector = FakeEnvironmentSnapshotCollector()
+
+        val result = coordinator(executions, engine, collector = collector)
+            .handle(startTrigger(schedule.updatedAt))
+
+        val rejected = result as AlarmHandlingResult.TerminalRejected
+        assertTrue(rejected.reason.contains(owner.id.value))
+        assertTrue(engine.startIds.isEmpty())
+        assertEquals(0, collector.calls)
+    }
+
+    @Test
     fun uncertainRecordingStartIsRetryableForInspectOnlyReconciliation() = runBlocking {
         val executions = FakeExecutionRepository()
         val engine = FakeAutomationEngine(executions) { session ->
@@ -304,9 +327,16 @@ private class FakeExecutionRepository : ExecutionRepository, EnvironmentSnapshot
     override suspend fun findActiveForSchedule(scheduleId: ScheduleId): ExecutionSession? =
         sessions.values.firstOrNull { it.scheduleId == scheduleId }
 
-    override suspend fun create(session: ExecutionSession) {
-        sessions.putIfAbsent(session.id, session)
+    override suspend fun reservePixelCamera(session: ExecutionSession): ExecutionReservationResult {
+        sessions.values.firstOrNull {
+            it.id == session.id && it.executionKey == session.executionKey
+        }?.let { return ExecutionReservationResult.Reserved(it, newlyCreated = false) }
+        sessions.values.firstOrNull(ExecutionSession::ownsPixelCamera)?.let {
+            return ExecutionReservationResult.CameraBusy(it)
+        }
+        sessions[session.id] = session
         observed.value = sessions.values.toList()
+        return ExecutionReservationResult.Reserved(session, newlyCreated = true)
     }
 
     override suspend fun apply(
@@ -361,6 +391,14 @@ private class FakeExecutionRepository : ExecutionRepository, EnvironmentSnapshot
         )
     }
 }
+
+private fun ExecutionSession.ownsPixelCamera(): Boolean =
+    status in setOf(
+        SessionStatus.PENDING,
+        SessionStatus.STARTING,
+        SessionStatus.RECORDING,
+        SessionStatus.STOPPING,
+    ) || (status == SessionStatus.FAILED && recordActionAt != null && stoppedVerifiedAt == null)
 
 private class FakeAutomationEngine(
     private val executions: FakeExecutionRepository,

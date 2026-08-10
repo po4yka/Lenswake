@@ -21,6 +21,7 @@ import dev.po4yka.lenswake.core.ExecutionApplyResult
 import dev.po4yka.lenswake.core.ExecutionChange
 import dev.po4yka.lenswake.core.ExecutionReport
 import dev.po4yka.lenswake.core.ExecutionRepository
+import dev.po4yka.lenswake.core.ExecutionReservationResult
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.LenswakeClock
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
@@ -124,15 +125,6 @@ class DefaultRehearsalCoordinator(
     }
 
     private suspend fun prepareAndStart(request: RehearsalRequest): StartPreparation {
-        val active = persistence("load active rehearsals") {
-            executionRepository.findActiveRehearsals(1)
-        }.getOrElse { failure ->
-            return StartPreparation.Result(
-                rejected(RehearsalResultCode.SESSION_PERSISTENCE_FAILED, failure.message ?: "Read failed"),
-            )
-        }.firstOrNull()
-        if (active != null) return StartPreparation.Result(RehearsalResult.Busy(active.id))
-
         val profile = persistence("load profile") { profileRepository.get(request.profileId) }
             .getOrElse { failure ->
                 return StartPreparation.Result(
@@ -176,9 +168,8 @@ class DefaultRehearsalCoordinator(
             createdAt = createdAt,
             updatedAt = createdAt,
         )
-        val created = persistence("create rehearsal session") {
-            executionRepository.create(session)
-            session
+        val reservation = persistence("reserve Pixel Camera for rehearsal") {
+            executionRepository.reservePixelCamera(session)
         }.getOrElse { failure ->
             return StartPreparation.Result(
                 rejected(
@@ -186,6 +177,12 @@ class DefaultRehearsalCoordinator(
                     failure.message ?: "Session create failed",
                     sessionId,
                 ),
+            )
+        }
+        val created = when (reservation) {
+            is ExecutionReservationResult.Reserved -> reservation.session
+            is ExecutionReservationResult.CameraBusy -> return StartPreparation.Result(
+                RehearsalResult.Busy(reservation.owner.id),
             )
         }
 

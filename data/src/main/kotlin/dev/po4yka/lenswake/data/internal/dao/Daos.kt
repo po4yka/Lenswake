@@ -50,6 +50,17 @@ internal sealed interface ExecutionCasResult {
     data class Conflict(val actualRevision: Long?) : ExecutionCasResult
 }
 
+internal sealed interface ExecutionReservationEntityResult {
+    data class Reserved(
+        val session: ExecutionSessionEntity,
+        val newlyCreated: Boolean,
+    ) : ExecutionReservationEntityResult
+
+    data class CameraBusy(
+        val owner: ExecutionSessionEntity,
+    ) : ExecutionReservationEntityResult
+}
+
 @Dao
 internal interface ExecutionDao {
     @Query("SELECT * FROM execution_sessions ORDER BY created_at_epoch_ms DESC, id DESC")
@@ -66,6 +77,21 @@ internal interface ExecutionDao {
 
     @Query("SELECT * FROM execution_sessions WHERE execution_key = :executionKey")
     suspend fun getByExecutionKey(executionKey: String): ExecutionSessionEntity?
+
+    @Query(
+        """
+        SELECT * FROM execution_sessions
+        WHERE status IN ('PENDING', 'STARTING', 'RECORDING', 'STOPPING')
+           OR (
+             status = 'FAILED'
+             AND record_action_at_epoch_ms IS NOT NULL
+             AND stopped_verified_at_epoch_ms IS NULL
+           )
+        ORDER BY created_at_epoch_ms, id
+        LIMIT 1
+        """,
+    )
+    suspend fun findPixelCameraOwner(): ExecutionSessionEntity?
 
     @Query(
         """
@@ -126,15 +152,29 @@ internal interface ExecutionDao {
     suspend fun nextEventSequence(sessionId: String): Long
 
     @Transaction
-    suspend fun createIdempotently(session: ExecutionSessionEntity) {
-        if (insertIgnoringConflict(session) != -1L) return
+    suspend fun reservePixelCamera(
+        session: ExecutionSessionEntity,
+    ): ExecutionReservationEntityResult {
+        val existingById = get(session.id)
+        val existingByKey = getByExecutionKey(session.executionKey)
+        if (existingById != null || existingByKey != null) {
+            check(existingById?.executionKey == session.executionKey && existingByKey?.id == session.id) {
+                "Execution session conflicts with an existing id or execution key"
+            }
+            return ExecutionReservationEntityResult.Reserved(
+                session = checkNotNull(existingById),
+                newlyCreated = false,
+            )
+        }
 
-        val existing = getByExecutionKey(session.executionKey)
-        if (existing == session) return
+        findPixelCameraOwner()?.let { owner ->
+            return ExecutionReservationEntityResult.CameraBusy(owner)
+        }
 
-        throw IllegalStateException(
-            "Execution session conflicts with an existing id or execution key",
-        )
+        check(insertIgnoringConflict(session) != -1L) {
+            "Execution reservation conflicted after the transactional ownership check"
+        }
+        return ExecutionReservationEntityResult.Reserved(session, newlyCreated = true)
     }
 
     @Transaction

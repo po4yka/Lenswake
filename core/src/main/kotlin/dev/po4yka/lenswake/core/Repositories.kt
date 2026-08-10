@@ -23,6 +23,17 @@ interface AutomationProfileRepository {
     suspend fun delete(id: ProfileId)
 }
 
+sealed interface ExecutionReservationResult {
+    data class Reserved(
+        val session: ExecutionSession,
+        val newlyCreated: Boolean,
+    ) : ExecutionReservationResult
+
+    data class CameraBusy(
+        val owner: ExecutionSession,
+    ) : ExecutionReservationResult
+}
+
 /**
  * Persistence boundary for recoverable automation execution.
  *
@@ -40,7 +51,14 @@ interface ExecutionRepository {
 
     suspend fun findActiveForSchedule(scheduleId: ScheduleId): ExecutionSession?
 
-    suspend fun create(session: ExecutionSession)
+    /**
+     * Atomically reserves global Pixel Camera ownership for [session].
+     *
+     * Implementations must return the existing matching execution idempotently, insert [session]
+     * only when no execution owns Pixel Camera, or report the current owner. The ownership check
+     * and insert must occur in one transaction.
+     */
+    suspend fun reservePixelCamera(session: ExecutionSession): ExecutionReservationResult
 
     suspend fun apply(
         change: ExecutionChange,

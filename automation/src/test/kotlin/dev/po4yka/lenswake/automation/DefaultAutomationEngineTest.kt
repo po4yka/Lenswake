@@ -11,6 +11,7 @@ import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.ExecutionApplyResult
 import dev.po4yka.lenswake.core.ExecutionChange
 import dev.po4yka.lenswake.core.ExecutionRepository
+import dev.po4yka.lenswake.core.ExecutionReservationResult
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.InteractionMethod
 import dev.po4yka.lenswake.core.LensSelection
@@ -1321,9 +1322,10 @@ class DefaultAutomationEngineTest {
         override suspend fun findActiveForSchedule(scheduleId: ScheduleId): ExecutionSession? =
             execution.value?.takeIf { it.scheduleId == scheduleId }
 
-        override suspend fun create(session: ExecutionSession) {
+        override suspend fun reservePixelCamera(session: ExecutionSession): ExecutionReservationResult {
             execution.value = session
             allExecutions.value = listOf(session)
+            return ExecutionReservationResult.Reserved(session, newlyCreated = true)
         }
 
         override suspend fun apply(

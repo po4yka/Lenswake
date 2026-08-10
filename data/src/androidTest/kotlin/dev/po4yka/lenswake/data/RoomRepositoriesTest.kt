@@ -16,6 +16,7 @@ import dev.po4yka.lenswake.core.EnvironmentSnapshotCaptureResult
 import dev.po4yka.lenswake.core.EnvironmentSnapshotId
 import dev.po4yka.lenswake.core.ExecutionApplyResult
 import dev.po4yka.lenswake.core.ExecutionChange
+import dev.po4yka.lenswake.core.ExecutionReservationResult
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.GestureProfile
 import dev.po4yka.lenswake.core.LensSelection
@@ -36,8 +37,13 @@ import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.core.UiSelector
 import dev.po4yka.lenswake.core.UiSelectorSet
 import dev.po4yka.lenswake.data.internal.mapping.JsonColumnCodec
+import dev.po4yka.lenswake.data.internal.mapping.toEntity
 import java.time.Instant
 import java.time.ZoneId
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -137,7 +143,10 @@ class RoomRepositoriesTest {
         val session = session(schedule, profile.id)
         profiles.save(profile)
         schedules.save(schedule)
-        executions.create(session)
+        assertEquals(
+            ExecutionReservationResult.Reserved(session, newlyCreated = true),
+            executions.reservePixelCamera(session),
+        )
 
         val restrictionObserved = runCatching { profiles.delete(profile.id) }.isFailure
         assertTrue("A profile referenced by a schedule must be RESTRICTed", restrictionObserved)
@@ -170,8 +179,14 @@ class RoomRepositoriesTest {
         val session = session(schedule, profile.id)
         profiles.save(profile)
         schedules.save(schedule)
-        executions.create(session)
-        executions.create(session)
+        assertEquals(
+            ExecutionReservationResult.Reserved(session, newlyCreated = true),
+            executions.reservePixelCamera(session),
+        )
+        assertEquals(
+            ExecutionReservationResult.Reserved(session, newlyCreated = false),
+            executions.reservePixelCamera(session),
+        )
 
         val rejected = session.copy(
             status = SessionStatus.RECORDING,
@@ -197,7 +212,7 @@ class RoomRepositoriesTest {
         val session = session(schedule, profile.id)
         profiles.save(profile)
         schedules.save(schedule)
-        executions.create(session)
+        executions.reservePixelCamera(session)
 
         val revisionOne = session.copy(
             status = SessionStatus.STARTING,
@@ -232,7 +247,7 @@ class RoomRepositoriesTest {
         val snapshot = environmentSnapshot(session.id)
         profiles.save(profile)
         schedules.save(schedule)
-        executions.create(session)
+        executions.reservePixelCamera(session)
 
         val linkedSession = session.copy(
             environmentSnapshotId = snapshot.id,
@@ -275,7 +290,7 @@ class RoomRepositoriesTest {
         val original = environmentSnapshot(session.id)
         profiles.save(profile)
         schedules.save(schedule)
-        executions.create(session)
+        executions.reservePixelCamera(session)
         executions.capture(original)
         val linkedSession = session.copy(
             environmentSnapshotId = original.id,
@@ -339,7 +354,7 @@ class RoomRepositoriesTest {
             failedWithoutOwnership,
             failedAlreadyStopped,
             completed,
-        ).forEach { executions.create(it) }
+        ).forEach { insertExecutionFixture(it) }
 
         assertEquals(
             listOf(stopping.id, failedWithOwnership.id),
@@ -384,13 +399,95 @@ class RoomRepositoriesTest {
             stoppedVerifiedAt = Instant.ofEpochMilli(38_000),
         )
         listOf(olderSuccess, latestSuccess, missingStopProof, otherProfile)
-            .forEach { executions.create(it) }
+            .forEach { insertExecutionFixture(it) }
 
         assertEquals(
             latestSuccess,
             executions.latestSuccessfulRehearsal(profileId),
         )
         assertNull(executions.latestSuccessfulRehearsal(ProfileId("absent-profile")))
+    }
+
+    @Test
+    fun pixelCameraReservationIsGlobalAndReleasesOnlyAfterOwnershipEnds() = runBlocking {
+        val scheduled = rehearsalSession(
+            id = "scheduled-owner",
+            status = SessionStatus.PENDING,
+            expectedStopAtEpochMs = 20_000,
+            kind = SessionKind.SCHEDULED,
+        )
+        val rehearsal = rehearsalSession(
+            id = "rehearsal-contender",
+            status = SessionStatus.PENDING,
+            expectedStopAtEpochMs = 30_000,
+        )
+
+        assertEquals(
+            ExecutionReservationResult.Reserved(scheduled, newlyCreated = true),
+            executions.reservePixelCamera(scheduled),
+        )
+        assertEquals(
+            ExecutionReservationResult.Reserved(scheduled, newlyCreated = false),
+            executions.reservePixelCamera(scheduled),
+        )
+        assertEquals(
+            ExecutionReservationResult.CameraBusy(scheduled),
+            executions.reservePixelCamera(rehearsal),
+        )
+
+        val failedWithOutstandingOwnership = scheduled.copy(
+            status = SessionStatus.FAILED,
+            recordActionAt = scheduled.updatedAt.plusMillis(100),
+            revision = 1,
+            updatedAt = scheduled.updatedAt.plusSeconds(1),
+        )
+        executions.apply(
+            ExecutionChange(scheduled.revision, failedWithOutstandingOwnership),
+            event(scheduled.id, "automation.owner.failed_outstanding"),
+        )
+        assertEquals(
+            ExecutionReservationResult.CameraBusy(failedWithOutstandingOwnership),
+            executions.reservePixelCamera(rehearsal),
+        )
+
+        val released = failedWithOutstandingOwnership.copy(
+            stoppedVerifiedAt = failedWithOutstandingOwnership.updatedAt.plusMillis(100),
+            revision = 2,
+            updatedAt = failedWithOutstandingOwnership.updatedAt.plusSeconds(1),
+        )
+        executions.apply(
+            ExecutionChange(failedWithOutstandingOwnership.revision, released),
+            event(scheduled.id, "automation.owner.stop_verified"),
+        )
+        assertEquals(
+            ExecutionReservationResult.Reserved(rehearsal, newlyCreated = true),
+            executions.reservePixelCamera(rehearsal),
+        )
+    }
+
+    @Test
+    fun concurrentReservationsCreateExactlyOneGlobalOwner() = runBlocking {
+        val contenders = (1..12).map { index ->
+            rehearsalSession(
+                id = "contender-$index",
+                status = SessionStatus.PENDING,
+                expectedStopAtEpochMs = 20_000L + index,
+            )
+        }
+
+        val results = coroutineScope {
+            contenders.map { contender ->
+                async(Dispatchers.IO) { executions.reservePixelCamera(contender) }
+            }.awaitAll()
+        }
+        val reservations = results.filterIsInstance<ExecutionReservationResult.Reserved>()
+        val busy = results.filterIsInstance<ExecutionReservationResult.CameraBusy>()
+
+        assertEquals(1, reservations.count { it.newlyCreated })
+        assertEquals(11, busy.size)
+        val owner = reservations.single().session
+        assertTrue(busy.all { it.owner.id == owner.id })
+        assertEquals(listOf(owner), executions.observeExecutions().first())
     }
 
     private fun profile(): PixelCameraProfile = PixelCameraProfile(
@@ -552,11 +649,12 @@ class RoomRepositoriesTest {
         recordActionAt: Instant? = null,
         recordingVerifiedAt: Instant? = null,
         stoppedVerifiedAt: Instant? = null,
+        kind: SessionKind = SessionKind.REHEARSAL,
     ): ExecutionSession = ExecutionSession(
         id = SessionId(id),
         executionKey = "rehearsal/$id",
-        kind = SessionKind.REHEARSAL,
-        scheduleId = null,
+        kind = kind,
+        scheduleId = if (kind == SessionKind.SCHEDULED) ScheduleId("schedule-$id") else null,
         scheduleName = "Rehearsal",
         profileId = profileId,
         capture = CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120),
@@ -569,4 +667,8 @@ class RoomRepositoriesTest {
         createdAt = Instant.ofEpochMilli(1_000),
         updatedAt = stoppedVerifiedAt ?: Instant.ofEpochMilli(2_000),
     )
+
+    private suspend fun insertExecutionFixture(session: ExecutionSession) {
+        check(database.executionDao().insertIgnoringConflict(session.toEntity()) != -1L)
+    }
 }
