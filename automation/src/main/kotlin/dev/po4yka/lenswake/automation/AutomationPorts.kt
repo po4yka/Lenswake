@@ -29,6 +29,11 @@ sealed interface PixelCameraState {
         val lens: LensSelection? = null,
     ) : PixelCameraState
 
+    data class TimeLapseSpeedPicker(
+        val recording: Boolean,
+        val lens: LensSelection? = null,
+    ) : PixelCameraState
+
     data object RecordingUnknownMode : PixelCameraState
 }
 
@@ -82,6 +87,8 @@ interface PixelCameraPort {
     suspend fun selectVideo(profileUse: ProfileUse): ActionDispatch
 
     suspend fun selectTimeLapse(profileUse: ProfileUse): ActionDispatch
+
+    suspend fun openTimeLapseSpeedControl(profileUse: ProfileUse): ActionDispatch
 
     suspend fun selectTimeLapseSpeed(
         speed: TimeLapseSpeed,

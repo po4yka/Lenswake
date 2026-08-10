@@ -113,6 +113,9 @@ class PixelCameraAccessibilityPort internal constructor(
     override suspend fun selectTimeLapse(profileUse: ProfileUse): ActionDispatch =
         dispatch(AutomationAction.SELECT_TIME_LAPSE, profileUse)
 
+    override suspend fun openTimeLapseSpeedControl(profileUse: ProfileUse): ActionDispatch =
+        dispatch(AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL, profileUse)
+
     override suspend fun selectTimeLapseSpeed(
         speed: TimeLapseSpeed,
         profileUse: ProfileUse,
@@ -222,6 +225,7 @@ class PixelCameraAccessibilityPort internal constructor(
             PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
             PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
             PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
+            PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN,
             PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
             PixelCameraStateSignal.RECORDING_ACTIVE,
             PixelCameraStateSignal.NOT_RECORDING,
@@ -262,6 +266,19 @@ class PixelCameraAccessibilityPort internal constructor(
             return unavailableConflictingState("recording", recordingSignals)
         }
         val recording = PixelCameraStateSignal.RECORDING_ACTIVE in recordingSignals
+
+        if (PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN in active) {
+            return PortResult.Observed(
+                PixelCameraState.TimeLapseSpeedPicker(
+                    recording = recording,
+                    lens = if (PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE in active) {
+                        LensSelection.REAR_MAIN
+                    } else {
+                        null
+                    },
+                ),
+            )
+        }
 
         val modeSignals = active.intersect(
             setOf(
@@ -363,6 +380,7 @@ class PixelCameraAccessibilityPort internal constructor(
         code = when (action) {
             AutomationAction.SELECT_VIDEO -> AutomationFailureCode.VIDEO_MODE_NOT_FOUND
             AutomationAction.SELECT_TIME_LAPSE -> AutomationFailureCode.TIME_LAPSE_MODE_NOT_FOUND
+            AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL -> AutomationFailureCode.TIME_LAPSE_SPEED_NOT_FOUND
             AutomationAction.SELECT_TIME_LAPSE_SPEED -> AutomationFailureCode.TIME_LAPSE_SPEED_NOT_FOUND
             AutomationAction.SELECT_REAR_MAIN_LENS -> AutomationFailureCode.LENS_NOT_FOUND
             AutomationAction.START_RECORDING -> AutomationFailureCode.RECORD_CONTROL_NOT_FOUND

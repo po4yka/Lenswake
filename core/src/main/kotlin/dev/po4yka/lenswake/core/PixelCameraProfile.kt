@@ -3,7 +3,7 @@ package dev.po4yka.lenswake.core
 import java.time.Instant
 
 object PixelCameraSelectorSchema {
-    const val CURRENT_VERSION: Int = 2
+    const val CURRENT_VERSION: Int = 3
 }
 
 data class PixelCameraEnvironment(
@@ -117,6 +117,7 @@ data class PixelCameraProfile(
 enum class AutomationAction {
     SELECT_VIDEO,
     SELECT_TIME_LAPSE,
+    OPEN_TIME_LAPSE_SPEED_CONTROL,
     SELECT_TIME_LAPSE_SPEED,
     SELECT_REAR_MAIN_LENS,
     START_RECORDING,
@@ -132,6 +133,7 @@ enum class PixelCameraStateSignal {
     TIME_LAPSE_SPEED_X10_ACTIVE,
     TIME_LAPSE_SPEED_X30_ACTIVE,
     TIME_LAPSE_SPEED_X120_ACTIVE,
+    TIME_LAPSE_SPEED_PICKER_OPEN,
     REAR_MAIN_LENS_ACTIVE,
     RECORDING_ACTIVE,
     NOT_RECORDING,

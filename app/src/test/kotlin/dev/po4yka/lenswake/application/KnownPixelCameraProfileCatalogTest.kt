@@ -38,7 +38,7 @@ class KnownPixelCameraProfileCatalogTest {
     @Test
     fun `candidate identity and environment are stable and fail closed`() {
         assertEquals(
-            "google-pixel-8-pro-sdk37-cp2a-260705-006-camera-69481630-1008x2244-en-us-v2",
+            "google-pixel-8-pro-sdk37-cp2a-260705-006-camera-69481630-1008x2244-en-us-v3",
             profile.id.value,
         )
         assertEquals("Google", profile.environment.deviceManufacturer)
@@ -65,6 +65,7 @@ class KnownPixelCameraProfileCatalogTest {
             setOf(
                 AutomationAction.SELECT_VIDEO,
                 AutomationAction.SELECT_TIME_LAPSE,
+                AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL,
                 AutomationAction.SELECT_REAR_MAIN_LENS,
                 AutomationAction.START_RECORDING,
                 AutomationAction.STOP_RECORDING,
@@ -78,6 +79,7 @@ class KnownPixelCameraProfileCatalogTest {
                 PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
                 PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
                 PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE,
+                PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN,
                 PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
                 PixelCameraStateSignal.RECORDING_ACTIVE,
                 PixelCameraStateSignal.NOT_RECORDING,
@@ -103,6 +105,13 @@ class KnownPixelCameraProfileCatalogTest {
             setOf("Switch to Time Lapse Mode", "Time Lapse"),
             timeLapse.selectors.mapTo(linkedSetOf()) { it.contentDescription },
         )
+
+        val speedControl = profile.targets
+            .getValue(AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL)
+            .selectors
+            .single()
+        assertEquals("Time Lapse control", speedControl.contentDescription)
+        assertTrue(speedControl.requiresClickable)
 
         val speed = profile.speedTargets.getValue(TimeLapseSpeed.X120).selectors.single()
         assertEquals("Time Lapse 120 times speed", speed.contentDescription)
@@ -156,6 +165,14 @@ class KnownPixelCameraProfileCatalogTest {
         assertEquals(40, speedSignals.minimumScore)
         assertTrue(speedSignals.selectors.any { it.expectedSelected == true })
         assertTrue(speedSignals.selectors.any { it.expectedRegion != null })
+
+        val pickerOpen = profile.stateSignals
+            .getValue(PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN)
+            .selectors
+            .single()
+        assertEquals("Time Lapse 120 times speed", pickerOpen.contentDescription)
+        assertNull(pickerOpen.expectedSelected)
+        assertFalse(pickerOpen.requiresClickable)
     }
 
     @Test

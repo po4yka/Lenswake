@@ -23,7 +23,7 @@ object KnownPixelCameraProfileCatalog {
 
     val pixel8ProAndroid17Camera69481630: PixelCameraProfile = PixelCameraProfile(
         id = ProfileId(
-            "google-pixel-8-pro-sdk37-cp2a-260705-006-camera-69481630-1008x2244-en-us-v2",
+            "google-pixel-8-pro-sdk37-cp2a-260705-006-camera-69481630-1008x2244-en-us-v3",
         ),
         environment = PixelCameraEnvironment(
             deviceManufacturer = "Google",
@@ -60,6 +60,10 @@ object KnownPixelCameraProfileCatalog {
                     ),
                 ),
                 minimumScore = 190,
+            ),
+            AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL to actionSelector(
+                contentDescription = "Time Lapse control",
+                minimumScore = 60,
             ),
             AutomationAction.SELECT_REAR_MAIN_LENS to actionSelector(
                 resourceId = "zoom_toggle_1×",
@@ -125,6 +129,10 @@ object KnownPixelCameraProfileCatalog {
                     ),
                 ),
                 minimumScore = 40,
+            ),
+            PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN to stateSelector(
+                contentDescription = "Time Lapse 120 times speed",
+                minimumScore = 60,
             ),
             PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE to stateSelector(
                 expectedChecked = true,

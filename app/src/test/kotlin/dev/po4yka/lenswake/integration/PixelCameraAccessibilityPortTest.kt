@@ -104,6 +104,67 @@ class PixelCameraAccessibilityPortTest {
     }
 
     @Test
+    fun `speed control opener and speed option are separate semantic dispatches`() = runTest {
+        val gateway = FakeAccessibilityGateway(
+            nodes = listOf(node(SPEED_CONTROL_ACTION_RESOURCE), node(SPEED_X120_ACTION_RESOURCE)),
+            dispatchResult = AccessibilityDispatchResult.SemanticActionDispatched,
+        )
+        val port = port(gateway = gateway)
+
+        assertInstanceOf(ActionDispatch.Dispatched::class.java, port.openTimeLapseSpeedControl(profileUse()))
+        assertEquals(listOf("node-$SPEED_CONTROL_ACTION_RESOURCE"), gateway.clickedNodePaths)
+
+        assertInstanceOf(
+            ActionDispatch.Dispatched::class.java,
+            port.selectTimeLapseSpeed(TimeLapseSpeed.X120, profileUse()),
+        )
+        assertEquals(
+            listOf("node-$SPEED_CONTROL_ACTION_RESOURCE", "node-$SPEED_X120_ACTION_RESOURCE"),
+            gateway.clickedNodePaths,
+        )
+    }
+
+    @Test
+    fun `visible speed option is observable picker-open state without claiming it selected`() = runTest {
+        val gateway = FakeAccessibilityGateway(
+            activeSignals(
+                PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN,
+                PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
+                PixelCameraStateSignal.NOT_RECORDING,
+            ),
+        )
+
+        val result = port(gateway = gateway).inspect(profileUse())
+
+        val observed = assertInstanceOf(PortResult.Observed::class.java, result)
+        assertEquals(
+            PixelCameraState.TimeLapseSpeedPicker(
+                recording = false,
+                lens = LensSelection.REAR_MAIN,
+            ),
+            observed.value,
+        )
+    }
+
+    @Test
+    fun `inspection fails closed when profile lacks picker-open observation signal`() = runTest {
+        val withoutPickerSignal = profile().copy(
+            stateSignals = profile().stateSignals - PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN,
+        )
+
+        val result = port(gateway = FakeAccessibilityGateway(activeSignals())).inspect(
+            profileUse(withoutPickerSignal),
+        )
+
+        val unavailable = assertInstanceOf(PortResult.Unavailable::class.java, result)
+        assertEquals(AutomationFailureCode.CAMERA_STATE_UNKNOWN, unavailable.failure.code)
+        assertEquals(
+            PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN.name,
+            unavailable.failure.context["missingSignals"],
+        )
+    }
+
+    @Test
     fun `computed probable compatibility requires rehearsal`() = runTest {
         val gateway = FakeAccessibilityGateway(activeSignals())
         val current = environment().copy(androidBuildFingerprint = "different-build")
@@ -201,6 +262,7 @@ class PixelCameraAccessibilityPortTest {
         val wrongPackage = profile().copy(
             environment = environment().copy(cameraPackage = "example.camera"),
             targets = emptyMap(),
+            speedTargets = emptyMap(),
             stateSignals = emptyMap(),
         )
         val port = PixelCameraAccessibilityPort(
@@ -242,6 +304,7 @@ class PixelCameraAccessibilityPortTest {
             PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
             PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
             PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE,
+            PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN,
             PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
             PixelCameraStateSignal.RECORDING_ACTIVE,
             PixelCameraStateSignal.NOT_RECORDING,
@@ -252,7 +315,9 @@ class PixelCameraAccessibilityPortTest {
             selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
             targets = mapOf(
                 AutomationAction.SELECT_REAR_MAIN_LENS to selectorSet(LENS_ACTION_RESOURCE),
+                AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL to selectorSet(SPEED_CONTROL_ACTION_RESOURCE),
             ),
+            speedTargets = mapOf(TimeLapseSpeed.X120 to selectorSet(SPEED_X120_ACTION_RESOURCE)),
             stateSignals = requiredSignals.associateWith { selectorSet(it.name) },
             compatibility = ProfileCompatibility.VERIFIED,
             verifiedAt = Instant.parse("2026-08-09T10:00:00Z"),
@@ -308,6 +373,7 @@ class PixelCameraAccessibilityPortTest {
             private set
         var clickedNodePath: String? = null
             private set
+        val clickedNodePaths = mutableListOf<String>()
 
         override suspend fun snapshot(): AccessibilitySnapshotResult {
             snapshotCalls += 1
@@ -316,6 +382,7 @@ class PixelCameraAccessibilityPortTest {
 
         override suspend fun dispatchClick(nodePath: String): AccessibilityDispatchResult {
             clickedNodePath = nodePath
+            clickedNodePaths += nodePath
             return dispatchResult
         }
     }
@@ -323,5 +390,7 @@ class PixelCameraAccessibilityPortTest {
     private companion object {
         const val CAMERA_PACKAGE = "com.google.android.GoogleCamera"
         const val LENS_ACTION_RESOURCE = "profile.lens.rear-main"
+        const val SPEED_CONTROL_ACTION_RESOURCE = "profile.speed.open"
+        const val SPEED_X120_ACTION_RESOURCE = "profile.speed.x120"
     }
 }

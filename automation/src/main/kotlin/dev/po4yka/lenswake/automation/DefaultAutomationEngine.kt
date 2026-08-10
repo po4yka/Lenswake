@@ -367,19 +367,19 @@ class DefaultAutomationEngine(
 
                     state.speed != capture.speed -> dispatchAndVerify(
                         context = context,
-                        operation = AutomationOperation.SELECT_TIME_LAPSE_SPEED,
-                        actionState = AutomationStateName.SELECTING_SPEED,
-                        verificationState = AutomationStateName.VERIFYING_SPEED,
+                        operation = AutomationOperation.OPEN_TIME_LAPSE_SPEED_CONTROL,
+                        actionState = AutomationStateName.OPENING_TIME_LAPSE_SPEED_CONTROL,
+                        verificationState = AutomationStateName.VERIFYING_TIME_LAPSE_SPEED_CONTROL,
                         dispatchFailure = failure(
                             AutomationFailureCode.TIME_LAPSE_SPEED_NOT_FOUND,
-                            "Pixel Camera could not select the requested Time Lapse speed",
+                            "Pixel Camera could not open the Time Lapse speed control",
                         ),
                         verificationFailure = failure(
                             AutomationFailureCode.TIME_LAPSE_SPEED_NOT_VERIFIED,
-                            "Pixel Camera did not confirm the requested Time Lapse speed",
+                            "Pixel Camera did not expose the Time Lapse speed picker",
                         ),
-                        action = { pixelCamera.selectTimeLapseSpeed(capture.speed, context.profileUse) },
-                    ) { it is PixelCameraState.TimeLapse && !it.recording && it.speed == capture.speed }
+                        action = { pixelCamera.openTimeLapseSpeedControl(context.profileUse) },
+                    ) { it is PixelCameraState.TimeLapseSpeedPicker && !it.recording }
 
                     else -> {
                         if (context.current.hasUncertainRecordDispatch()) {
@@ -406,6 +406,33 @@ class DefaultAutomationEngine(
                         }
                         return markRecordingVerified(context)
                     }
+                }
+
+                is PixelCameraState.TimeLapseSpeedPicker -> {
+                    if (state.recording) {
+                        fail(
+                            context,
+                            failure(
+                                AutomationFailureCode.CAMERA_STATE_UNKNOWN,
+                                "Pixel Camera exposed the Time Lapse speed picker while recording",
+                            ),
+                        )
+                    }
+                    dispatchAndVerify(
+                        context = context,
+                        operation = AutomationOperation.SELECT_TIME_LAPSE_SPEED,
+                        actionState = AutomationStateName.SELECTING_SPEED,
+                        verificationState = AutomationStateName.VERIFYING_SPEED,
+                        dispatchFailure = failure(
+                            AutomationFailureCode.TIME_LAPSE_SPEED_NOT_FOUND,
+                            "Pixel Camera could not select the requested Time Lapse speed",
+                        ),
+                        verificationFailure = failure(
+                            AutomationFailureCode.TIME_LAPSE_SPEED_NOT_VERIFIED,
+                            "Pixel Camera did not confirm the requested Time Lapse speed",
+                        ),
+                        action = { pixelCamera.selectTimeLapseSpeed(capture.speed, context.profileUse) },
+                    ) { it is PixelCameraState.TimeLapse && !it.recording && it.speed == capture.speed }
                 }
 
                 PixelCameraState.RecordingUnknownMode -> fail(
@@ -1103,6 +1130,7 @@ class DefaultAutomationEngine(
         PixelCameraState.Photo -> true
         is PixelCameraState.Video -> !recording
         is PixelCameraState.TimeLapse -> !recording
+        is PixelCameraState.TimeLapseSpeedPicker -> !recording
         PixelCameraState.NotRunning,
         PixelCameraState.Unknown,
         PixelCameraState.RecordingUnknownMode,

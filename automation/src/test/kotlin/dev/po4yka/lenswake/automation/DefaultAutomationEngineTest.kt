@@ -64,6 +64,7 @@ class DefaultAutomationEngineTest {
                 "selectVideo",
                 "selectTimeLapse",
                 "selectRearMainLens",
+                "openTimeLapseSpeedControl",
                 "selectSpeed:X120",
                 "startRecording",
             ),
@@ -317,6 +318,42 @@ class DefaultAutomationEngineTest {
         assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
         assertEquals(listOf("launch", "selectRearMainLens", "startRecording"), camera.calls)
         assertTrue(camera.lensWasRearMainWhenRecordStarted)
+    }
+
+    @Test
+    fun `start verifies speed picker before selecting requested speed`() = runTest {
+        val session = session(status = SessionStatus.PENDING)
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(
+            state = PixelCameraState.TimeLapse(
+                speed = TimeLapseSpeed.X30,
+                recording = false,
+                lens = LensSelection.REAR_MAIN,
+            ),
+            confirmSpeedPicker = false,
+        )
+
+        val result = engine(
+            repository,
+            FakeDeviceControl(interactive = true),
+            camera,
+            attempts = 2,
+        ).start(session.id)
+
+        val failed = assertInstanceOf(AutomationRunResult.Failed::class.java, result)
+        assertEquals(AutomationFailureCode.TIME_LAPSE_SPEED_NOT_VERIFIED, failed.failure.code)
+        assertEquals(1, camera.calls.count { it == "openTimeLapseSpeedControl" })
+        assertEquals(0, camera.calls.count { it == "selectSpeed:X120" })
+        assertEquals(0, camera.calls.count { it == "startRecording" })
+        assertTrue(repository.events.any {
+            it.state == AutomationStateName.OPENING_TIME_LAPSE_SPEED_CONTROL &&
+                it.operation == AutomationOperation.OPEN_TIME_LAPSE_SPEED_CONTROL &&
+                it.outcome == AutomationOutcome.DISPATCHED
+        })
+        assertTrue(repository.events.any {
+            it.state == AutomationStateName.VERIFYING_TIME_LAPSE_SPEED_CONTROL &&
+                it.operation == AutomationOperation.OPEN_TIME_LAPSE_SPEED_CONTROL
+        })
     }
 
     @Test
@@ -1120,6 +1157,7 @@ class DefaultAutomationEngineTest {
         private val confirmStart: Boolean = true,
         private val confirmStop: Boolean = true,
         private val confirmLens: Boolean = true,
+        private val confirmSpeedPicker: Boolean = true,
         private val suspendLaunch: Boolean = false,
         private val cancelLaunch: Boolean = false,
         private val suspendStart: Boolean = false,
@@ -1177,14 +1215,31 @@ class DefaultAutomationEngineTest {
             return dispatched()
         }
 
+        override suspend fun openTimeLapseSpeedControl(profileUse: ProfileUse): ActionDispatch {
+            receivedProfileUses += profileUse
+            calls += "openTimeLapseSpeedControl"
+            if (confirmSpeedPicker) {
+                val current = state as PixelCameraState.TimeLapse
+                state = PixelCameraState.TimeLapseSpeedPicker(
+                    recording = current.recording,
+                    lens = current.lens,
+                )
+            }
+            return dispatched()
+        }
+
         override suspend fun selectTimeLapseSpeed(
             speed: TimeLapseSpeed,
             profileUse: ProfileUse,
         ): ActionDispatch {
             receivedProfileUses += profileUse
             calls += "selectSpeed:$speed"
-            val current = state as PixelCameraState.TimeLapse
-            state = current.copy(speed = speed)
+            val current = state as PixelCameraState.TimeLapseSpeedPicker
+            state = PixelCameraState.TimeLapse(
+                speed = speed,
+                recording = current.recording,
+                lens = current.lens,
+            )
             return dispatched()
         }
 

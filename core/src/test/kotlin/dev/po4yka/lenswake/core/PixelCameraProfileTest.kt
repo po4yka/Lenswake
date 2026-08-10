@@ -69,6 +69,19 @@ class PixelCameraProfileTest {
     }
 
     @Test
+    fun `profile from previous selector schema remains incompatible`() {
+        val legacy = PixelCameraProfile(
+            id = ProfileId("legacy-profile"),
+            environment = environment(),
+            selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION - 1,
+            compatibility = ProfileCompatibility.VERIFIED,
+            verifiedAt = Instant.parse("2026-08-09T10:00:00Z"),
+        )
+
+        assertEquals(ProfileCompatibility.INCOMPATIBLE, legacy.compatibilityFor(environment()))
+    }
+
+    @Test
     fun `profile rejects selectors outside its calibrated camera package`() {
         val foreignSelector = UiSelectorSet(
             selectors = listOf(
