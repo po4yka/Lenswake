@@ -42,6 +42,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import dev.po4yka.lenswake.ui.LenswakeUiState
 import dev.po4yka.lenswake.ui.ProfileSummaryUiState
@@ -60,6 +61,7 @@ import dev.po4yka.lenswake.ui.withStopTime
 import dev.po4yka.lenswake.ui.component.HonestEmptyState
 import dev.po4yka.lenswake.ui.component.ReadinessCard
 import dev.po4yka.lenswake.ui.component.ScreenHeader
+import dev.po4yka.lenswake.ui.component.StatusIcon
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -543,12 +545,20 @@ private fun ScheduleCard(
             modifier = Modifier.padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                modifier = Modifier.semantics { heading() },
-                text = schedule.title,
-                style = MaterialTheme.typography.titleLarge,
-            )
-            Text(schedule.status, style = MaterialTheme.typography.labelLarge)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                StatusIcon(schedule.status)
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        modifier = Modifier.semantics { heading() },
+                        text = schedule.title,
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    Text(schedule.status, style = MaterialTheme.typography.labelLarge)
+                }
+            }
             Text(schedule.timing, style = MaterialTheme.typography.bodyMedium)
             Text(
                 text = "Profile: ${schedule.profileId}",
@@ -607,37 +617,63 @@ private fun ScheduleOutcome(
     action: ScheduleActionUiState,
     onDismiss: () -> Unit,
 ) {
-    val failed = action is ScheduleActionUiState.Failed
-    val container = if (failed) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant
+    val statusLabel = when (action) {
+        ScheduleActionUiState.Idle -> "Unknown"
+        is ScheduleActionUiState.Working -> "Working"
+        is ScheduleActionUiState.Succeeded -> "Completed"
+        is ScheduleActionUiState.Failed -> "Failed"
+    }
+    val container = when (action) {
+        ScheduleActionUiState.Idle -> MaterialTheme.colorScheme.surfaceContainerLow
+        is ScheduleActionUiState.Working -> MaterialTheme.colorScheme.secondaryContainer
+        is ScheduleActionUiState.Succeeded -> MaterialTheme.colorScheme.primaryContainer
+        is ScheduleActionUiState.Failed -> MaterialTheme.colorScheme.errorContainer
+    }
+    val content = when (action) {
+        ScheduleActionUiState.Idle -> MaterialTheme.colorScheme.onSurface
+        is ScheduleActionUiState.Working -> MaterialTheme.colorScheme.onSecondaryContainer
+        is ScheduleActionUiState.Succeeded -> MaterialTheme.colorScheme.onPrimaryContainer
+        is ScheduleActionUiState.Failed -> MaterialTheme.colorScheme.onErrorContainer
+    }
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .semantics { liveRegion = LiveRegionMode.Polite },
-        colors = CardDefaults.cardColors(containerColor = container),
+            .semantics {
+                liveRegion = LiveRegionMode.Polite
+                stateDescription = statusLabel
+            },
+        colors = CardDefaults.cardColors(
+            containerColor = container,
+            contentColor = content,
+        ),
     ) {
-        Column(
+        Row(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top,
         ) {
-            val message = when (action) {
-                ScheduleActionUiState.Idle -> ""
-                is ScheduleActionUiState.Working -> action.message
-                is ScheduleActionUiState.Succeeded -> action.message
-                is ScheduleActionUiState.Failed -> action.message
-            }
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            if (action is ScheduleActionUiState.Failed && action.rollbackFailures.isNotEmpty()) {
+            StatusIcon(statusLabel)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val message = when (action) {
+                    ScheduleActionUiState.Idle -> ""
+                    is ScheduleActionUiState.Working -> action.message
+                    is ScheduleActionUiState.Succeeded -> action.message
+                    is ScheduleActionUiState.Failed -> action.message
+                }
                 Text(
-                    text = "Rollback needs attention:\n${action.rollbackFailures.joinToString("\n")}",
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = message,
+                    style = MaterialTheme.typography.bodyLarge,
                 )
-            }
-            if (action !is ScheduleActionUiState.Working) {
-                TextButton(onClick = onDismiss) {
-                    Text("Dismiss")
+                if (action is ScheduleActionUiState.Failed && action.rollbackFailures.isNotEmpty()) {
+                    Text(
+                        text = "Rollback needs attention:\n${action.rollbackFailures.joinToString("\n")}",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                if (action !is ScheduleActionUiState.Working) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Dismiss")
+                    }
                 }
             }
         }

@@ -1,5 +1,7 @@
 package dev.po4yka.lenswake.ui.component
 
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,13 +13,16 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -33,6 +38,38 @@ import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.ui.CapabilityStatus
 import dev.po4yka.lenswake.ui.CapabilityUiState
 import dev.po4yka.lenswake.ui.ReadinessUiState
+
+internal enum class StatusVisualState {
+    ERROR,
+    WARNING,
+    SUCCESS,
+    IN_PROGRESS,
+    NEUTRAL,
+}
+
+internal fun statusVisualState(statusLabel: String): StatusVisualState {
+    val normalizedStatus = statusLabel.lowercase()
+    return when {
+        listOf("blocked", "failed", "error", "incompatible", "unavailable", "cancelled")
+            .any(normalizedStatus::contains) -> StatusVisualState.ERROR
+        listOf("warning", "attention", "needs", "safety", "pending", "degraded", "stale")
+            .any(normalizedStatus::contains) -> StatusVisualState.WARNING
+        listOf("ready", "available", "verified", "completed", "passed", "enabled", "succeeded")
+            .any(normalizedStatus::contains) -> StatusVisualState.SUCCESS
+        listOf("checking", "installing", "running", "working", "in progress")
+            .any(normalizedStatus::contains) -> StatusVisualState.IN_PROGRESS
+        else -> StatusVisualState.NEUTRAL
+    }
+}
+
+private data class StatusVisuals(
+    val state: StatusVisualState,
+    @param:DrawableRes val iconResource: Int,
+    val cardContainerColor: Color,
+    val cardContentColor: Color,
+    val indicatorContainerColor: Color,
+    val indicatorContentColor: Color,
+)
 
 @Composable
 fun ScreenHeader(
@@ -67,16 +104,11 @@ fun ReadinessCard(
 ) {
     val statusLabel = when (readiness) {
         is ReadinessUiState.Blocked -> "Blocked"
-        is ReadinessUiState.Checking -> "Unknown"
+        is ReadinessUiState.Checking -> "Checking"
         is ReadinessUiState.Ready -> "Ready"
         is ReadinessUiState.ReadyWithWarnings -> "Ready with warnings"
     }
-    val containerColor = when (readiness) {
-        is ReadinessUiState.Blocked -> MaterialTheme.colorScheme.errorContainer
-        is ReadinessUiState.Checking -> MaterialTheme.colorScheme.surfaceVariant
-        is ReadinessUiState.Ready -> MaterialTheme.colorScheme.primaryContainer
-        is ReadinessUiState.ReadyWithWarnings -> MaterialTheme.colorScheme.tertiaryContainer
-    }
+    val visuals = statusVisuals(statusLabel)
 
     Card(
         modifier = modifier
@@ -85,7 +117,10 @@ fun ReadinessCard(
                 stateDescription = statusLabel
                 liveRegion = LiveRegionMode.Polite
             },
-        colors = CardDefaults.cardColors(containerColor = containerColor),
+        colors = CardDefaults.cardColors(
+            containerColor = visuals.cardContainerColor,
+            contentColor = visuals.cardContentColor,
+        ),
     ) {
         Column(
             modifier = Modifier.padding(20.dp),
@@ -95,7 +130,7 @@ fun ReadinessCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                StatusIcon(statusLabel)
+                StatusIcon(statusLabel, visuals)
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = readiness.title,
@@ -240,17 +275,22 @@ fun SummaryCard(
     onAction: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    val visuals = statusVisuals(status)
     Card(
         modifier = modifier
             .fillMaxWidth()
             .semantics { stateDescription = status },
+        colors = CardDefaults.cardColors(
+            containerColor = visuals.cardContainerColor,
+            contentColor = visuals.cardContentColor,
+        ),
     ) {
         Row(
             modifier = Modifier.padding(20.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.Top,
         ) {
-            StatusIcon(status)
+            StatusIcon(status, visuals)
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -267,7 +307,7 @@ fun SummaryCard(
                 Text(
                     text = detail,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = visuals.cardContentColor,
                 )
                 if (actionLabel != null && onAction != null) {
                     OutlinedButton(
@@ -283,36 +323,96 @@ fun SummaryCard(
 }
 
 @Composable
-private fun StatusIcon(statusLabel: String) {
-    val normalizedStatus = statusLabel.lowercase()
-    val iconResource = when {
-        "blocked" in normalizedStatus ||
-            "failed" in normalizedStatus ||
-            "incompatible" in normalizedStatus ||
-            "unavailable" in normalizedStatus -> R.drawable.ic_error_24
-        "warning" in normalizedStatus ||
-            "attention" in normalizedStatus ||
-            "needs" in normalizedStatus -> R.drawable.ic_warning_24
-        "ready" in normalizedStatus ||
-            "available" in normalizedStatus ||
-            "verified" in normalizedStatus ||
-            "completed" in normalizedStatus ||
-            "passed" in normalizedStatus -> R.drawable.ic_check_circle_24
-        normalizedStatus == "unknown" -> R.drawable.ic_help_24
-        else -> R.drawable.ic_info_24
-    }
-    Box(
+fun StatusIcon(
+    statusLabel: String,
+    modifier: Modifier = Modifier,
+) {
+    StatusIcon(statusLabel, statusVisuals(statusLabel), modifier)
+}
+
+@Composable
+private fun StatusIcon(
+    statusLabel: String,
+    visuals: StatusVisuals,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
         modifier = Modifier
+            .then(modifier)
             .size(32.dp)
             .clearAndSetSemantics {
                 contentDescription = "$statusLabel status"
             },
-        contentAlignment = Alignment.Center,
+        shape = CircleShape,
+        color = visuals.indicatorContainerColor,
+        contentColor = visuals.indicatorContentColor,
     ) {
-        Icon(
-            modifier = Modifier.size(24.dp),
-            painter = painterResource(iconResource),
-            contentDescription = null,
+        Box(contentAlignment = Alignment.Center) {
+            if (visuals.state == StatusVisualState.IN_PROGRESS) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    color = visuals.indicatorContentColor,
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                Icon(
+                    modifier = Modifier.size(20.dp),
+                    painter = painterResource(visuals.iconResource),
+                    contentDescription = null,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun statusVisuals(statusLabel: String): StatusVisuals {
+    val colorScheme = MaterialTheme.colorScheme
+    val state = statusVisualState(statusLabel)
+    return when (state) {
+        StatusVisualState.ERROR -> StatusVisuals(
+            state = state,
+            iconResource = R.drawable.ic_error_24,
+            cardContainerColor = colorScheme.errorContainer,
+            cardContentColor = colorScheme.onErrorContainer,
+            indicatorContainerColor = colorScheme.error,
+            indicatorContentColor = colorScheme.onError,
+        )
+        StatusVisualState.WARNING -> StatusVisuals(
+            state = state,
+            iconResource = R.drawable.ic_warning_24,
+            cardContainerColor = colorScheme.tertiaryContainer,
+            cardContentColor = colorScheme.onTertiaryContainer,
+            indicatorContainerColor = colorScheme.tertiary,
+            indicatorContentColor = colorScheme.onTertiary,
+        )
+        StatusVisualState.SUCCESS -> StatusVisuals(
+            state = state,
+            iconResource = R.drawable.ic_check_circle_24,
+            cardContainerColor = colorScheme.primaryContainer,
+            cardContentColor = colorScheme.onPrimaryContainer,
+            indicatorContainerColor = colorScheme.primary,
+            indicatorContentColor = colorScheme.onPrimary,
+        )
+        StatusVisualState.IN_PROGRESS -> StatusVisuals(
+            state = state,
+            iconResource = R.drawable.ic_info_24,
+            cardContainerColor = colorScheme.secondaryContainer,
+            cardContentColor = colorScheme.onSecondaryContainer,
+            indicatorContainerColor = colorScheme.secondary,
+            indicatorContentColor = colorScheme.onSecondary,
+        )
+        StatusVisualState.NEUTRAL -> StatusVisuals(
+            state = state,
+            iconResource = if (statusLabel.equals("Unknown", ignoreCase = true)) {
+                R.drawable.ic_help_24
+            } else {
+                R.drawable.ic_info_24
+            },
+            cardContainerColor = colorScheme.surfaceContainerLow,
+            cardContentColor = colorScheme.onSurface,
+            indicatorContainerColor = colorScheme.surfaceContainerHighest,
+            indicatorContentColor = colorScheme.onSurface,
         )
     }
 }
