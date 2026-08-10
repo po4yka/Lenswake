@@ -45,6 +45,7 @@ import dev.po4yka.lenswake.application.ScheduleWorkflow
 import dev.po4yka.lenswake.automation.PortResult
 import java.time.Instant
 import java.time.Duration
+import java.time.LocalDateTime
 import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -397,12 +398,20 @@ class LenswakeViewModelTest {
         val editor = withTimeout(Duration.ofSeconds(2).toMillis()) {
             viewModel.state.first { it.scheduleEditor is ScheduleEditorUiState.Open }
         }.scheduleEditor as ScheduleEditorUiState.Open
+        assertEquals("Time Lapse", editor.form.name)
+        assertEquals(
+            Duration.ofHours(1),
+            Duration.between(
+                requireNotNull(editor.form.startLocal),
+                requireNotNull(editor.form.stopLocal),
+            ),
+        )
         viewModel.updateScheduleForm(
             editor.form.copy(
                 name = "Dawn",
-                startLocal = "2026-08-09T10:30",
-                stopLocal = "2026-08-09T11:30",
-                zoneId = "Asia/Tbilisi",
+                startLocal = LocalDateTime.of(2026, 8, 9, 10, 30),
+                stopLocal = LocalDateTime.of(2026, 8, 9, 11, 30),
+                zoneId = ZoneId.of("Asia/Tbilisi"),
             ),
         )
         viewModel.submitSchedule()

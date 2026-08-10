@@ -21,6 +21,7 @@ import dev.po4yka.lenswake.core.AutomationProfileRepository
 import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.ExecutionRepository
 import dev.po4yka.lenswake.core.LensSelection
+import dev.po4yka.lenswake.core.LenswakeClock
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PreflightCheck
 import dev.po4yka.lenswake.core.PreflightCheckType
@@ -34,6 +35,7 @@ import dev.po4yka.lenswake.core.ScheduleReadiness
 import dev.po4yka.lenswake.core.ScheduleRepository
 import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.SetupRemediationAction
+import dev.po4yka.lenswake.core.SystemLenswakeClock
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.di.ApplicationGraph
 import java.time.Duration
@@ -66,6 +68,7 @@ class LenswakeViewModel internal constructor(
     private val rehearsalCoordinator: RehearsalCoordinator,
     private val scheduleWorkflow: ScheduleWorkflow,
     alarmTransportIncidentSource: AlarmTransportIncidentSource = EmptyAlarmTransportIncidentSource,
+    private val clock: LenswakeClock = SystemLenswakeClock(),
 ) : ViewModel() {
     private val preflightRefresh = MutableStateFlow(0L)
     private val profileInstall = MutableStateFlow<ProfileInstallUiState>(ProfileInstallUiState.Idle)
@@ -211,11 +214,16 @@ class LenswakeViewModel internal constructor(
             return
         }
         scheduleAction.value = ScheduleActionUiState.Idle
+        val zoneId = ZoneId.systemDefault()
+        val startLocal = defaultScheduleStart(clock.now(), zoneId)
         scheduleEditor.value = ScheduleEditorUiState.Open(
             mode = ScheduleEditorMode.Create,
             form = ScheduleFormUiState(
+                name = "Time Lapse",
+                startLocal = startLocal,
+                stopLocal = startLocal.plusHours(DEFAULT_RECORDING_DURATION_HOURS),
                 profileId = profile.id,
-                zoneId = ZoneId.systemDefault().id,
+                zoneId = zoneId,
             ),
         )
     }
@@ -256,7 +264,7 @@ class LenswakeViewModel internal constructor(
         val command = editor.form.toCommandOrNull()
         if (command == null) {
             scheduleEditor.value = editor.copy(
-                error = "Enter valid local timestamps as YYYY-MM-DDTHH:MM and a valid IANA time zone.",
+                error = "Choose a valid name, start, end, and verified camera setup.",
             )
             return
         }
@@ -330,6 +338,7 @@ class LenswakeViewModel internal constructor(
         private val rehearsalCoordinator: RehearsalCoordinator,
         private val scheduleWorkflow: ScheduleWorkflow,
         private val alarmTransportIncidentSource: AlarmTransportIncidentSource = EmptyAlarmTransportIncidentSource,
+        private val clock: LenswakeClock = SystemLenswakeClock(),
     ) : ViewModelProvider.Factory {
         constructor(graph: ApplicationGraph) : this(
             scheduleRepository = graph.scheduleRepository,
@@ -340,6 +349,7 @@ class LenswakeViewModel internal constructor(
             installKnownPixelCameraProfile = graph.installKnownPixelCameraProfile,
             rehearsalCoordinator = graph.rehearsalCoordinator,
             scheduleWorkflow = graph.scheduleWorkflow,
+            clock = graph.clock,
         )
 
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -356,6 +366,7 @@ class LenswakeViewModel internal constructor(
                 installKnownPixelCameraProfile = installKnownPixelCameraProfile,
                 rehearsalCoordinator = rehearsalCoordinator,
                 scheduleWorkflow = scheduleWorkflow,
+                clock = clock,
             ) as T
         }
     }
@@ -365,6 +376,7 @@ class LenswakeViewModel internal constructor(
         const val MAX_VISIBLE_EVENTS = 50
         const val STOP_TIMEOUT_MILLIS = 5_000L
         const val REHEARSAL_DURATION_SECONDS = 10L
+        const val DEFAULT_RECORDING_DURATION_HOURS = 1L
     }
 }
 
@@ -396,12 +408,15 @@ private val SetupRemediationAction.remediationLabel: String
     }
 
 private fun ScheduleFormUiState.toCommandOrNull(): ScheduleCommand? = runCatching {
-    val zone = ZoneId.of(zoneId.trim())
+    val start = requireNotNull(startLocal)
+    val stop = requireNotNull(stopLocal)
+    require(name.isNotBlank())
+    require(profileId.isNotBlank())
     ScheduleCommand(
-        name = name,
-        startAt = LocalDateTime.parse(startLocal.trim()).toUnambiguousInstant(zone),
-        stopAt = LocalDateTime.parse(stopLocal.trim()).toUnambiguousInstant(zone),
-        zoneId = zone,
+        name = name.trim(),
+        startAt = start.toUnambiguousInstant(zoneId),
+        stopAt = stop.toUnambiguousInstant(zoneId),
+        zoneId = zoneId,
         profileId = dev.po4yka.lenswake.core.ProfileId(profileId.trim()),
         enabled = enabled,
     )
@@ -643,8 +658,8 @@ internal object LenswakeUiStateMapper {
     private fun scheduleSummary(schedule: RecordingSchedule): ScheduleSummaryUiState {
         val start = schedule.startAt.atZone(schedule.zoneId).format(scheduleTimeFormatter)
         val stop = schedule.stopAt.atZone(schedule.zoneId).format(scheduleTimeFormatter)
-        val startLocal = schedule.startAt.atZone(schedule.zoneId).toLocalDateTime().format(editorTimeFormatter)
-        val stopLocal = schedule.stopAt.atZone(schedule.zoneId).toLocalDateTime().format(editorTimeFormatter)
+        val startLocal = schedule.startAt.atZone(schedule.zoneId).toLocalDateTime()
+        val stopLocal = schedule.stopAt.atZone(schedule.zoneId).toLocalDateTime()
         return ScheduleSummaryUiState(
             id = schedule.id.value,
             title = schedule.name,
@@ -652,7 +667,7 @@ internal object LenswakeUiStateMapper {
             status = if (schedule.enabled) "Enabled" else "Disabled",
             startLocal = startLocal,
             stopLocal = stopLocal,
-            zoneId = schedule.zoneId.id,
+            zoneId = schedule.zoneId,
             profileId = schedule.profileId.value,
             enabled = schedule.enabled,
         )
@@ -729,7 +744,5 @@ internal object LenswakeUiStateMapper {
         PreflightCheckType.CHARGING,
         PreflightCheckType.STORAGE,
     )
-
-    private val editorTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm", Locale.ROOT)
 
 }

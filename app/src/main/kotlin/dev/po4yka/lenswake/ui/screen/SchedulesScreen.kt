@@ -1,5 +1,6 @@
 package dev.po4yka.lenswake.ui.screen
 
+import android.text.format.DateFormat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -10,9 +11,13 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -20,10 +25,20 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -37,9 +52,23 @@ import dev.po4yka.lenswake.ui.ScheduleFormUiState
 import dev.po4yka.lenswake.ui.ScheduleSummaryUiState
 import dev.po4yka.lenswake.ui.scaffoldContentViewport
 import dev.po4yka.lenswake.ui.screenContentPadding
+import dev.po4yka.lenswake.ui.validateForDisplay
+import dev.po4yka.lenswake.ui.withStartDate
+import dev.po4yka.lenswake.ui.withStartTime
+import dev.po4yka.lenswake.ui.withStopDate
+import dev.po4yka.lenswake.ui.withStopTime
 import dev.po4yka.lenswake.ui.component.HonestEmptyState
 import dev.po4yka.lenswake.ui.component.ReadinessCard
 import dev.po4yka.lenswake.ui.component.ScreenHeader
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
+import java.time.format.TextStyle
+import java.util.Locale
 
 @Composable
 fun SchedulesScreen(
@@ -155,6 +184,7 @@ fun SchedulesScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ScheduleEditor(
     editor: ScheduleEditorUiState.Open,
@@ -165,6 +195,9 @@ private fun ScheduleEditor(
     onCancel: () -> Unit,
 ) {
     val form = editor.form
+    val validation = form.validateForDisplay(profiles)
+    val locale = LocalConfiguration.current.locales[0]
+    var pickerTarget by rememberSaveable { mutableStateOf<SchedulePickerTarget?>(null) }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(20.dp),
@@ -179,7 +212,7 @@ private fun ScheduleEditor(
                 style = MaterialTheme.typography.titleLarge,
             )
             Text(
-                text = "Capture is fixed to native Pixel Camera Time Lapse · 120× · rear main lens.",
+                text = "Records a 120× Time Lapse in Pixel Camera using the main rear lens.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -188,39 +221,54 @@ private fun ScheduleEditor(
                 value = form.name,
                 onValueChange = { onUpdateForm(form.copy(name = it)) },
                 enabled = !busy,
-                label = { Text("Name") },
+                label = { Text("Schedule name") },
+                supportingText = {
+                    Text(validation.nameError ?: "Shown in the schedule list and diagnostics.")
+                },
+                isError = validation.nameError != null,
                 singleLine = true,
             )
-            OutlinedTextField(
-                modifier = Modifier.fillMaxWidth(),
+            ScheduleDateTimeField(
+                title = "Starts",
                 value = form.startLocal,
-                onValueChange = { onUpdateForm(form.copy(startLocal = it)) },
+                locale = locale,
                 enabled = !busy,
-                label = { Text("Start local time") },
-                supportingText = { Text("Format: YYYY-MM-DDTHH:MM") },
-                singleLine = true,
+                dateActionDescription = "Choose start date",
+                timeActionDescription = "Choose start time",
+                onChooseDate = { pickerTarget = SchedulePickerTarget.START_DATE },
+                onChooseTime = { pickerTarget = SchedulePickerTarget.START_TIME },
             )
-            OutlinedTextField(
-                modifier = Modifier.fillMaxWidth(),
+            ScheduleDateTimeField(
+                title = "Ends",
                 value = form.stopLocal,
-                onValueChange = { onUpdateForm(form.copy(stopLocal = it)) },
+                locale = locale,
                 enabled = !busy,
-                label = { Text("Stop local time") },
-                supportingText = { Text("Format: YYYY-MM-DDTHH:MM") },
-                singleLine = true,
+                dateActionDescription = "Choose end date",
+                timeActionDescription = "Choose end time",
+                onChooseDate = { pickerTarget = SchedulePickerTarget.STOP_DATE },
+                onChooseTime = { pickerTarget = SchedulePickerTarget.STOP_TIME },
             )
-            OutlinedTextField(
-                modifier = Modifier.fillMaxWidth(),
-                value = form.zoneId,
-                onValueChange = { onUpdateForm(form.copy(zoneId = it)) },
-                enabled = !busy,
-                label = { Text("IANA time zone") },
-                supportingText = { Text("Example: Asia/Tbilisi") },
-                singleLine = true,
+            validation.timingError?.let { timingError ->
+                Text(
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    text = timingError,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            Text("Time zone", style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = form.zoneId.getDisplayName(TextStyle.FULL, locale),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Text(
+                text = "Dates and times stay tied to this time zone.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
                 modifier = Modifier.semantics { heading() },
-                text = "Installed Pixel Camera profile",
+                text = "Camera setup",
                 style = MaterialTheme.typography.titleMedium,
             )
             profiles.forEach { profile ->
@@ -233,22 +281,20 @@ private fun ScheduleEditor(
                         Column {
                             Text(profile.title)
                             Text(
-                                text = profile.environment,
+                                text = if (profile.verifiedForScheduling) {
+                                    "Verified for unattended scheduling"
+                                } else {
+                                    "Complete a rehearsal before using this setup"
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                             )
-                            if (!profile.verifiedForScheduling) {
-                                Text(
-                                    text = "Not available for scheduling: ${profile.compatibility}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
                         }
                     },
                 )
             }
-            if (profiles.none { it.id == form.profileId && it.verifiedForScheduling }) {
+            validation.profileError?.let { profileError ->
                 Text(
-                    text = "Choose an installed profile that has passed a production rehearsal.",
+                    text = profileError,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                 )
@@ -259,12 +305,12 @@ private fun ScheduleEditor(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Enabled", style = MaterialTheme.typography.titleSmall)
+                    Text("Activate schedule", style = MaterialTheme.typography.titleSmall)
                     Text(
                         text = if (form.enabled) {
-                            "Saving requires both exact alarms to register."
+                            "Start and stop alarms will be set when you save."
                         } else {
-                            "The schedule is persisted without alarms."
+                            "Save as a draft without setting alarms."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -288,10 +334,10 @@ private fun ScheduleEditor(
                 modifier = Modifier
                     .fillMaxWidth()
                     .sizeIn(minHeight = 48.dp),
-                enabled = !busy && profiles.any { it.id == form.profileId && it.verifiedForScheduling },
+                enabled = !busy && validation.canSubmit,
                 onClick = onSubmit,
             ) {
-                Text(if (editor.mode is ScheduleEditorMode.Create) "Create and apply" else "Save and apply")
+                Text(if (editor.mode is ScheduleEditorMode.Create) "Save schedule" else "Save changes")
             }
             OutlinedButton(
                 modifier = Modifier
@@ -304,7 +350,182 @@ private fun ScheduleEditor(
             }
         }
     }
+
+    when (val target = pickerTarget) {
+        SchedulePickerTarget.START_DATE,
+        SchedulePickerTarget.STOP_DATE,
+        -> ScheduleDatePickerDialog(
+            title = if (target == SchedulePickerTarget.START_DATE) "Start date" else "End date",
+            initialDate = if (target == SchedulePickerTarget.START_DATE) {
+                form.startLocal?.toLocalDate()
+            } else {
+                form.stopLocal?.toLocalDate()
+            } ?: LocalDate.now(form.zoneId),
+            onDismiss = { pickerTarget = null },
+            onConfirm = { date ->
+                onUpdateForm(
+                    if (target == SchedulePickerTarget.START_DATE) {
+                        form.withStartDate(date)
+                    } else {
+                        form.withStopDate(date)
+                    },
+                )
+                pickerTarget = null
+            },
+        )
+        SchedulePickerTarget.START_TIME,
+        SchedulePickerTarget.STOP_TIME,
+        -> ScheduleTimePickerDialog(
+            title = if (target == SchedulePickerTarget.START_TIME) "Start time" else "End time",
+            initialTime = if (target == SchedulePickerTarget.START_TIME) {
+                form.startLocal?.toLocalTime()
+            } else {
+                form.stopLocal?.toLocalTime()
+            } ?: LocalTime.NOON,
+            onDismiss = { pickerTarget = null },
+            onConfirm = { time ->
+                onUpdateForm(
+                    if (target == SchedulePickerTarget.START_TIME) {
+                        form.withStartTime(time)
+                    } else {
+                        form.withStopTime(time)
+                    },
+                )
+                pickerTarget = null
+            },
+        )
+        null -> Unit
+    }
 }
+
+@Composable
+private fun ScheduleDateTimeField(
+    title: String,
+    value: LocalDateTime?,
+    locale: Locale,
+    enabled: Boolean,
+    dateActionDescription: String,
+    timeActionDescription: String,
+    onChooseDate: () -> Unit,
+    onChooseTime: () -> Unit,
+) {
+    val dateLabel = value?.toLocalDate()?.toFormDateLabel(locale) ?: "Choose date"
+    val timeLabel = value?.toLocalTime()?.toFormTimeLabel(locale) ?: "Choose time"
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedButton(
+                modifier = Modifier
+                    .weight(1f)
+                    .sizeIn(minHeight = 48.dp)
+                    .semantics { contentDescription = "$dateActionDescription, $dateLabel" },
+                enabled = enabled,
+                onClick = onChooseDate,
+            ) {
+                Text(dateLabel)
+            }
+            OutlinedButton(
+                modifier = Modifier
+                    .weight(1f)
+                    .sizeIn(minHeight = 48.dp)
+                    .semantics { contentDescription = "$timeActionDescription, $timeLabel" },
+                enabled = enabled,
+                onClick = onChooseTime,
+            ) {
+                Text(timeLabel)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ScheduleDatePickerDialog(
+    title: String,
+    initialDate: LocalDate,
+    onDismiss: () -> Unit,
+    onConfirm: (LocalDate) -> Unit,
+) {
+    val pickerState = rememberDatePickerState(
+        initialSelectedDateMillis = initialDate.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(
+                enabled = pickerState.selectedDateMillis != null,
+                onClick = {
+                    pickerState.selectedDateMillis?.let { selectedMillis ->
+                        onConfirm(Instant.ofEpochMilli(selectedMillis).atZone(ZoneOffset.UTC).toLocalDate())
+                    }
+                },
+            ) {
+                Text("Use date")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    ) {
+        DatePicker(
+            state = pickerState,
+            title = { Text(title, modifier = Modifier.padding(start = 24.dp, end = 12.dp, top = 16.dp)) },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ScheduleTimePickerDialog(
+    title: String,
+    initialTime: LocalTime,
+    onDismiss: () -> Unit,
+    onConfirm: (LocalTime) -> Unit,
+) {
+    val context = LocalContext.current
+    val pickerState = rememberTimePickerState(
+        initialHour = initialTime.hour,
+        initialMinute = initialTime.minute,
+        is24Hour = DateFormat.is24HourFormat(context),
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { TimePicker(state = pickerState) },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(LocalTime.of(pickerState.hour, pickerState.minute)) },
+            ) {
+                Text("Use time")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+private enum class SchedulePickerTarget {
+    START_DATE,
+    START_TIME,
+    STOP_DATE,
+    STOP_TIME,
+}
+
+private fun LocalDate.toFormDateLabel(locale: Locale): String = format(
+    DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(locale),
+)
+
+private fun LocalTime.toFormTimeLabel(locale: Locale): String = format(
+    DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(locale),
+)
 
 @Composable
 private fun ScheduleCard(

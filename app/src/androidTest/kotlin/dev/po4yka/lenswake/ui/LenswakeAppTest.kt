@@ -1,16 +1,21 @@
 package dev.po4yka.lenswake.ui
 
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollTo
 import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.ui.theme.LenswakeTheme
+import java.time.LocalDateTime
+import java.time.ZoneId
 import org.junit.Rule
 import org.junit.Test
 import org.junit.Assert.assertEquals
@@ -184,9 +189,9 @@ class LenswakeAppTest {
                     mode = ScheduleEditorMode.Create,
                     form = ScheduleFormUiState(
                         name = "Dawn",
-                        startLocal = "2030-01-01T06:00",
-                        stopLocal = "2030-01-01T08:00",
-                        zoneId = "Asia/Tbilisi",
+                        startLocal = LocalDateTime.of(2030, 1, 1, 6, 0),
+                        stopLocal = LocalDateTime.of(2030, 1, 1, 8, 0),
+                        zoneId = ZoneId.of("Asia/Tbilisi"),
                         profileId = "profile-verified",
                     ),
                 ),
@@ -195,8 +200,51 @@ class LenswakeAppTest {
             onSubmitSchedule = { submitRequests += 1 },
         )
 
-        composeRule.onNodeWithText("Create and apply").performClick()
+        composeRule.onNodeWithText("Save schedule").performScrollTo().assertIsEnabled().performClick()
         composeRule.runOnIdle { assertEquals(1, submitRequests) }
         composeRule.onNodeWithText("120×", substring = true).assertExists()
+    }
+
+    @Test
+    fun scheduleEditorUsesGuidedDateAndTimeControls() {
+        setContent(
+            state = LenswakeUiState(
+                profiles = listOf(
+                    ProfileSummaryUiState(
+                        id = "profile-verified",
+                        title = "Pixel 8 Pro",
+                        environment = "Android 17 - Pixel Camera 69481630 - en-US",
+                        compatibility = "Verified",
+                        verifiedForScheduling = true,
+                    ),
+                ),
+                scheduleEditor = ScheduleEditorUiState.Open(
+                    mode = ScheduleEditorMode.Create,
+                    form = ScheduleFormUiState(
+                        name = "Time Lapse",
+                        startLocal = LocalDateTime.of(2030, 1, 1, 6, 0),
+                        stopLocal = LocalDateTime.of(2030, 1, 1, 8, 0),
+                        zoneId = ZoneId.of("Asia/Tbilisi"),
+                        profileId = "profile-verified",
+                    ),
+                ),
+            ),
+        )
+
+        composeRule.onNodeWithContentDescription("Choose start date", substring = true).assertExists()
+        composeRule.onNodeWithContentDescription("Choose start time", substring = true).assertExists()
+        composeRule.onNodeWithContentDescription("Choose end date", substring = true).assertExists()
+        composeRule.onNodeWithContentDescription("Choose end time", substring = true).assertExists()
+        composeRule.onNodeWithText("Time zone").assertExists()
+        composeRule.onNodeWithText("Start local time").assertDoesNotExist()
+        composeRule.onNodeWithText("IANA time zone").assertDoesNotExist()
+        composeRule.onNodeWithText("YYYY-MM-DDTHH:MM", substring = true).assertDoesNotExist()
+
+        composeRule.onNodeWithContentDescription("Choose start date", substring = true).performScrollTo()
+        composeRule.onNodeWithContentDescription("Choose start date", substring = true).performClick()
+        composeRule.onNodeWithText("Use date").assertExists()
+        composeRule.onNodeWithText("Use date").performClick()
+        composeRule.onNodeWithContentDescription("Choose start time", substring = true).performScrollTo().performClick()
+        composeRule.onNodeWithText("Use time").assertExists()
     }
 }

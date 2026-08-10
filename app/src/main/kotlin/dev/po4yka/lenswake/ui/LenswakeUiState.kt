@@ -2,6 +2,8 @@ package dev.po4yka.lenswake.ui
 
 import androidx.compose.runtime.Immutable
 import dev.po4yka.lenswake.core.SetupRemediationAction
+import java.time.LocalDateTime
+import java.time.ZoneId
 
 @Immutable
 data class LenswakeUiState(
@@ -48,9 +50,9 @@ sealed interface ScheduleEditorMode {
 @Immutable
 data class ScheduleFormUiState(
     val name: String = "",
-    val startLocal: String = "",
-    val stopLocal: String = "",
-    val zoneId: String = "",
+    val startLocal: LocalDateTime? = null,
+    val stopLocal: LocalDateTime? = null,
+    val zoneId: ZoneId = ZoneId.systemDefault(),
     val profileId: String = "",
     val enabled: Boolean = true,
 )
@@ -168,9 +170,9 @@ data class ScheduleSummaryUiState(
     val title: String,
     val timing: String,
     val status: String,
-    val startLocal: String,
-    val stopLocal: String,
-    val zoneId: String,
+    val startLocal: LocalDateTime,
+    val stopLocal: LocalDateTime,
+    val zoneId: ZoneId,
     val profileId: String,
     val enabled: Boolean,
 )
