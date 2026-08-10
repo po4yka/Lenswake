@@ -97,7 +97,7 @@ class PixelCameraAccessibilityPortTest {
         assertEquals(null, gateway.clickedNodePath)
         assertEquals(
             "node-${PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN.name}",
-            gateway.globalBackNodePath,
+            gateway.globalBackNode?.id,
         )
     }
 
@@ -490,7 +490,7 @@ class PixelCameraAccessibilityPortTest {
         val clickedNodePaths = mutableListOf<String>()
         var globalBackCalls: Int = 0
             private set
-        var globalBackNodePath: String? = null
+        var globalBackNode: UiNodeSnapshot? = null
             private set
 
         override suspend fun snapshot(): AccessibilitySnapshotResult {
@@ -504,9 +504,9 @@ class PixelCameraAccessibilityPortTest {
             return dispatchResult
         }
 
-        override suspend fun dispatchGlobalBack(pickerNodePath: String): AccessibilityDispatchResult {
+        override suspend fun dispatchGlobalBack(pickerNode: UiNodeSnapshot): AccessibilityDispatchResult {
             globalBackCalls += 1
-            globalBackNodePath = pickerNodePath
+            globalBackNode = pickerNode
             return globalBackResult
         }
     }

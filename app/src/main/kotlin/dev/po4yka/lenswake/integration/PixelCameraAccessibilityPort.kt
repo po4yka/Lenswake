@@ -129,7 +129,7 @@ class PixelCameraAccessibilityPort internal constructor(
     ): ActionDispatch = dispatch(AutomationAction.SELECT_TIME_LAPSE_SPEED, profileUse, speed)
 
     override suspend fun closeTimeLapseSpeedControl(
-        speed: TimeLapseSpeed,
+        expectedSpeed: TimeLapseSpeed?,
         profileUse: ProfileUse,
     ): ActionDispatch {
         validateProfile(profileUse)?.let { return ActionDispatch.Rejected(it) }
@@ -171,7 +171,7 @@ class PixelCameraAccessibilityPort internal constructor(
         if (
             freshState !is PixelCameraState.TimeLapseSpeedPicker ||
             freshState.recording ||
-            freshState.speed != speed
+            (expectedSpeed != null && freshState.speed != expectedSpeed)
         ) {
             return ActionDispatch.Rejected(
                 failure(
@@ -187,10 +187,10 @@ class PixelCameraAccessibilityPort internal constructor(
                     "The profile does not define an observable Time Lapse speed picker",
                 ),
             )
-        val pickerNodePath = when (
+        val pickerNode = when (
             val match = selectorMatcher.match(pickerSelector, profileUse.profile, snapshot.nodes)
         ) {
-            is SelectorMatchResult.Match -> match.node.id
+            is SelectorMatchResult.Match -> match.node
             else -> return ActionDispatch.Rejected(
                 failure(
                     AutomationFailureCode.TIME_LAPSE_SPEED_CONTROL_CLOSE_FAILED,
@@ -198,7 +198,7 @@ class PixelCameraAccessibilityPort internal constructor(
                 ),
             )
         }
-        return when (accessibilityGateway.dispatchGlobalBack(pickerNodePath)) {
+        return when (accessibilityGateway.dispatchGlobalBack(pickerNode)) {
             AccessibilityDispatchResult.GlobalActionDispatched -> ActionDispatch.Dispatched(
                 InteractionMethod.ACCESSIBILITY_ACTION,
             )
@@ -537,7 +537,7 @@ internal interface PixelCameraAccessibilityGateway {
 
     suspend fun dispatchClick(nodePath: String): AccessibilityDispatchResult
 
-    suspend fun dispatchGlobalBack(pickerNodePath: String): AccessibilityDispatchResult
+    suspend fun dispatchGlobalBack(pickerNode: UiNodeSnapshot): AccessibilityDispatchResult
 }
 
 private object RuntimePixelCameraAccessibilityGateway : PixelCameraAccessibilityGateway {
@@ -546,6 +546,6 @@ private object RuntimePixelCameraAccessibilityGateway : PixelCameraAccessibility
     override suspend fun dispatchClick(nodePath: String): AccessibilityDispatchResult =
         PixelCameraAccessibilityRuntime.dispatchClick(nodePath)
 
-    override suspend fun dispatchGlobalBack(pickerNodePath: String): AccessibilityDispatchResult =
-        PixelCameraAccessibilityRuntime.dispatchGlobalBack(pickerNodePath)
+    override suspend fun dispatchGlobalBack(pickerNode: UiNodeSnapshot): AccessibilityDispatchResult =
+        PixelCameraAccessibilityRuntime.dispatchGlobalBack(pickerNode)
 }

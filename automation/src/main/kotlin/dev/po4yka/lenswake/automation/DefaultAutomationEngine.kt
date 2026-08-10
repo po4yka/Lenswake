@@ -20,6 +20,7 @@ import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
+import dev.po4yka.lenswake.core.TimeLapseSpeed
 import java.time.Instant
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
@@ -152,7 +153,8 @@ class DefaultAutomationEngine(
     override suspend fun stop(sessionId: SessionId): AutomationRunResult = execute(sessionId) { context ->
         val originalStatus = context.current.status
         val originalFailure = context.current.failure
-        val hasOwnership = context.current.recordActionAt != null
+        val hasOwnership = context.current.recordActionAt != null &&
+            context.current.cameraOwnershipReleasedAt == null
         val stopOutstanding = context.current.stoppedVerifiedAt == null
         when (context.current.status) {
             SessionStatus.COMPLETED -> return@execute AutomationRunResult.AlreadyTerminal(context.current)
@@ -419,40 +421,15 @@ class DefaultAutomationEngine(
                             ),
                         )
                     }
-                    if (state.lens != LensSelection.REAR_MAIN &&
+                    if (
+                        state.lens != LensSelection.REAR_MAIN &&
                         !context.rearMainLensObservedBeforeSpeedPicker
                     ) {
-                        fail(
-                            context,
-                            failure(
-                                AutomationFailureCode.LENS_NOT_VERIFIED,
-                                "The open Time Lapse speed picker did not confirm the rear main lens",
-                            ),
-                        )
+                        closeTimeLapseSpeedControlAndVerify(context, state.speed)
+                        return@repeat
                     }
                     if (state.speed == capture.speed) {
-                        dispatchAndVerify(
-                            context = context,
-                            operation = AutomationOperation.CLOSE_TIME_LAPSE_SPEED_CONTROL,
-                            actionState = AutomationStateName.CLOSING_TIME_LAPSE_SPEED_CONTROL,
-                            verificationState = AutomationStateName.VERIFYING_TIME_LAPSE_SPEED_CLOSED,
-                            dispatchFailure = failure(
-                                AutomationFailureCode.TIME_LAPSE_SPEED_CONTROL_CLOSE_FAILED,
-                                "Pixel Camera could not close the confirmed Time Lapse speed picker",
-                            ),
-                            verificationFailure = failure(
-                                AutomationFailureCode.TIME_LAPSE_SPEED_NOT_VERIFIED,
-                                "Pixel Camera did not confirm the closed Time Lapse speed picker",
-                            ),
-                            action = {
-                                pixelCamera.closeTimeLapseSpeedControl(capture.speed, context.profileUse)
-                            },
-                        ) { observed ->
-                            observed is PixelCameraState.TimeLapse &&
-                                !observed.recording &&
-                                observed.speed == capture.speed &&
-                                observed.lens == LensSelection.REAR_MAIN
-                        }
+                        closeTimeLapseSpeedControlAndVerify(context, capture.speed)
                         return@repeat
                     }
                     dispatchAndVerify(
@@ -505,6 +482,33 @@ class DefaultAutomationEngine(
                 "Pixel Camera did not converge within ${config.maxConvergenceSteps} semantic transitions",
             ),
         )
+    }
+
+    private suspend fun closeTimeLapseSpeedControlAndVerify(
+        context: RunContext,
+        expectedSpeed: TimeLapseSpeed?,
+    ) {
+        dispatchAndVerify(
+            context = context,
+            operation = AutomationOperation.CLOSE_TIME_LAPSE_SPEED_CONTROL,
+            actionState = AutomationStateName.CLOSING_TIME_LAPSE_SPEED_CONTROL,
+            verificationState = AutomationStateName.VERIFYING_TIME_LAPSE_SPEED_CLOSED,
+            dispatchFailure = failure(
+                AutomationFailureCode.TIME_LAPSE_SPEED_CONTROL_CLOSE_FAILED,
+                "Pixel Camera could not close the confirmed Time Lapse speed picker",
+            ),
+            verificationFailure = failure(
+                AutomationFailureCode.TIME_LAPSE_SPEED_NOT_VERIFIED,
+                "Pixel Camera did not confirm the closed Time Lapse speed picker",
+            ),
+            action = {
+                pixelCamera.closeTimeLapseSpeedControl(expectedSpeed, context.profileUse)
+            },
+        ) { observed ->
+            observed is PixelCameraState.TimeLapse &&
+                !observed.recording &&
+                (expectedSpeed == null || observed.speed == expectedSpeed)
+        }
     }
 
     private suspend fun reconcileUncertainStart(

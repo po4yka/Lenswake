@@ -508,7 +508,7 @@ class DefaultAutomationEngineTest {
     }
 
     @Test
-    fun `start fails when initial speed picker hides lens without current run proof`() = runTest {
+    fun `start reconstructs lens proof after process death in an open speed picker`() = runTest {
         val session = session(status = SessionStatus.PENDING)
         val repository = FakeExecutionRepository(session)
         val camera = FakePixelCamera(
@@ -521,10 +521,19 @@ class DefaultAutomationEngineTest {
 
         val result = engine(repository, FakeDeviceControl(interactive = true), camera).start(session.id)
 
-        val failed = assertInstanceOf(AutomationRunResult.Failed::class.java, result)
-        assertEquals(AutomationFailureCode.LENS_NOT_VERIFIED, failed.failure.code)
-        assertEquals(0, camera.calls.count { it == "selectSpeed:X120" })
-        assertEquals(0, camera.calls.count { it == "startRecording" })
+        assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        assertEquals(
+            listOf(
+                "launch",
+                "closeTimeLapseSpeedControl",
+                "selectRearMainLens",
+                "openTimeLapseSpeedControl",
+                "selectSpeed:X120",
+                "startRecording",
+            ),
+            camera.calls,
+        )
+        assertTrue(camera.lensWasRearMainWhenRecordStarted)
     }
 
     @Test
@@ -727,6 +736,36 @@ class DefaultAutomationEngineTest {
         assertNotNull(succeeded.session.stopActionAt)
         assertNotNull(succeeded.session.stoppedVerifiedAt)
         assertEquals(1, camera.calls.count { it == "stopRecording" })
+    }
+
+    @Test
+    fun `stop does not touch Pixel Camera after reboot released ownership`() = runTest {
+        val session = session(status = SessionStatus.FAILED).copy(
+            currentAutomationState = AutomationStateName.FAILED,
+            recordActionAt = NOW.minusSeconds(60),
+            recordingVerifiedAt = NOW.minusSeconds(59),
+            cameraOwnershipReleasedAt = NOW,
+            failure = AutomationFailure(
+                AutomationFailureCode.DEVICE_REBOOT_INTERRUPTED,
+                "Ownership was released after reboot",
+            ),
+        )
+        val repository = FakeExecutionRepository(session)
+        val device = FakeDeviceControl(interactive = false)
+        val camera = FakePixelCamera(
+            state = PixelCameraState.TimeLapse(
+                TimeLapseSpeed.X120,
+                recording = true,
+                lens = LensSelection.REAR_MAIN,
+            ),
+        )
+
+        val result = engine(repository, device, camera).stop(session.id)
+
+        assertInstanceOf(AutomationRunResult.AlreadyTerminal::class.java, result)
+        assertTrue(device.calls.isEmpty())
+        assertTrue(camera.calls.isEmpty())
+        assertTrue(camera.trace.isEmpty())
     }
 
     @Test
@@ -1520,7 +1559,7 @@ class DefaultAutomationEngineTest {
         }
 
         override suspend fun closeTimeLapseSpeedControl(
-            speed: TimeLapseSpeed,
+            expectedSpeed: TimeLapseSpeed?,
             profileUse: ProfileUse,
         ): ActionDispatch {
             receivedProfileUses += profileUse
@@ -1528,7 +1567,7 @@ class DefaultAutomationEngineTest {
             speedPickerCloseDispatch?.let { return it }
             if (confirmSpeedPickerClose) {
                 val current = state as PixelCameraState.TimeLapseSpeedPicker
-                check(current.speed == speed)
+                check(expectedSpeed == null || current.speed == expectedSpeed)
                 state = PixelCameraState.TimeLapse(
                     speed = current.speed,
                     recording = current.recording,

@@ -143,13 +143,13 @@ class PixelCameraAccessibilityService : AccessibilityService() {
         }
     }
 
-    internal fun dispatchGlobalBack(pickerNodePath: String): AccessibilityDispatchResult {
+    internal fun dispatchGlobalBack(expectedPicker: UiNodeSnapshot): AccessibilityDispatchResult {
         val root = rootInActiveWindow ?: return AccessibilityDispatchResult.TargetNotFound
         if (!root.refreshSafely()) return AccessibilityDispatchResult.RefreshFailed
         if (root.packageName?.toString() != PIXEL_CAMERA_PACKAGE) {
             return AccessibilityDispatchResult.TargetNotEligible
         }
-        val pickerNode = when (val resolution = resolvePath(root, pickerNodePath)) {
+        val pickerNode = when (val resolution = resolvePath(root, expectedPicker.id)) {
             is PathResolution.Found -> resolution.node
             PathResolution.RefreshFailed -> return AccessibilityDispatchResult.RefreshFailed
             PathResolution.NotFound -> return AccessibilityDispatchResult.TargetNotFound
@@ -159,6 +159,9 @@ class PixelCameraAccessibilityService : AccessibilityService() {
             !pickerNode.isVisibleToUser ||
             !pickerNode.isEnabled
         ) {
+            return AccessibilityDispatchResult.TargetNotEligible
+        }
+        if (!pickerNode.matchesSemanticFingerprint(expectedPicker)) {
             return AccessibilityDispatchResult.TargetNotEligible
         }
         return if (performGlobalAction(GLOBAL_ACTION_BACK)) {
@@ -268,6 +271,24 @@ class PixelCameraAccessibilityService : AccessibilityService() {
         false
     }
 
+    private fun AccessibilityNodeInfo.matchesSemanticFingerprint(expected: UiNodeSnapshot): Boolean =
+        packageName?.toString() == expected.packageName &&
+            viewIdResourceName == expected.resourceId &&
+            className?.toString() == expected.role &&
+            contentDescription?.toString() == expected.contentDescription &&
+            text?.toString() == expected.text &&
+            isClickable == expected.clickable &&
+            isSelected == expected.selected &&
+            isCheckable == expected.checkable &&
+            (!isCheckable || checkedValue() == expected.checked) &&
+            isEnabled == expected.enabled
+
+    private fun AccessibilityNodeInfo.checkedValue(): Boolean? = when (getChecked()) {
+        AccessibilityNodeInfo.CHECKED_STATE_TRUE -> true
+        AccessibilityNodeInfo.CHECKED_STATE_FALSE -> false
+        else -> null
+    }
+
     private sealed interface SnapshotCollection {
         data object Complete : SnapshotCollection
 
@@ -334,9 +355,9 @@ object PixelCameraAccessibilityRuntime {
                 ?: AccessibilityDispatchResult.ServiceDisconnected
         }
 
-    suspend fun dispatchGlobalBack(pickerNodePath: String): AccessibilityDispatchResult =
+    suspend fun dispatchGlobalBack(pickerNode: UiNodeSnapshot): AccessibilityDispatchResult =
         withContext(Dispatchers.Main.immediate) {
-            serviceReference.get()?.get()?.dispatchGlobalBack(pickerNodePath)
+            serviceReference.get()?.get()?.dispatchGlobalBack(pickerNode)
                 ?: AccessibilityDispatchResult.ServiceDisconnected
         }
 }

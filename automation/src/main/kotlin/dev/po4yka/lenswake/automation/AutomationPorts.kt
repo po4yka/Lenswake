@@ -97,7 +97,7 @@ interface PixelCameraPort {
     ): ActionDispatch
 
     suspend fun closeTimeLapseSpeedControl(
-        speed: TimeLapseSpeed,
+        expectedSpeed: TimeLapseSpeed?,
         profileUse: ProfileUse,
     ): ActionDispatch
 
