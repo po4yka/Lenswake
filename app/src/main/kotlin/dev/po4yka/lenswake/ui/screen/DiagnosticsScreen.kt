@@ -12,10 +12,11 @@ import dev.po4yka.lenswake.ui.LenswakeUiState
 import dev.po4yka.lenswake.ui.scaffoldContentViewport
 import dev.po4yka.lenswake.ui.screenContentPadding
 import dev.po4yka.lenswake.ui.component.CapabilityRow
-import dev.po4yka.lenswake.ui.component.HonestEmptyState
+import dev.po4yka.lenswake.ui.component.ActionSection
 import dev.po4yka.lenswake.ui.component.ScreenHeader
 import dev.po4yka.lenswake.ui.component.SectionHeading
 import dev.po4yka.lenswake.ui.component.SummaryCard
+import dev.po4yka.lenswake.ui.component.StatusRow
 
 @Composable
 fun DiagnosticsScreen(
@@ -36,7 +37,7 @@ fun DiagnosticsScreen(
         item {
             ScreenHeader(
                 title = "Diagnostics",
-                summary = "Local capability status and persisted automation history appear here.",
+                summary = "Review device setup, recent issues, and recording activity.",
             )
         }
         item { SectionHeading("Capabilities") }
@@ -67,12 +68,12 @@ fun DiagnosticsScreen(
                 )
             }
         }
-        item { SectionHeading("Execution history") }
+        item { SectionHeading("Activity") }
         if (state.diagnosticEvents.isEmpty()) {
             item {
-                HonestEmptyState(
-                    title = "No diagnostic events",
-                    detail = "No automation session has produced persisted events on this installation.",
+                ActionSection(
+                    title = "No activity yet",
+                    detail = "Recording activity and errors will appear here after Lenswake runs.",
                     actionLabel = "Export diagnostics",
                     actionEnabled = state.actions.canExportDiagnostics,
                     unavailableReason = state.actions.exportDiagnosticsUnavailableReason,
@@ -82,11 +83,14 @@ fun DiagnosticsScreen(
         } else {
             items(state.diagnosticEvents.size, key = { state.diagnosticEvents[it].id }) { index ->
                 val event = state.diagnosticEvents[index]
-                SummaryCard(
+                StatusRow(
                     title = event.title,
                     detail = "${event.occurredAt} · ${event.detail}",
                     status = "Recorded event",
                 )
+                if (index < state.diagnosticEvents.lastIndex) {
+                    HorizontalDivider()
+                }
             }
         }
     }

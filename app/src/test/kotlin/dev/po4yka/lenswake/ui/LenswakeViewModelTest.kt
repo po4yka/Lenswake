@@ -96,7 +96,7 @@ class LenswakeViewModelTest {
         assertEquals("Morning capture", state.schedules.single().title)
         assertEquals("Enabled", state.schedules.single().status)
         assertEquals(
-            "Persisted as verified; see current compatibility in Setup",
+            "Verified for scheduling",
             state.profiles.single().compatibility,
         )
         assertEquals(
@@ -285,10 +285,10 @@ class LenswakeViewModelTest {
         val installed = viewModel.state.first {
             it.profileInstall is ProfileInstallUiState.Succeeded && it.profiles.size == 1
         }
-        assertEquals("Needs rehearsal", installed.profiles.single().compatibility)
+        assertEquals("Needs test", installed.profiles.single().compatibility)
         assertFalse(installed.actions.canInstallCandidateProfile)
         assertEquals(
-            "Candidate profile installed. A production rehearsal is still required.",
+            "Camera profile installed. Test recording is required before scheduling.",
             (installed.profileInstall as ProfileInstallUiState.Succeeded).message,
         )
     }
@@ -321,7 +321,7 @@ class LenswakeViewModelTest {
         val failed = viewModel.state.first { it.profileInstall is ProfileInstallUiState.Failed }
         assertEquals(true, failed.actions.canInstallCandidateProfile)
         assertEquals(
-            "No candidate profile matches Pixel 8 Pro, Android SDK 37, Pixel Camera ${Long.MAX_VALUE}, and ${unsupported.localeTag}.",
+            "No camera profile is available for Pixel 8 Pro with this Pixel Camera version and language.",
             (failed.profileInstall as ProfileInstallUiState.Failed).message,
         )
     }
@@ -361,7 +361,7 @@ class LenswakeViewModelTest {
         assertEquals(dev.po4yka.lenswake.core.LensSelection.REAR_MAIN, received?.capture?.lens)
         assertFalse(pending.actions.canRunRehearsal)
         assertEquals(
-            "STOP is not yet verified; wait for the independent safety alarm before retrying.",
+            "Wait while Lenswake confirms that Pixel Camera has stopped.",
             pending.actions.rehearsalUnavailableReason,
         )
     }

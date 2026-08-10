@@ -210,7 +210,7 @@ fun CapabilityRow(
 }
 
 @Composable
-fun HonestEmptyState(
+fun ActionSection(
     title: String,
     detail: String,
     actionLabel: String,
@@ -219,36 +219,34 @@ fun HonestEmptyState(
     onAction: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Card(modifier = modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            modifier = Modifier.semantics { heading() },
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = detail,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Button(
+            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+            enabled = actionEnabled,
+            onClick = onAction,
         ) {
+            Text(actionLabel)
+        }
+        if (!actionEnabled) {
             Text(
-                modifier = Modifier.semantics { heading() },
-                text = title,
-                style = MaterialTheme.typography.titleLarge,
-            )
-            Text(
-                text = detail,
-                style = MaterialTheme.typography.bodyMedium,
+                text = unavailableReason,
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Button(
-                modifier = Modifier
-                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp),
-                enabled = actionEnabled,
-                onClick = onAction,
-            ) {
-                Text(actionLabel)
-            }
-            if (!actionEnabled) {
-                Text(
-                    text = "Unavailable: $unavailableReason",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
     }
 }
@@ -318,6 +316,46 @@ fun SummaryCard(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun StatusRow(
+    title: String,
+    detail: String,
+    status: String,
+    modifier: Modifier = Modifier,
+) {
+    val visuals = statusVisuals(status)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics { stateDescription = status }
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        StatusIcon(status, visuals)
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = status,
+                style = MaterialTheme.typography.labelLarge,
+                color = visuals.indicatorContentColor,
+            )
+            Text(
+                text = detail,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

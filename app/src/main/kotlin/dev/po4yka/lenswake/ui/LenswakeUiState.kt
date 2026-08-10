@@ -9,7 +9,7 @@ import java.time.ZoneId
 data class LenswakeUiState(
     val readiness: ReadinessUiState = ReadinessUiState.Blocked(
         title = "Setup required",
-        summary = "Scheduling is disabled until exact alarms, Accessibility, and a verified Pixel Camera profile are available.",
+        summary = "Finish device setup and test Pixel Camera before creating a schedule.",
     ),
     val schedules: List<ScheduleSummaryUiState> = emptyList(),
     val profiles: List<ProfileSummaryUiState> = emptyList(),
@@ -211,12 +211,12 @@ enum class AlarmTransportIncidentUiAction {
 data class UiActionAvailability(
     val canCreateSchedule: Boolean = false,
     val createScheduleUnavailableReason: String =
-        "Current readiness and an exact rehearsed Pixel Camera profile have not been verified.",
+        "Finish Setup and test the camera profile before creating a schedule.",
     val canInstallCandidateProfile: Boolean = false,
-    val installCandidateProfileUnavailableReason: String = "Candidate profile availability has not been checked.",
+    val installCandidateProfileUnavailableReason: String = "Camera profile availability has not been checked.",
     val canRunRehearsal: Boolean = false,
     val rehearsalUnavailableReason: String =
-        "A matching profile and the required screen-on rehearsal capabilities are not ready.",
+        "Install a matching camera profile and finish the required Setup checks first.",
     val canExportDiagnostics: Boolean = false,
     val exportDiagnosticsUnavailableReason: String = "There are no diagnostic events to export.",
 )
@@ -247,9 +247,9 @@ private val defaultCapabilities = listOf(
         required = true,
     ),
     CapabilityUiState(
-        name = "Physical-device rehearsal",
+        name = "Camera test",
         status = CapabilityStatus.BLOCKED,
-        detail = "No successful rehearsal result exists for this environment.",
+        detail = "Run a successful test recording on this device.",
         required = true,
     ),
     CapabilityUiState(

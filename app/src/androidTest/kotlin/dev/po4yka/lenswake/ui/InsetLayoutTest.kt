@@ -10,7 +10,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -51,7 +53,7 @@ class InsetLayoutTest {
         val (root, _) = renderProfileScreen(LayoutDirection.Ltr)
 
         composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(1)
-        val emptyState = composeRule.onNodeWithText("No profiles").getUnclippedBoundsInRoot()
+        val emptyState = composeRule.onNodeWithText("Camera profile").getUnclippedBoundsInRoot()
 
         assertTrue(
             "Scrolled content entered the 37dp status-bar inset: ${emptyState.top}",
@@ -83,7 +85,7 @@ class InsetLayoutTest {
 
         composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(2)
         val lastContent = composeRule
-            .onNodeWithText("Production rehearsal not run")
+            .onNode(hasText("Test recording") and !hasClickAction())
             .getUnclippedBoundsInRoot()
 
         assertTrue(

@@ -45,7 +45,7 @@ fun SetupScreen(
         item {
             ScreenHeader(
                 title = "Setup",
-                summary = "Each required capability must be observed on the target environment before scheduling is enabled.",
+                summary = "Finish the device settings Lenswake needs before it can run a schedule.",
             )
         }
         item {

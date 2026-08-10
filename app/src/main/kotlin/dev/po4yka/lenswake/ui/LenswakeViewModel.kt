@@ -174,7 +174,7 @@ class LenswakeViewModel internal constructor(
                     .sortedBy { it.id.value }
                     .firstOrNull()
                 rehearsal.value = if (profile == null) {
-                    RehearsalActionUiState.Failed("No Pixel Camera profile is available for rehearsal.")
+                    RehearsalActionUiState.Failed("Install a Pixel Camera profile before testing.")
                 } else {
                     rehearsalCoordinator.run(
                         RehearsalRequest(
@@ -192,7 +192,7 @@ class LenswakeViewModel internal constructor(
                 throw cancelled
             } catch (failure: Exception) {
                 rehearsal.value = RehearsalActionUiState.Failed(
-                    "Rehearsal failed unexpectedly: ${failure.javaClass.simpleName}.",
+                    "The test recording stopped unexpectedly. Review Diagnostics, then try again.",
                 )
                 refreshPreflight()
             }
@@ -209,7 +209,7 @@ class LenswakeViewModel internal constructor(
         val profile = state.value.profiles.firstOrNull { it.verifiedForScheduling }
         if (profile == null) {
             scheduleAction.value = ScheduleActionUiState.Failed(
-                "Install the exact Pixel Camera profile before creating a schedule.",
+                "Install and test a Pixel Camera profile before creating a schedule.",
             )
             return
         }
@@ -323,7 +323,7 @@ class LenswakeViewModel internal constructor(
                 throw cancelled
             } catch (failure: Exception) {
                 scheduleAction.value = ScheduleActionUiState.Failed(
-                    "Schedule operation failed unexpectedly: ${failure.javaClass.simpleName}.",
+                    "The schedule could not be changed. Review Diagnostics, then try again.",
                 )
             }
         }
@@ -432,73 +432,72 @@ private fun ScheduleWorkflowResult.toUiState(): ScheduleActionUiState = when (th
     is ScheduleWorkflowResult.Applied -> ScheduleActionUiState.Succeeded(
         when (operation) {
             ScheduleOperation.CREATED -> if (schedule.enabled) {
-                "Schedule created and both exact START and STOP alarms were registered."
+                "Schedule created. Start and end times are set."
             } else {
-                "Disabled schedule created; no alarms were registered."
+                "Draft schedule created. No recording times are active."
             }
             ScheduleOperation.UPDATED -> if (schedule.enabled) {
-                "Schedule updated and both exact alarms were replaced."
+                "Schedule updated. New start and end times are set."
             } else {
-                "Schedule updated in the disabled state; its alarms were cancelled."
+                "Draft schedule updated. No recording times are active."
             }
-            ScheduleOperation.ENABLED -> "Schedule enabled and both exact START and STOP alarms were registered."
-            ScheduleOperation.DISABLED -> "Schedule disabled and its START and STOP alarms were cancelled."
+            ScheduleOperation.ENABLED -> "Schedule enabled. Start and end times are set."
+            ScheduleOperation.DISABLED -> "Schedule disabled. Its recording times were cancelled."
         },
     )
 
     is ScheduleWorkflowResult.Deleted -> ScheduleActionUiState.Succeeded(
-        "Schedule deleted after its START and STOP alarms were cancelled.",
+        "Schedule deleted. Its recording times were cancelled.",
     )
 
     is ScheduleWorkflowResult.Rejected -> ScheduleActionUiState.Failed(
-        message = "${code.name}: $message",
+        message = message,
     )
 
     is ScheduleWorkflowResult.Failed -> ScheduleActionUiState.Failed(
-        message = "${code.name}: $message",
+        message = message,
         rollbackFailures = rollbackFailures,
     )
 }
 
 private fun RehearsalResult.toUiState(): RehearsalActionUiState = when (this) {
     is RehearsalResult.Completed -> RehearsalActionUiState.Passed(
-        "Start and stop were verified for session ${session.id.value}; the exact profile is now verified.",
+        "Lenswake started and stopped Pixel Camera successfully. This profile is ready for scheduling.",
     )
     is RehearsalResult.Busy -> RehearsalActionUiState.Failed(
-        "Another rehearsal is still active (${activeSessionId.value}).",
+        "Another test recording is already running.",
     )
     is RehearsalResult.Rejected -> RehearsalActionUiState.Failed(
-        "${code.name}: $message",
+        message,
     )
     is RehearsalResult.SafetyStopPending -> RehearsalActionUiState.SafetyStopPending(
-        "$message Session ${sessionId.value} remains protected by its independent STOP alarm.",
+        "$message Lenswake will keep trying to stop Pixel Camera automatically.",
     )
 }
 
 private fun InstallKnownPixelCameraProfileResult.toUiState(): ProfileInstallUiState = when (this) {
     is InstallKnownPixelCameraProfileResult.Installed -> ProfileInstallUiState.Succeeded(
         message = if (replacedExisting) {
-            "Candidate profile replaced the previous catalog definition. A production rehearsal is still required."
+            "Camera profile updated. Test recording is required before scheduling."
         } else {
-            "Candidate profile installed. A production rehearsal is still required."
+            "Camera profile installed. Test recording is required before scheduling."
         },
     )
 
     is InstallKnownPixelCameraProfileResult.AlreadyInstalled -> ProfileInstallUiState.Succeeded(
-        message = "The candidate profile is already installed. A production rehearsal is still required.",
+        message = "This camera profile is already installed. Test it before scheduling.",
     )
 
     is InstallKnownPixelCameraProfileResult.UnsupportedEnvironment -> ProfileInstallUiState.Failed(
-        message = "No candidate profile matches ${environment.deviceModel}, Android SDK ${environment.androidSdk}, " +
-            "Pixel Camera ${environment.cameraVersionCode}, and ${environment.localeTag}.",
+        message = "No camera profile is available for ${environment.deviceModel} with this Pixel Camera version and language.",
     )
 
     is InstallKnownPixelCameraProfileResult.EnvironmentUnavailable -> ProfileInstallUiState.Failed(
-        message = "The Pixel Camera environment could not be inspected: ${failure.code.name} — ${failure.message}",
+        message = "Lenswake could not check this Pixel Camera setup. ${failure.message}",
     )
 
     is InstallKnownPixelCameraProfileResult.PersistenceFailure -> ProfileInstallUiState.Failed(
-        message = "Candidate profile persistence failed during ${stage.name.lowercase()}: $detail.",
+        message = "Lenswake could not save the camera profile. $detail.",
     )
 }
 
@@ -544,19 +543,19 @@ internal object LenswakeUiStateMapper {
                 scheduleAction !is ScheduleActionUiState.Working,
             createScheduleUnavailableReason = when {
                 !preflight.hasAllScheduleChecksPassed() ->
-                    "Resolve all required Setup checks before creating an enabled schedule."
+                    "Finish all required Setup checks before creating a schedule."
                 profiles.none { it.compatibility == ProfileCompatibility.VERIFIED && it.verifiedAt != null } ->
-                    "Install and rehearse the exact Pixel Camera profile before creating a schedule."
-                scheduleAction is ScheduleActionUiState.Working -> "A schedule operation is already in progress."
+                    "Install and test the Pixel Camera profile before creating a schedule."
+                scheduleAction is ScheduleActionUiState.Working -> "Wait for the current schedule change to finish."
                 else -> "Schedule creation is available."
             },
             canInstallCandidateProfile = profileInstall !is ProfileInstallUiState.Installing &&
                 profileInstall !is ProfileInstallUiState.Succeeded,
             installCandidateProfileUnavailableReason = when {
-                profileInstall is ProfileInstallUiState.Installing -> "Candidate profile installation is in progress."
-                profileInstall is ProfileInstallUiState.Succeeded -> "The candidate profile was installed."
-                profiles.isEmpty() -> "Candidate installation can be retried."
-                else -> "The installed profile can be checked against the current catalog definition."
+                profileInstall is ProfileInstallUiState.Installing -> "Camera profile installation is in progress."
+                profileInstall is ProfileInstallUiState.Succeeded -> "The camera profile is installed."
+                profiles.isEmpty() -> "Camera profile installation can be retried."
+                else -> "Check the installed profile after Pixel Camera changes."
             },
             canRunRehearsal = canRunRehearsal(profiles, preflight, rehearsal),
             rehearsalUnavailableReason = rehearsalUnavailableReason(profiles, preflight, rehearsal),
@@ -593,15 +592,15 @@ internal object LenswakeUiStateMapper {
         preflight: PreflightReport,
         rehearsal: RehearsalActionUiState,
     ): String = when {
-        rehearsal is RehearsalActionUiState.Running -> "A rehearsal is already running."
+        rehearsal is RehearsalActionUiState.Running -> "A test recording is already running."
         rehearsal is RehearsalActionUiState.SafetyStopPending ->
-            "STOP is not yet verified; wait for the independent safety alarm before retrying."
-        profiles.isEmpty() -> "Install a Pixel Camera profile before running rehearsal."
+            "Wait while Lenswake confirms that Pixel Camera has stopped."
+        profiles.isEmpty() -> "Install a Pixel Camera profile before testing."
         else -> rehearsalRequiredChecks.firstNotNullOfOrNull { type ->
             preflight.checks.singleOrNull { it.type == type }
                 ?.takeIf { it.status != PreflightStatus.PASSED }
                 ?.message
-        } ?: "Screen-on rehearsal prerequisites are ready."
+        } ?: "Camera testing is ready."
     }
 
     private fun readiness(preflight: PreflightReport): ReadinessUiState = when (
@@ -609,18 +608,22 @@ internal object LenswakeUiStateMapper {
     ) {
         ScheduleReadiness.Ready -> ReadinessUiState.Ready(
             title = "Ready to schedule",
-            summary = "All required device capabilities are currently verified.",
+            summary = "This device is ready for scheduled recordings.",
         )
 
         is ScheduleReadiness.ReadyWithWarnings -> ReadinessUiState.ReadyWithWarnings(
             title = "Ready with warnings",
-            summary = "Required checks passed, but optional capabilities still need attention.",
+            summary = "Scheduling is ready, but some optional setup still needs attention.",
             warnings = readiness.warnings.map(PreflightCheck::message),
         )
 
         is ScheduleReadiness.Blocked -> ReadinessUiState.Blocked(
             title = "Setup required",
-            summary = "${readiness.blockers.size} required readiness check(s) need attention.",
+            summary = if (readiness.blockers.size == 1) {
+                "1 required setup item needs attention."
+            } else {
+                "${readiness.blockers.size} required setup items need attention."
+            },
         )
     }
 
@@ -648,7 +651,7 @@ internal object LenswakeUiStateMapper {
             PreflightCheckType.ACCESSIBILITY_CONNECTED -> "Accessibility runtime connection"
             PreflightCheckType.PROFILE_AVAILABLE -> "Pixel Camera profile"
             PreflightCheckType.PROFILE_COMPATIBILITY -> "Profile compatibility"
-            PreflightCheckType.REHEARSAL_CURRENT -> "Physical-device rehearsal"
+            PreflightCheckType.REHEARSAL_CURRENT -> "Camera test"
             PreflightCheckType.PRIVILEGED_FALLBACK -> "Privileged fallback"
             PreflightCheckType.BATTERY -> "Battery"
             PreflightCheckType.CHARGING -> "Charging"
@@ -685,11 +688,12 @@ internal object LenswakeUiStateMapper {
         return ProfileSummaryUiState(
             id = profile.id.value,
             title = title,
-            environment = "Android ${environment.androidSdk} - Pixel Camera ${environment.cameraVersionCode} - ${environment.localeTag}",
+            environment = "Android ${environment.androidSdk} · Pixel Camera version ${environment.cameraVersionCode} · " +
+                Locale.forLanguageTag(environment.localeTag).getDisplayName(Locale.ENGLISH),
             compatibility = when (profile.compatibility) {
-                ProfileCompatibility.VERIFIED -> "Persisted as verified; see current compatibility in Setup"
-                ProfileCompatibility.PROBABLY_COMPATIBLE -> "Probably compatible; rehearsal required"
-                ProfileCompatibility.NEEDS_REHEARSAL -> "Needs rehearsal"
+                ProfileCompatibility.VERIFIED -> "Verified for scheduling"
+                ProfileCompatibility.PROBABLY_COMPATIBLE -> "Likely compatible · test required"
+                ProfileCompatibility.NEEDS_REHEARSAL -> "Needs test"
                 ProfileCompatibility.INCOMPATIBLE -> "Incompatible"
             },
             verifiedForScheduling = profile.compatibility == ProfileCompatibility.VERIFIED && profile.verifiedAt != null,

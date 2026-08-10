@@ -58,7 +58,7 @@ import dev.po4yka.lenswake.ui.withStartDate
 import dev.po4yka.lenswake.ui.withStartTime
 import dev.po4yka.lenswake.ui.withStopDate
 import dev.po4yka.lenswake.ui.withStopTime
-import dev.po4yka.lenswake.ui.component.HonestEmptyState
+import dev.po4yka.lenswake.ui.component.ActionSection
 import dev.po4yka.lenswake.ui.component.ReadinessCard
 import dev.po4yka.lenswake.ui.component.ScreenHeader
 import dev.po4yka.lenswake.ui.component.StatusIcon
@@ -136,9 +136,9 @@ fun SchedulesScreen(
         if (state.schedules.isEmpty()) {
             if (editor is ScheduleEditorUiState.Closed) {
                 item {
-                    HonestEmptyState(
+                    ActionSection(
                         title = "No schedules",
-                        detail = "Nothing is scheduled. Lenswake will not launch Pixel Camera until a persisted schedule is created.",
+                        detail = "Add a schedule to choose when Pixel Camera should start and stop recording.",
                         actionLabel = "Create schedule",
                         actionEnabled = state.actions.canCreateSchedule,
                         unavailableReason = state.actions.createScheduleUnavailableReason,
@@ -225,7 +225,7 @@ private fun ScheduleEditor(
                 enabled = !busy,
                 label = { Text("Schedule name") },
                 supportingText = {
-                    Text(validation.nameError ?: "Shown in the schedule list and diagnostics.")
+                    Text(validation.nameError ?: "Shown in your schedule list.")
                 },
                 isError = validation.nameError != null,
                 singleLine = true,
@@ -286,7 +286,7 @@ private fun ScheduleEditor(
                                 text = if (profile.verifiedForScheduling) {
                                     "Verified for unattended scheduling"
                                 } else {
-                                    "Complete a rehearsal before using this setup"
+                                    "Test this camera setup before using it"
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                             )
@@ -560,11 +560,6 @@ private fun ScheduleCard(
                 }
             }
             Text(schedule.timing, style = MaterialTheme.typography.bodyMedium)
-            Text(
-                text = "Profile: ${schedule.profileId}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !busy,
@@ -581,7 +576,7 @@ private fun ScheduleCard(
             }
             if (confirmingDelete) {
                 Text(
-                    text = "Delete this schedule? Its START and STOP alarms will be cancelled first.",
+                    text = "Delete this schedule? Its future recording times will be cancelled.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                 )
@@ -666,7 +661,7 @@ private fun ScheduleOutcome(
                 )
                 if (action is ScheduleActionUiState.Failed && action.rollbackFailures.isNotEmpty()) {
                     Text(
-                        text = "Rollback needs attention:\n${action.rollbackFailures.joinToString("\n")}",
+                        text = "Some changes could not be undone:\n${action.rollbackFailures.joinToString("\n")}",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }

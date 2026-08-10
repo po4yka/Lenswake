@@ -57,11 +57,11 @@ class LenswakeAppTest {
     fun navigationExposesProfilesDiagnosticsAndSetupRoutes() {
         setContent()
         composeRule.onNodeWithText("Profiles").performClick()
-        composeRule.onNodeWithText("No profiles").assertExists()
+        composeRule.onNodeWithText("Camera profile").assertExists()
 
         composeRule.onNodeWithText("Diagnostics").performClick()
         composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(9)
-        composeRule.onNodeWithText("No diagnostic events").assertExists()
+        composeRule.onNodeWithText("No activity yet").assertExists()
 
         composeRule.onNodeWithText("Schedules").performClick()
         composeRule.onNodeWithText("Review setup").performClick()
@@ -105,7 +105,7 @@ class LenswakeAppTest {
         schedulesNavigation.assertIsSelected()
 
         profilesNavigation.performClick()
-        composeRule.onNodeWithText("No profiles").assertExists()
+        composeRule.onNodeWithText("Camera profile").assertExists()
         profilesNavigation.assertIsSelected()
 
         schedulesNavigation.performClick()
@@ -152,9 +152,9 @@ class LenswakeAppTest {
         )
 
         composeRule.onNodeWithText("Profiles").performClick()
-        composeRule.onNodeWithText("Install candidate profile").performClick()
+        composeRule.onNodeWithText("Install camera profile").performClick()
         composeRule.runOnIdle { assertEquals(1, installRequests) }
-        composeRule.onNodeWithText("Run rehearsal").assertIsNotEnabled()
+        composeRule.onNode(hasText("Test recording") and hasClickAction()).assertIsNotEnabled()
     }
 
     @Test
@@ -167,9 +167,9 @@ class LenswakeAppTest {
         )
 
         composeRule.onNodeWithText("Profiles").performClick()
-        composeRule.onNodeWithText("Candidate profile installation failed").assertExists()
+        composeRule.onNodeWithText("Camera profile could not be installed").assertExists()
         composeRule.onNodeWithText("The environment does not match.").assertExists()
-        composeRule.onNodeWithText("Run rehearsal").assertIsNotEnabled()
+        composeRule.onNode(hasText("Test recording") and hasClickAction()).assertIsNotEnabled()
     }
 
     @Test
@@ -181,8 +181,8 @@ class LenswakeAppTest {
                     ProfileSummaryUiState(
                         id = "profile-1",
                         title = "Pixel 8 Pro",
-                        environment = "Android 17 - Pixel Camera 69481630 - en-US",
-                        compatibility = "Needs rehearsal",
+                        environment = "Android 17 · Pixel Camera version 69481630 · English (United States)",
+                        compatibility = "Needs test",
                         verifiedForScheduling = false,
                     ),
                 ),
@@ -192,8 +192,31 @@ class LenswakeAppTest {
         )
 
         composeRule.onNodeWithText("Profiles").performClick()
-        composeRule.onNodeWithText("Run rehearsal").performClick()
+        composeRule.onNode(hasText("Test recording") and hasClickAction()).performClick()
         composeRule.runOnIdle { assertEquals(1, rehearsalRequests) }
+    }
+
+    @Test
+    fun primaryRoutesUseActionFocusedCopy() {
+        setContent()
+
+        composeRule.onNodeWithText("Profiles").performClick()
+        composeRule.onNodeWithText("Camera profile").assertExists()
+        composeRule.onNode(hasText("Test recording") and hasClickAction()).assertExists()
+        listOf(
+            "candidate profile",
+            "production-path",
+            "rehearsal",
+            "selector",
+            "persisting",
+        ).forEach { technicalTerm ->
+            composeRule.onNodeWithText(technicalTerm, substring = true, ignoreCase = true).assertDoesNotExist()
+        }
+
+        composeRule.onNodeWithText("Diagnostics").performClick()
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(9)
+        composeRule.onNodeWithText("No activity yet").assertExists()
+        composeRule.onNodeWithText("persisted", substring = true, ignoreCase = true).assertDoesNotExist()
     }
 
     @Test
