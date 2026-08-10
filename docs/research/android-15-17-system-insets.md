@@ -248,33 +248,37 @@ remain unobscured and reachable in both navigation modes and with the IME open.
 
 | Case | Result | Evidence |
 |---|---|---|
-| Android 15 / API 35 | **Statically supported; runtime pending** | Commit `b2eba88` lowers `minSdk` to 35 in both Android modules and supplies an API-35 accessibility checked-state fallback. The project builds and lints, but no API-35 runtime was available for this run. |
-| Android 16 / API 36 | **Statically supported; runtime pending** | The same compatibility change keeps the API-36 tri-state path isolated behind its runtime API check. No API-36 runtime was available for this run. |
-| Android 17 portrait | **Fixed and exercised** | `enableEdgeToEdge()` remains enabled; all four screens apply and consume the root `Scaffold` padding. The dedicated inset tests passed on a physical Pixel 7 running API 37. |
-| Android 17 landscape / side cutout | **Fixed and exercised synthetically** | Commit `e795006` preserves asymmetric start/end scaffold insets before adding the visual margins. LTR and RTL bounds tests cover side-inset propagation. |
+| Android 15 / API 35 | **Fixed and exercised** | Commit `b2eba88` lowers `minSdk` to 35 in both Android modules and supplies an API-35 accessibility checked-state fallback. A fresh API-35 emulator installed both APKs and passed all seven inset/manifest tests. |
+| Android 16 / API 36 | **Fixed and exercised** | The same compatibility change keeps the API-36 tri-state path isolated behind its runtime API check. A fresh API-36 emulator passed the same seven tests. |
+| Android 17 portrait | **Fixed and exercised** | `enableEdgeToEdge()` remains enabled; all four screens apply and consume the root `Scaffold` padding at the viewport boundary. Seven dedicated tests passed on a physical Pixel 7 running API 37. |
+| Android 17 landscape / side cutout | **Fixed and exercised synthetically** | Commits `e795006` and `ad3f5d5` preserve asymmetric start/end scaffold insets outside the scrollable content. LTR and RTL bounds tests cover side-inset propagation. |
 | Android 17 with IME visible | **Contract fixed; real-keyboard inspection pending** | Commit `ec60ea3` adds `adjustResize` and applies `imePadding()` after consuming scaffold padding on the schedule editor. Manifest ownership is tested; real IME animation and reachability still require device inspection. |
-| Gesture vs three-button navigation | **Statically covered; physical matrix pending** | Material 3 continues to own the `NavigationBar` system-bar inset. Synthetic non-zero bottom-inset tests pass, but navigation-mode screenshots were not captured. |
+| Gesture vs three-button navigation | **Synthetic geometry covered; physical matrix pending** | Material 3 continues to own the `NavigationBar` system-bar inset. Tests verify the viewport and last content remain above a non-zero bottom inset, but navigation-mode screenshots were not captured. |
 
 Lenswake now keeps `compileSdk` and `targetSdk` at 37 while supporting installation from API 35.
 The compatibility change is intentionally narrow: the only production API-36-only call found in
 the affected path is isolated behind a runtime check, and its API-35 boolean fallback preserves the
-same semantic selector input. Static compatibility and APK metadata do not substitute for running
-the app on API 35 and 36.
+same semantic selector input. The same built APK and instrumentation APK were installed on clean
+API-35 and API-36 emulator data partitions before the version-specific runs.
 
 ### Remediation
 
 1. **Android 15/16 installation (`b2eba88`)** — lowered both modules' `minSdk` to 35 and split the
    accessibility checked-state reader into API-35 and API-36 implementations. The generated debug
    APK reports minimum SDK 35.
-2. **Horizontal safe insets (`e795006`)** — introduced one pure `PaddingValues` combiner that
-   preserves all four scaffold sides and adds only the screen's deliberate margins. All four
-   screens now consume the scaffold values after applying them as list content padding.
+2. **Horizontal safe insets (`e795006`)** — introduced shared screen padding and preserved the
+   scaffold's asymmetric side insets on every screen.
 3. **IME ownership (`ec60ea3`)** — declared `android:windowSoftInputMode="adjustResize"` on
    `MainActivity`; the editable schedules list consumes scaffold padding and then applies
    `imePadding()`, preventing the navigation/system-bar inset from being counted twice.
 4. **Regression tests (`d80002a`)** — added pure LTR/RTL arithmetic tests, an Android merged-manifest
    test for `adjustResize`, and activity-hosted Compose bounds tests that inject asymmetric
    status/navigation/cutout insets through the real `Scaffold` path.
+5. **Scroll viewport ownership (`ad3f5d5`)** — moved scaffold padding from the `LazyColumn`'s
+   scrollable `contentPadding` to `Modifier.scaffoldContentViewport()`. This keeps scrolled content
+   outside the status/navigation-bar regions while leaving deliberate screen margins scrollable.
+6. **Bottom-bound coverage (`0d89530`)** — added explicit assertions for the viewport's lower edge
+   and the last reachable item above the injected navigation inset.
 
 The shared padding helper intentionally does not apply a second `safeDrawingPadding()` around the
 root. Material 3 remains the single owner of system/cutout insets, while each screen adds only its
@@ -285,25 +289,23 @@ content spacing.
 - `:app:lintDebug :app:assembleDebug` passed after lowering the minimum SDK; lint reported no
   errors, and the resulting APK declares minimum SDK 35.
 - `:app:testDebugUnitTest` passed with the API-35 fallback and inset arithmetic tests.
-- The three new Android tests passed on a physical Pixel 7 running Android 17 / API 37: the merged
-  manifest reports `adjustResize`, and the activity-hosted layout preserves asymmetric top, bottom,
-  start, and end insets in both LTR and RTL.
+- Seven Android tests passed on a physical Pixel 7 running Android 17 / API 37: the merged manifest
+  reports `adjustResize`; the activity-hosted layout preserves asymmetric top, bottom, start, and
+  end insets in LTR/RTL; and scrolled/last content stays inside the protected viewport.
+- The same seven tests returned `OK (7 tests)` through `AndroidJUnitRunner` on fresh API-35 and
+  API-36 ARM64 Google Play emulators after successful APK installation. The temporary AVDs were
+  removed after the runs; the repaired bootable system images remain installed in the local SDK.
 - The target Pixel 8 Pro (`38080DLJG000GX`) disconnected before the device gate. A serial-pinned
   Gradle test invocation failed because the device was no longer present, so this run provides no
   Pixel 8 Pro layout or IME evidence.
-- Local API-35 and API-36 system-image installations were incomplete and contained no bootable
-  `system.img`. Runtime validation on those versions remains open unless the environment repair
-  recorded for this run completes successfully.
 
 ### Required runtime closure
 
-1. Run the dedicated activity/inset tests on API 35 and API 36 after bootable runtimes are
-   available; installation plus launch is the minimum compatibility proof.
-2. On API 37, render every screen in portrait and landscape under gesture and three-button
+1. On API 37, render every screen in portrait and landscape under gesture and three-button
    navigation, light and dark themes, and IME hidden/shown/animating.
-3. Repeat the acceptance matrix on the exact Pixel 8 Pro build and capture screenshots or bounds
+2. Repeat the acceptance matrix on the exact Pixel 8 Pro build and capture screenshots or bounds
    evidence showing the first and last actionable content remains unobscured.
-4. Exercise the first and last schedule fields plus save/cancel controls with a real IME, including
+3. Exercise the first and last schedule fields plus save/cancel controls with a real IME, including
    an Android 17 activity-recreating configuration change.
 
 ## Primary sources
