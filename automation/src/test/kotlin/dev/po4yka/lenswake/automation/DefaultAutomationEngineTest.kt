@@ -302,6 +302,37 @@ class DefaultAutomationEngineTest {
     }
 
     @Test
+    fun `released uncertain start is terminal and never reconciles Pixel Camera`() = runTest {
+        val session = session(status = SessionStatus.FAILED).copy(
+            currentAutomationState = AutomationStateName.FAILED,
+            recordActionAt = NOW.minusSeconds(30),
+            cameraOwnershipReleasedAt = NOW,
+            failure = AutomationFailure(
+                AutomationFailureCode.DEVICE_REBOOT_INTERRUPTED,
+                "Ownership was released after reboot",
+            ),
+        )
+        val repository = FakeExecutionRepository(session)
+        val device = FakeDeviceControl(interactive = false)
+        val camera = FakePixelCamera(
+            state = PixelCameraState.TimeLapse(
+                speed = TimeLapseSpeed.X120,
+                recording = true,
+                lens = LensSelection.REAR_MAIN,
+            ),
+        )
+
+        val result = engine(repository, device, camera).start(session.id)
+
+        val terminal = assertInstanceOf(AutomationRunResult.AlreadyTerminal::class.java, result)
+        assertEquals(session, terminal.session)
+        assertTrue(device.calls.isEmpty())
+        assertTrue(camera.calls.isEmpty())
+        assertTrue(camera.trace.isEmpty())
+        assertTrue(repository.appliedChanges.isEmpty())
+    }
+
+    @Test
     fun `start selects rear main lens and verifies it before recording`() = runTest {
         val session = session(status = SessionStatus.PENDING)
         val repository = FakeExecutionRepository(session)

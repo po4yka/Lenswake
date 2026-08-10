@@ -96,6 +96,9 @@ class DefaultAutomationEngine(
     private val sleeper: AutomationSleeper = CoroutineAutomationSleeper,
 ) : AutomationEngine {
     override suspend fun start(sessionId: SessionId): AutomationRunResult = execute(sessionId) { context ->
+        if (context.current.cameraOwnershipReleasedAt != null) {
+            return@execute AutomationRunResult.AlreadyTerminal(context.current)
+        }
         val uncertainDispatchAtEntry = context.current.hasUncertainRecordDispatch()
         when (context.current.status) {
             SessionStatus.RECORDING -> return@execute if (
