@@ -14,11 +14,14 @@ import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import java.time.Instant
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertSame
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -115,6 +118,37 @@ class AlarmManagerRehearsalStopSchedulerTest {
         assertEquals(now.plusMillis(1_000), backend.scheduled[2].triggerAt)
     }
 
+    @Test
+    fun schedulerOperationsPropagateCallerCancellation() {
+        val scheduleCancellation = CancellationException("schedule cancelled")
+        val scheduleRepository = FakeRehearsalExecutionRepository().also {
+            it.getFailure = scheduleCancellation
+        }
+        val backend = FakeRehearsalStopAlarmBackend()
+        val scheduler = scheduler(scheduleRepository, backend)
+
+        val thrownScheduleCancellation = assertThrows(CancellationException::class.java) {
+            runBlocking { scheduler.schedule(SessionId("cancelled")) }
+        }
+
+        val restoreCancellation = CancellationException("restore cancelled")
+        scheduleRepository.getFailure = null
+        scheduleRepository.activeRehearsalsFailure = restoreCancellation
+        val thrownRestoreCancellation = assertThrows(CancellationException::class.java) {
+            runBlocking { scheduler.restoreAll() }
+        }
+
+        val cancelCancellation = CancellationException("cancel cancelled")
+        backend.cancelFailure = cancelCancellation
+        val thrownCancelCancellation = assertThrows(CancellationException::class.java) {
+            runBlocking { scheduler.cancel(SessionId("cancelled")) }
+        }
+
+        assertSame(scheduleCancellation, thrownScheduleCancellation)
+        assertSame(restoreCancellation, thrownRestoreCancellation)
+        assertSame(cancelCancellation, thrownCancelCancellation)
+    }
+
     private fun scheduler(
         repository: ExecutionRepository,
         backend: RehearsalStopAlarmBackend,
@@ -155,6 +189,7 @@ private class FakeRehearsalStopAlarmBackend(
 ) : RehearsalStopAlarmBackend {
     val scheduled = mutableListOf<ScheduledRehearsalAlarm>()
     val cancelled = mutableListOf<SessionId>()
+    var cancelFailure: Throwable? = null
 
     override fun canScheduleExactAlarms(): Boolean = canSchedule
 
@@ -164,6 +199,7 @@ private class FakeRehearsalStopAlarmBackend(
     }
 
     override fun cancel(sessionId: SessionId): Result<Unit> {
+        cancelFailure?.let { return Result.failure(it) }
         cancelled += sessionId
         return Result.success(Unit)
     }
@@ -174,6 +210,8 @@ private class FakeRehearsalExecutionRepository(
 ) : ExecutionRepository {
     val sessions = MutableStateFlow(initial)
     var activeRehearsals: List<ExecutionSession> = initial
+    var getFailure: Throwable? = null
+    var activeRehearsalsFailure: Throwable? = null
 
     override fun observeExecutions(): Flow<List<ExecutionSession>> = sessions
 
@@ -183,13 +221,17 @@ private class FakeRehearsalExecutionRepository(
     override fun observeEvents(sessionId: SessionId): Flow<List<AutomationEvent>> =
         flowOf(emptyList())
 
-    override suspend fun get(id: SessionId): ExecutionSession? =
-        sessions.value.singleOrNull { it.id == id }
+    override suspend fun get(id: SessionId): ExecutionSession? {
+        getFailure?.let { throw it }
+        return sessions.value.singleOrNull { it.id == id }
+    }
 
     override suspend fun findPixelCameraOwnerForSchedule(scheduleId: ScheduleId): ExecutionSession? = null
 
-    override suspend fun findActiveRehearsals(limit: Int): List<ExecutionSession> =
-        activeRehearsals.take(limit)
+    override suspend fun findActiveRehearsals(limit: Int): List<ExecutionSession> {
+        activeRehearsalsFailure?.let { throw it }
+        return activeRehearsals.take(limit)
+    }
 
     override suspend fun reservePixelCamera(session: ExecutionSession): ExecutionReservationResult =
         ExecutionReservationResult.Reserved(session, newlyCreated = true)

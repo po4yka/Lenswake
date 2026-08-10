@@ -8,6 +8,7 @@ import dev.po4yka.lenswake.core.LenswakeClock
 import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
 import java.time.Instant
+import kotlinx.coroutines.CancellationException
 
 interface RehearsalStopBackstop : AlarmRecoveryScheduler {
     suspend fun schedule(sessionId: SessionId): Result<Unit>
@@ -31,7 +32,7 @@ class AlarmManagerRehearsalStopScheduler internal constructor(
         backend = AndroidRehearsalStopAlarmBackend(context, exactAlarmCapability),
     )
 
-    override suspend fun schedule(sessionId: SessionId): Result<Unit> = runCatching {
+    override suspend fun schedule(sessionId: SessionId): Result<Unit> = cancellationTransparentResult {
         val session = executionRepository.get(sessionId) ?: throw SchedulingException(
             code = SchedulingFailureCode.REHEARSAL_SESSION_NOT_PERSISTED,
             message = "Rehearsal session ${sessionId.value} must be persisted before STOP registration",
@@ -47,9 +48,11 @@ class AlarmManagerRehearsalStopScheduler internal constructor(
         register(session, session.expectedStopAt)
     }
 
-    override suspend fun cancel(sessionId: SessionId): Result<Unit> = backend.cancel(sessionId)
+    override suspend fun cancel(sessionId: SessionId): Result<Unit> = cancellationTransparentResult {
+        backend.cancel(sessionId).getOrThrow()
+    }
 
-    override suspend fun restoreAll(): Result<Unit> = runCatching {
+    override suspend fun restoreAll(): Result<Unit> = cancellationTransparentResult {
         requireExactAlarmCapability()
         val now = clock.now()
         executionRepository.findActiveRehearsals(REHEARSAL_RESTORE_LIMIT).forEach { session ->
@@ -105,6 +108,17 @@ class AlarmManagerRehearsalStopScheduler internal constructor(
         const val REHEARSAL_RESTORE_LIMIT = 100
         const val OVERDUE_RESTORE_DELAY_MILLIS = 1_000L
     }
+}
+
+private suspend inline fun cancellationTransparentResult(
+    block: suspend () -> Unit,
+): Result<Unit> = try {
+    block()
+    Result.success(Unit)
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (failure: Exception) {
+    Result.failure(failure)
 }
 
 internal interface RehearsalStopAlarmBackend {
