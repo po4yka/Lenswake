@@ -13,7 +13,6 @@ import dev.po4yka.lenswake.ui.scaffoldContentViewport
 import dev.po4yka.lenswake.ui.screenContentPadding
 import dev.po4yka.lenswake.ui.component.CapabilityRow
 import dev.po4yka.lenswake.ui.component.HonestEmptyState
-import dev.po4yka.lenswake.ui.component.ReadinessCard
 import dev.po4yka.lenswake.ui.component.ScreenHeader
 import dev.po4yka.lenswake.ui.component.SectionHeading
 import dev.po4yka.lenswake.ui.component.SummaryCard
@@ -22,7 +21,6 @@ import dev.po4yka.lenswake.ui.component.SummaryCard
 fun DiagnosticsScreen(
     state: LenswakeUiState,
     contentPadding: PaddingValues,
-    onOpenSetup: () -> Unit,
     onOpenPixelCamera: () -> Unit = {},
 ) {
     LazyColumn(
@@ -39,12 +37,6 @@ fun DiagnosticsScreen(
             ScreenHeader(
                 title = "Diagnostics",
                 summary = "Local capability status and persisted automation history appear here.",
-            )
-        }
-        item {
-            ReadinessCard(
-                readiness = state.readiness,
-                onOpenSetup = onOpenSetup,
             )
         }
         item { SectionHeading("Capabilities") }

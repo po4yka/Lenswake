@@ -50,7 +50,7 @@ class InsetLayoutTest {
     fun scrolledContentCannotEnterStatusBarInset() {
         val (root, _) = renderProfileScreen(LayoutDirection.Ltr)
 
-        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(2)
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(1)
         val emptyState = composeRule.onNodeWithText("No profiles").getUnclippedBoundsInRoot()
 
         assertTrue(
@@ -81,7 +81,7 @@ class InsetLayoutTest {
     fun lastContentRemainsReachableAboveNavigationInset() {
         val (root, _) = renderProfileScreen(LayoutDirection.Ltr)
 
-        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(3)
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(2)
         val lastContent = composeRule
             .onNodeWithText("Production rehearsal not run")
             .getUnclippedBoundsInRoot()
@@ -113,7 +113,6 @@ class InsetLayoutTest {
                             ProfilesScreen(
                                 state = LenswakeUiState(),
                                 contentPadding = contentPadding,
-                                onOpenSetup = {},
                                 onInstallCandidateProfile = {},
                                 onRunRehearsal = {},
                             )

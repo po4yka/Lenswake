@@ -69,6 +69,22 @@ class LenswakeAppTest {
     }
 
     @Test
+    fun readinessSummaryAppearsOnlyWhereItIsActionable() {
+        setContent()
+        composeRule.onNodeWithText("Setup required").assertExists()
+
+        composeRule.onNodeWithText("Profiles").performClick()
+        composeRule.onNodeWithText("Setup required").assertDoesNotExist()
+
+        composeRule.onNodeWithText("Diagnostics").performClick()
+        composeRule.onNodeWithText("Setup required").assertDoesNotExist()
+
+        composeRule.onNodeWithText("Schedules").performClick()
+        composeRule.onNodeWithText("Review setup").performClick()
+        composeRule.onNodeWithText("Setup required").assertExists()
+    }
+
+    @Test
     fun navigationAndStatusesUseAccessibleIconsInsteadOfTextGlyphs() {
         setContent()
 
@@ -83,22 +99,21 @@ class LenswakeAppTest {
         setContent()
         val profilesNavigation = composeRule.onNode(hasText("Profiles") and hasClickAction())
         val schedulesNavigation = composeRule.onNode(hasText("Schedules") and hasClickAction())
-        profilesNavigation.performClick()
         composeRule.onNodeWithText("Review setup").performClick()
 
         composeRule.onNodeWithText("Readiness checks").assertExists()
-        profilesNavigation.assertIsSelected()
-
-        schedulesNavigation.performClick()
-        composeRule.onNodeWithText("No schedules").assertExists()
         schedulesNavigation.assertIsSelected()
 
         profilesNavigation.performClick()
-        composeRule.onNodeWithText("Readiness checks").assertExists()
+        composeRule.onNodeWithText("No profiles").assertExists()
         profilesNavigation.assertIsSelected()
 
+        schedulesNavigation.performClick()
+        composeRule.onNodeWithText("Readiness checks").assertExists()
+        schedulesNavigation.assertIsSelected()
+
         composeRule.onNodeWithText("Back").performClick()
-        composeRule.onNodeWithText("No profiles").assertExists()
+        composeRule.onNodeWithText("No schedules").assertExists()
     }
 
     @Test

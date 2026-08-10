@@ -13,7 +13,6 @@ import dev.po4yka.lenswake.ui.RehearsalActionUiState
 import dev.po4yka.lenswake.ui.scaffoldContentViewport
 import dev.po4yka.lenswake.ui.screenContentPadding
 import dev.po4yka.lenswake.ui.component.HonestEmptyState
-import dev.po4yka.lenswake.ui.component.ReadinessCard
 import dev.po4yka.lenswake.ui.component.ScreenHeader
 import dev.po4yka.lenswake.ui.component.SummaryCard
 
@@ -21,7 +20,6 @@ import dev.po4yka.lenswake.ui.component.SummaryCard
 fun ProfilesScreen(
     state: LenswakeUiState,
     contentPadding: PaddingValues,
-    onOpenSetup: () -> Unit,
     onInstallCandidateProfile: () -> Unit,
     onRunRehearsal: () -> Unit,
 ) {
@@ -39,12 +37,6 @@ fun ProfilesScreen(
             ScreenHeader(
                 title = "Profiles",
                 summary = "Profiles bind empirically verified selectors to one Pixel Camera environment.",
-            )
-        }
-        item {
-            ReadinessCard(
-                readiness = state.readiness,
-                onOpenSetup = onOpenSetup,
             )
         }
         item {

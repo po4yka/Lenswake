@@ -175,7 +175,6 @@ fun LenswakeApp(
                             ProfilesScreen(
                                 state = state,
                                 contentPadding = contentPadding,
-                                onOpenSetup = navigation::navigateToSetup,
                                 onInstallCandidateProfile = onInstallCandidateProfile,
                                 onRunRehearsal = onRunRehearsal,
                             )
@@ -184,7 +183,6 @@ fun LenswakeApp(
                             DiagnosticsScreen(
                                 state = state,
                                 contentPadding = contentPadding,
-                                onOpenSetup = navigation::navigateToSetup,
                                 onOpenPixelCamera = onOpenPixelCamera,
                             )
                         }
