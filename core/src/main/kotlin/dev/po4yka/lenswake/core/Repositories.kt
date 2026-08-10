@@ -137,6 +137,12 @@ interface RecordingScheduler {
 
     suspend fun scheduleStop(schedule: RecordingSchedule): Result<Unit>
 
+    /** Arms START while the exact schedule revision is durably persisted as disabled staging. */
+    suspend fun stageStart(schedule: RecordingSchedule): Result<Unit>
+
+    /** Arms the independent STOP while the exact revision is durably persisted as disabled staging. */
+    suspend fun stageStop(schedule: RecordingSchedule): Result<Unit>
+
     suspend fun cancel(scheduleId: ScheduleId): Result<Unit>
 
     suspend fun restoreAll(): Result<Unit>

@@ -369,6 +369,10 @@ class ScheduleWorkflowTest {
                 return Result.success(Unit)
             }
 
+            override suspend fun stageStart(schedule: RecordingSchedule): Result<Unit> = scheduleStart(schedule)
+
+            override suspend fun stageStop(schedule: RecordingSchedule): Result<Unit> = scheduleStop(schedule)
+
             override suspend fun cancel(scheduleId: ScheduleId): Result<Unit> = Result.success(Unit)
             override suspend fun restoreAll(): Result<Unit> = Result.success(Unit)
         }
@@ -418,6 +422,10 @@ class ScheduleWorkflowTest {
                 events += "stop"
                 return Result.success(Unit)
             }
+
+            override suspend fun stageStart(schedule: RecordingSchedule): Result<Unit> = scheduleStart(schedule)
+
+            override suspend fun stageStop(schedule: RecordingSchedule): Result<Unit> = scheduleStop(schedule)
 
             override suspend fun cancel(scheduleId: ScheduleId): Result<Unit> = Result.success(Unit)
 
@@ -574,6 +582,10 @@ class ScheduleWorkflowTest {
                 Result.success(Unit)
             }
         }
+
+        override suspend fun stageStart(schedule: RecordingSchedule): Result<Unit> = scheduleStart(schedule)
+
+        override suspend fun stageStop(schedule: RecordingSchedule): Result<Unit> = scheduleStop(schedule)
 
         override suspend fun cancel(scheduleId: ScheduleId): Result<Unit> {
             events += "cancel"

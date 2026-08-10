@@ -17,6 +17,12 @@ class MutexRecordingScheduler(
     override suspend fun scheduleStop(schedule: RecordingSchedule): Result<Unit> =
         mutex.withLock { delegate.scheduleStop(schedule) }
 
+    override suspend fun stageStart(schedule: RecordingSchedule): Result<Unit> =
+        mutex.withLock { delegate.stageStart(schedule) }
+
+    override suspend fun stageStop(schedule: RecordingSchedule): Result<Unit> =
+        mutex.withLock { delegate.stageStop(schedule) }
+
     override suspend fun cancel(scheduleId: ScheduleId): Result<Unit> =
         mutex.withLock { delegate.cancel(scheduleId) }
 

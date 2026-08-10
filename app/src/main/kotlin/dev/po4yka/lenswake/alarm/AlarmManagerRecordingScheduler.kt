@@ -58,6 +58,12 @@ class AlarmManagerRecordingScheduler internal constructor(
     override suspend fun scheduleStop(schedule: RecordingSchedule): Result<Unit> =
         schedulePersistedSnapshot(schedule, AlarmKind.STOP)
 
+    override suspend fun stageStart(schedule: RecordingSchedule): Result<Unit> =
+        scheduleStagedSnapshot(schedule, AlarmKind.START)
+
+    override suspend fun stageStop(schedule: RecordingSchedule): Result<Unit> =
+        scheduleStagedSnapshot(schedule, AlarmKind.STOP)
+
     override suspend fun cancel(scheduleId: ScheduleId): Result<Unit> = runCatching {
         AlarmKind.entries.forEach { kind -> backend.cancel(scheduleId, kind) }
     }
@@ -100,6 +106,23 @@ class AlarmManagerRecordingScheduler internal constructor(
             )
         }
         register(persisted, kind, clock.now())
+    }
+
+    private suspend fun scheduleStagedSnapshot(
+        schedule: RecordingSchedule,
+        kind: AlarmKind,
+    ): Result<Unit> = runCatching {
+        val persisted = scheduleRepository.get(schedule.id) ?: throw SchedulingException(
+            code = SchedulingFailureCode.SCHEDULE_NOT_PERSISTED,
+            message = "Schedule ${schedule.id.value} must be persisted before staged alarm registration",
+        )
+        if (persisted != schedule.copy(enabled = false)) {
+            throw SchedulingException(
+                code = SchedulingFailureCode.STALE_SCHEDULE_REVISION,
+                message = "Staged alarm registration requires the exact disabled schedule revision",
+            )
+        }
+        register(schedule, kind, clock.now())
     }
 
     private fun register(

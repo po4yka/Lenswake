@@ -175,6 +175,10 @@ private class RecoveryRecordingScheduler : RecordingScheduler {
 
     override suspend fun scheduleStop(schedule: RecordingSchedule): Result<Unit> = Result.success(Unit)
 
+    override suspend fun stageStart(schedule: RecordingSchedule): Result<Unit> = scheduleStart(schedule)
+
+    override suspend fun stageStop(schedule: RecordingSchedule): Result<Unit> = scheduleStop(schedule)
+
     override suspend fun cancel(scheduleId: ScheduleId): Result<Unit> = Result.success(Unit)
 
     override suspend fun restoreAll(): Result<Unit> {

@@ -272,7 +272,7 @@ class ScheduleWorkflow(
             return ScheduleWorkflowResult.Applied(operation, candidate)
         }
 
-        scheduler.scheduleStop(candidate).exceptionOrNull()?.let { failure ->
+        scheduler.stageStop(candidate).exceptionOrNull()?.let { failure ->
             return failedRegistration(
                 previous = previous,
                 candidate = candidate,
@@ -280,7 +280,7 @@ class ScheduleWorkflow(
                 message = "The exact STOP alarm was not registered: ${failure.safeMessage()}.",
             )
         }
-        scheduler.scheduleStart(candidate).exceptionOrNull()?.let { failure ->
+        scheduler.stageStart(candidate).exceptionOrNull()?.let { failure ->
             return failedRegistration(
                 previous = previous,
                 candidate = candidate,
@@ -369,12 +369,12 @@ class ScheduleWorkflow(
             false
         }
         if (persisted && schedule.enabled) {
-            val stopFailure = scheduler.scheduleStop(schedule).exceptionOrNull()
+            val stopFailure = scheduler.stageStop(schedule).exceptionOrNull()
             stopFailure?.let {
                 add("Could not restore the previous STOP alarm: ${it.safeMessage()}.")
             }
             if (stopFailure == null) {
-                val startFailure = scheduler.scheduleStart(schedule).exceptionOrNull()
+                val startFailure = scheduler.stageStart(schedule).exceptionOrNull()
                 startFailure?.let {
                     add("Could not restore the previous START alarm: ${it.safeMessage()}.")
                 }

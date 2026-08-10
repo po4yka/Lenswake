@@ -61,6 +61,44 @@ class AlarmManagerRecordingSchedulerTest {
         assertEquals(SchedulingFailureCode.EXACT_ALARM_UNAVAILABLE, failure.code)
     }
 
+    @Test
+    fun stagedRegistrationAcceptsOnlyTheExactDurablyDisabledRevision() = runBlocking {
+        val scheduler = scheduler(
+            persisted = schedule.copy(enabled = false),
+            capability = ExactAlarmCapability { false },
+        )
+
+        val result = scheduler.stageStop(schedule)
+        val failure = result.exceptionOrNull() as SchedulingException
+
+        assertEquals(SchedulingFailureCode.EXACT_ALARM_UNAVAILABLE, failure.code)
+    }
+
+    @Test
+    fun ordinaryRegistrationStillRejectsDisabledSchedule() = runBlocking {
+        val disabled = schedule.copy(enabled = false)
+        val scheduler = scheduler(
+            persisted = disabled,
+            capability = ExactAlarmCapability { error("Capability must not be consulted") },
+        )
+
+        val failure = scheduler.scheduleStop(disabled).exceptionOrNull() as SchedulingException
+
+        assertEquals(SchedulingFailureCode.SCHEDULE_DISABLED, failure.code)
+    }
+
+    @Test
+    fun stagedRegistrationRejectsDifferentPersistedContentAtTheSameRevision() = runBlocking {
+        val scheduler = scheduler(
+            persisted = schedule.copy(enabled = false, name = "Different"),
+            capability = ExactAlarmCapability { error("Capability must not be consulted") },
+        )
+
+        val failure = scheduler.stageStop(schedule).exceptionOrNull() as SchedulingException
+
+        assertEquals(SchedulingFailureCode.STALE_SCHEDULE_REVISION, failure.code)
+    }
+
     private fun scheduler(
         persisted: RecordingSchedule?,
         capability: ExactAlarmCapability,
