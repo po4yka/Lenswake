@@ -29,8 +29,8 @@ sealed interface AccessibilitySnapshotResult {
 
     data object PixelCameraNotForeground : AccessibilitySnapshotResult
 
-    /** The active-window node could not be refreshed, so its contents are not safe to inspect. */
-    data object RootRefreshFailed : AccessibilitySnapshotResult
+    /** An accessibility node could not be refreshed, so the snapshot is unsafe to inspect. */
+    data object RefreshFailed : AccessibilitySnapshotResult
 }
 
 sealed interface AccessibilityDispatchResult {
@@ -42,8 +42,8 @@ sealed interface AccessibilityDispatchResult {
 
     data object ServiceDisconnected : AccessibilityDispatchResult
 
-    /** The active-window node could not be refreshed, so a path must not be resolved against it. */
-    data object RootRefreshFailed : AccessibilityDispatchResult
+    /** An accessibility node could not be refreshed, so a path must not be resolved against it. */
+    data object RefreshFailed : AccessibilityDispatchResult
 
     data object TargetNotFound : AccessibilityDispatchResult
 
@@ -77,30 +77,43 @@ class PixelCameraAccessibilityService : AccessibilityService() {
 
     internal fun readSnapshot(): AccessibilitySnapshotResult {
         val root = rootInActiveWindow ?: return AccessibilitySnapshotResult.NoActiveWindow
-        if (!root.refreshSafely()) return AccessibilitySnapshotResult.RootRefreshFailed
+        if (!root.refreshSafely()) return AccessibilitySnapshotResult.RefreshFailed
         if (root.packageName?.toString() != PIXEL_CAMERA_PACKAGE) {
             return AccessibilitySnapshotResult.PixelCameraNotForeground
         }
         val metrics = resources.displayMetrics
         val nodes = ArrayList<UiNodeSnapshot>(64)
-        val truncated = collectSnapshots(
+        val collection = collectSnapshots(
             node = root,
             path = ROOT_PATH,
             depth = 0,
             screenWidth = metrics.widthPixels.coerceAtLeast(1),
             screenHeight = metrics.heightPixels.coerceAtLeast(1),
             destination = nodes,
+            nodeIsFresh = true,
         )
-        return AccessibilitySnapshotResult.Available(nodes, truncated)
+        return when (collection) {
+            SnapshotCollection.RefreshFailed -> AccessibilitySnapshotResult.RefreshFailed
+            SnapshotCollection.Complete,
+            SnapshotCollection.Truncated,
+            -> AccessibilitySnapshotResult.Available(
+                nodes = nodes,
+                truncated = collection == SnapshotCollection.Truncated,
+            )
+        }
     }
 
     internal fun dispatchClick(nodePath: String): AccessibilityDispatchResult {
         val root = rootInActiveWindow ?: return AccessibilityDispatchResult.TargetNotFound
-        if (!root.refreshSafely()) return AccessibilityDispatchResult.RootRefreshFailed
+        if (!root.refreshSafely()) return AccessibilityDispatchResult.RefreshFailed
         if (root.packageName?.toString() != PIXEL_CAMERA_PACKAGE) {
             return AccessibilityDispatchResult.TargetNotEligible
         }
-        val target = resolvePath(root, nodePath) ?: return AccessibilityDispatchResult.TargetNotFound
+        val target = when (val resolution = resolvePath(root, nodePath)) {
+            is PathResolution.Found -> resolution.node
+            PathResolution.RefreshFailed -> return AccessibilityDispatchResult.RefreshFailed
+            PathResolution.NotFound -> return AccessibilityDispatchResult.TargetNotFound
+        }
         if (
             target.packageName?.toString() != PIXEL_CAMERA_PACKAGE ||
             !target.isVisibleToUser ||
@@ -132,16 +145,20 @@ class PixelCameraAccessibilityService : AccessibilityService() {
         screenWidth: Int,
         screenHeight: Int,
         destination: MutableList<UiNodeSnapshot>,
-    ): Boolean {
-        if (destination.size >= MAX_NODE_COUNT || depth > MAX_DEPTH) return true
+        nodeIsFresh: Boolean = false,
+    ): SnapshotCollection {
+        if (destination.size >= MAX_NODE_COUNT || depth > MAX_DEPTH) {
+            return SnapshotCollection.Truncated
+        }
+        if (!nodeIsFresh && !node.refreshSafely()) return SnapshotCollection.RefreshFailed
         if (node.packageName?.toString() == PIXEL_CAMERA_PACKAGE) {
             destination += node.toSnapshot(path, screenWidth, screenHeight)
         }
         var truncated = false
         for (index in 0 until node.childCount) {
-            if (destination.size >= MAX_NODE_COUNT) return true
+            if (destination.size >= MAX_NODE_COUNT) return SnapshotCollection.Truncated
             val child = node.getChild(index) ?: continue
-            if (
+            when (
                 collectSnapshots(
                     node = child,
                     path = "$path/$index",
@@ -151,10 +168,12 @@ class PixelCameraAccessibilityService : AccessibilityService() {
                     destination = destination,
                 )
             ) {
-                truncated = true
+                SnapshotCollection.RefreshFailed -> return SnapshotCollection.RefreshFailed
+                SnapshotCollection.Truncated -> truncated = true
+                SnapshotCollection.Complete -> Unit
             }
         }
-        return truncated
+        return if (truncated) SnapshotCollection.Truncated else SnapshotCollection.Complete
     }
 
     private fun AccessibilityNodeInfo.toSnapshot(
@@ -197,22 +216,42 @@ class PixelCameraAccessibilityService : AccessibilityService() {
         )
     }
 
-    private fun resolvePath(root: AccessibilityNodeInfo, path: String): AccessibilityNodeInfo? {
+    private fun resolvePath(root: AccessibilityNodeInfo, path: String): PathResolution {
         val segments = path.split('/')
-        if (segments.firstOrNull() != ROOT_PATH) return null
+        if (segments.firstOrNull() != ROOT_PATH) return PathResolution.NotFound
         var current = root
+        var currentIsFresh = true
         for (segment in segments.drop(1)) {
-            val index = segment.toIntOrNull() ?: return null
-            if (index !in 0 until current.childCount) return null
-            current = current.getChild(index) ?: return null
+            if (!currentIsFresh && !current.refreshSafely()) return PathResolution.RefreshFailed
+            val index = segment.toIntOrNull() ?: return PathResolution.NotFound
+            if (index !in 0 until current.childCount) return PathResolution.NotFound
+            current = current.getChild(index) ?: return PathResolution.NotFound
+            currentIsFresh = false
         }
-        return current
+        if (!currentIsFresh && !current.refreshSafely()) return PathResolution.RefreshFailed
+        return PathResolution.Found(current)
     }
 
     private fun AccessibilityNodeInfo.refreshSafely(): Boolean = try {
         refresh()
     } catch (_: RuntimeException) {
         false
+    }
+
+    private sealed interface SnapshotCollection {
+        data object Complete : SnapshotCollection
+
+        data object Truncated : SnapshotCollection
+
+        data object RefreshFailed : SnapshotCollection
+    }
+
+    private sealed interface PathResolution {
+        data class Found(val node: AccessibilityNodeInfo) : PathResolution
+
+        data object NotFound : PathResolution
+
+        data object RefreshFailed : PathResolution
     }
 
     private companion object {

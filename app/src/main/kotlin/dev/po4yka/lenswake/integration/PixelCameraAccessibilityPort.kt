@@ -60,7 +60,7 @@ class PixelCameraAccessibilityPort internal constructor(
                 ),
             )
 
-            AccessibilitySnapshotResult.RootRefreshFailed -> PortResult.Unavailable(
+            AccessibilitySnapshotResult.RefreshFailed -> PortResult.Unavailable(
                 failure(
                     AutomationFailureCode.ACCESSIBILITY_REFRESH_FAILED,
                     "The active Pixel Camera accessibility window could not be refreshed",
@@ -152,7 +152,7 @@ class PixelCameraAccessibilityPort internal constructor(
                     "Lenswake Accessibility Service is not connected",
                 ),
             )
-            AccessibilitySnapshotResult.RootRefreshFailed -> return ActionDispatch.Rejected(
+            AccessibilitySnapshotResult.RefreshFailed -> return ActionDispatch.Rejected(
                 failure(
                     AutomationFailureCode.ACCESSIBILITY_REFRESH_FAILED,
                     "The active Pixel Camera accessibility window could not be refreshed",
@@ -223,7 +223,7 @@ class PixelCameraAccessibilityPort internal constructor(
                     "Lenswake Accessibility Service disconnected before dispatch",
                 ),
             )
-            AccessibilityDispatchResult.RootRefreshFailed -> ActionDispatch.Rejected(
+            AccessibilityDispatchResult.RefreshFailed -> ActionDispatch.Rejected(
                 failure(
                     AutomationFailureCode.ACCESSIBILITY_REFRESH_FAILED,
                     "The active Pixel Camera accessibility window could not be refreshed before dispatch",

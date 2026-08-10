@@ -55,7 +55,7 @@ class PixelCameraAccessibilityPortTest {
     fun `inspection rejects an accessibility snapshot whose root could not refresh`() = runTest {
         val result = port(
             gateway = FakeAccessibilityGateway(
-                snapshotResult = AccessibilitySnapshotResult.RootRefreshFailed,
+                snapshotResult = AccessibilitySnapshotResult.RefreshFailed,
             ),
         ).inspect(profileUse())
 
@@ -67,7 +67,7 @@ class PixelCameraAccessibilityPortTest {
     fun `dispatch rejects when the active root could not refresh before path resolution`() = runTest {
         val gateway = FakeAccessibilityGateway(
             nodes = listOf(node(LENS_ACTION_RESOURCE)),
-            dispatchResult = AccessibilityDispatchResult.RootRefreshFailed,
+            dispatchResult = AccessibilityDispatchResult.RefreshFailed,
         )
 
         val result = port(gateway = gateway).selectRearMainLens(profileUse())
