@@ -2,6 +2,7 @@ package dev.po4yka.lenswake.ui.screen
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
@@ -10,6 +11,7 @@ import androidx.compose.ui.unit.dp
 import dev.po4yka.lenswake.ui.LenswakeUiState
 import dev.po4yka.lenswake.ui.ProfileInstallUiState
 import dev.po4yka.lenswake.ui.RehearsalActionUiState
+import dev.po4yka.lenswake.ui.screenContentPadding
 import dev.po4yka.lenswake.ui.component.HonestEmptyState
 import dev.po4yka.lenswake.ui.component.ReadinessCard
 import dev.po4yka.lenswake.ui.component.ScreenHeader
@@ -24,12 +26,13 @@ fun ProfilesScreen(
     onRunRehearsal: () -> Unit,
 ) {
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(
-            start = 20.dp,
-            top = contentPadding.calculateTopPadding() + 24.dp,
-            end = 20.dp,
-            bottom = contentPadding.calculateBottomPadding() + 24.dp,
+        modifier = Modifier
+            .fillMaxSize()
+            .consumeWindowInsets(contentPadding),
+        contentPadding = screenContentPadding(
+            scaffoldPadding = contentPadding,
+            topMargin = 24.dp,
+            bottomMargin = 24.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {

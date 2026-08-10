@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -34,6 +35,7 @@ import dev.po4yka.lenswake.ui.ScheduleEditorMode
 import dev.po4yka.lenswake.ui.ScheduleEditorUiState
 import dev.po4yka.lenswake.ui.ScheduleFormUiState
 import dev.po4yka.lenswake.ui.ScheduleSummaryUiState
+import dev.po4yka.lenswake.ui.screenContentPadding
 import dev.po4yka.lenswake.ui.component.HonestEmptyState
 import dev.po4yka.lenswake.ui.component.ReadinessCard
 import dev.po4yka.lenswake.ui.component.ScreenHeader
@@ -56,12 +58,13 @@ fun SchedulesScreen(
 ) {
     val busy = state.scheduleAction is ScheduleActionUiState.Working
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(
-            start = 20.dp,
-            top = contentPadding.calculateTopPadding() + 24.dp,
-            end = 20.dp,
-            bottom = contentPadding.calculateBottomPadding() + 24.dp,
+        modifier = Modifier
+            .fillMaxSize()
+            .consumeWindowInsets(contentPadding),
+        contentPadding = screenContentPadding(
+            scaffoldPadding = contentPadding,
+            topMargin = 24.dp,
+            bottomMargin = 24.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
