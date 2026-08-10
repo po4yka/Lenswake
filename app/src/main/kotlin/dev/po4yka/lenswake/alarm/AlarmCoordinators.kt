@@ -74,13 +74,15 @@ class PreflightAlarmRecoveryReadiness(
     }
 
     private companion object {
+        // ACCESSIBILITY_CONNECTED is deliberately not a pre-engine gate. The connection is
+        // process-local and may be restored only after DEVICE_WAKE; the engine verifies it with
+        // bounded Pixel Camera inspections after waking the display.
         val REQUIRED_CHECKS = setOf(
             PreflightCheckType.EXACT_ALARMS,
             PreflightCheckType.PIXEL_CAMERA_INSTALLED,
             PreflightCheckType.SECURE_CAMERA_RESOLVES,
             PreflightCheckType.DEVICE_WAKE,
             PreflightCheckType.ACCESSIBILITY_ENABLED,
-            PreflightCheckType.ACCESSIBILITY_CONNECTED,
             PreflightCheckType.PROFILE_AVAILABLE,
             PreflightCheckType.PROFILE_COMPATIBILITY,
             PreflightCheckType.REHEARSAL_CURRENT,

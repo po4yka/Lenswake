@@ -34,13 +34,34 @@ class AlarmRecoveryCorrectnessTest {
     }
 
     @Test
-    fun readinessBlockerRetainsRecoveryFailureAfterAlarmsAreRestored() = runBlocking {
+    fun transientAccessibilityDisconnectDoesNotBlockRestoredAlarms() = runBlocking {
         val scheduler = RecoveryRecordingScheduler()
         val readiness = PreflightAlarmRecoveryReadiness {
             readyReport().replace(
                 PreflightCheckType.ACCESSIBILITY_CONNECTED,
                 PreflightStatus.FAILED,
                 "Accessibility is not connected after reboot",
+            )
+        }
+        val coordinator = SchedulerAlarmRecoveryCoordinator(
+            scheduler = scheduler,
+            readiness = readiness,
+        )
+
+        val result = coordinator.restoreFutureSchedules(false)
+
+        assertTrue(result.isSuccess)
+        assertEquals(1, scheduler.restoreCalls)
+    }
+
+    @Test
+    fun disabledAccessibilityRetainsRecoveryFailureAfterAlarmsAreRestored() = runBlocking {
+        val scheduler = RecoveryRecordingScheduler()
+        val readiness = PreflightAlarmRecoveryReadiness {
+            readyReport().replace(
+                PreflightCheckType.ACCESSIBILITY_ENABLED,
+                PreflightStatus.FAILED,
+                "Accessibility is disabled",
             )
         }
         val coordinator = SchedulerAlarmRecoveryCoordinator(
