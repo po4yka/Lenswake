@@ -1,20 +1,24 @@
 package dev.po4yka.lenswake.ui.component
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -24,10 +28,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.po4yka.lenswake.R
+import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.ui.CapabilityStatus
 import dev.po4yka.lenswake.ui.CapabilityUiState
 import dev.po4yka.lenswake.ui.ReadinessUiState
-import dev.po4yka.lenswake.core.SetupRemediationAction
 
 @Composable
 fun ScreenHeader(
@@ -90,7 +95,7 @@ fun ReadinessCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                StatusGlyph(statusLabel)
+                StatusIcon(statusLabel)
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = readiness.title,
@@ -138,7 +143,7 @@ fun CapabilityRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        StatusGlyph(statusLabel)
+        StatusIcon(statusLabel)
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -245,7 +250,7 @@ fun SummaryCard(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.Top,
         ) {
-            StatusGlyph(status)
+            StatusIcon(status)
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -278,26 +283,36 @@ fun SummaryCard(
 }
 
 @Composable
-private fun StatusGlyph(statusLabel: String) {
+private fun StatusIcon(statusLabel: String) {
     val normalizedStatus = statusLabel.lowercase()
-    val glyph = when {
-        "blocked" in normalizedStatus || "failed" in normalizedStatus -> "!"
-        "warning" in normalizedStatus -> "△"
+    val iconResource = when {
+        "blocked" in normalizedStatus ||
+            "failed" in normalizedStatus ||
+            "incompatible" in normalizedStatus ||
+            "unavailable" in normalizedStatus -> R.drawable.ic_error_24
+        "warning" in normalizedStatus ||
+            "attention" in normalizedStatus ||
+            "needs" in normalizedStatus -> R.drawable.ic_warning_24
         "ready" in normalizedStatus ||
             "available" in normalizedStatus ||
             "verified" in normalizedStatus ||
-            "completed" in normalizedStatus -> "✓"
-        normalizedStatus == "unknown" -> "?"
-        else -> "•"
+            "completed" in normalizedStatus ||
+            "passed" in normalizedStatus -> R.drawable.ic_check_circle_24
+        normalizedStatus == "unknown" -> R.drawable.ic_help_24
+        else -> R.drawable.ic_info_24
     }
-    Text(
+    Box(
         modifier = Modifier
-            .sizeIn(minWidth = 32.dp, minHeight = 32.dp)
+            .size(32.dp)
             .clearAndSetSemantics {
                 contentDescription = "$statusLabel status"
             },
-        text = glyph,
-        style = MaterialTheme.typography.titleLarge,
-        fontWeight = FontWeight.Bold,
-    )
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            modifier = Modifier.size(24.dp),
+            painter = painterResource(iconResource),
+            contentDescription = null,
+        )
+    }
 }

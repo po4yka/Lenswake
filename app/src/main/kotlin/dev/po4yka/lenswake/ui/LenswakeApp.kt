@@ -1,9 +1,11 @@
 package dev.po4yka.lenswake.ui
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
@@ -16,31 +18,33 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
+import dev.po4yka.lenswake.R
+import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.ui.screen.DiagnosticsScreen
 import dev.po4yka.lenswake.ui.screen.ProfilesScreen
 import dev.po4yka.lenswake.ui.screen.SchedulesScreen
 import dev.po4yka.lenswake.ui.screen.SetupScreen
-import dev.po4yka.lenswake.core.SetupRemediationAction
 
 private data class TopLevelDestination(
     val topLevel: LenswakeTopLevel,
     val label: String,
-    val glyph: String,
+    @param:DrawableRes val iconResource: Int,
 ) {
     val key: LenswakeRoute
         get() = topLevel.route
 }
 
 private val topLevelDestinations = listOf(
-    TopLevelDestination(LenswakeTopLevel.SCHEDULES, "Schedules", "S"),
-    TopLevelDestination(LenswakeTopLevel.PROFILES, "Profiles", "P"),
-    TopLevelDestination(LenswakeTopLevel.DIAGNOSTICS, "Diagnostics", "D"),
+    TopLevelDestination(LenswakeTopLevel.SCHEDULES, "Schedules", R.drawable.ic_schedule_24),
+    TopLevelDestination(LenswakeTopLevel.PROFILES, "Profiles", R.drawable.ic_tune_24),
+    TopLevelDestination(LenswakeTopLevel.DIAGNOSTICS, "Diagnostics", R.drawable.ic_diagnostics_24),
 )
 
 @Composable
@@ -121,7 +125,7 @@ fun LenswakeApp(
                         NavigationRailItem(
                             selected = activeTopLevelDestination == destination.key,
                             onClick = { navigation.navigateToTopLevel(destination.topLevel) },
-                            icon = { Text(destination.glyph) },
+                            icon = { TopLevelIcon(destination) },
                             label = { Text(destination.label) },
                         )
                     }
@@ -137,7 +141,7 @@ fun LenswakeApp(
                                 NavigationBarItem(
                                     selected = activeTopLevelDestination == destination.key,
                                     onClick = { navigation.navigateToTopLevel(destination.topLevel) },
-                                    icon = { Text(destination.glyph) },
+                                    icon = { TopLevelIcon(destination) },
                                     label = { Text(destination.label) },
                                 )
                             }
@@ -198,6 +202,14 @@ fun LenswakeApp(
             }
         }
     }
+}
+
+@Composable
+private fun TopLevelIcon(destination: TopLevelDestination) {
+    Icon(
+        painter = painterResource(destination.iconResource),
+        contentDescription = null,
+    )
 }
 
 private val NavigationRailMinWidth = 600.dp

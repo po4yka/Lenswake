@@ -69,6 +69,16 @@ class LenswakeAppTest {
     }
 
     @Test
+    fun navigationAndStatusesUseAccessibleIconsInsteadOfTextGlyphs() {
+        setContent()
+
+        listOf("S", "P", "D", "!", "△", "✓", "?", "•").forEach { glyph ->
+            composeRule.onNodeWithText(glyph).assertDoesNotExist()
+        }
+        composeRule.onNodeWithContentDescription("Blocked status").assertExists()
+    }
+
+    @Test
     fun nestedSetupStaysScopedToItsSelectedTopLevelBackStack() {
         setContent()
         val profilesNavigation = composeRule.onNode(hasText("Profiles") and hasClickAction())
