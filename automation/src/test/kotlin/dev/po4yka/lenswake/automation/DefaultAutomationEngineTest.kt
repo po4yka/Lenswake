@@ -389,6 +389,46 @@ class DefaultAutomationEngineTest {
     }
 
     @Test
+    fun `start accepts picker that hides lens after rear main was confirmed before opening`() = runTest {
+        val session = session(status = SessionStatus.PENDING)
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(
+            state = PixelCameraState.TimeLapse(
+                speed = TimeLapseSpeed.X30,
+                recording = false,
+                lens = LensSelection.REAR_MAIN,
+            ),
+            hideLensInSpeedPicker = true,
+        )
+
+        val result = engine(repository, FakeDeviceControl(interactive = true), camera).start(session.id)
+
+        assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        assertEquals(1, camera.calls.count { it == "openTimeLapseSpeedControl" })
+        assertEquals(1, camera.calls.count { it == "selectSpeed:X120" })
+    }
+
+    @Test
+    fun `start fails when initial speed picker hides lens without current run proof`() = runTest {
+        val session = session(status = SessionStatus.PENDING)
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(
+            state = PixelCameraState.TimeLapseSpeedPicker(
+                speed = TimeLapseSpeed.X30,
+                recording = false,
+                lens = null,
+            ),
+        )
+
+        val result = engine(repository, FakeDeviceControl(interactive = true), camera).start(session.id)
+
+        val failed = assertInstanceOf(AutomationRunResult.Failed::class.java, result)
+        assertEquals(AutomationFailureCode.LENS_NOT_VERIFIED, failed.failure.code)
+        assertEquals(0, camera.calls.count { it == "selectSpeed:X120" })
+        assertEquals(0, camera.calls.count { it == "startRecording" })
+    }
+
+    @Test
     fun `start records once when selected speed remains in the open picker`() = runTest {
         val session = session(status = SessionStatus.PENDING)
         val repository = FakeExecutionRepository(session)
@@ -1219,6 +1259,7 @@ class DefaultAutomationEngineTest {
         private val confirmLens: Boolean = true,
         private val confirmSpeedPicker: Boolean = true,
         private val speedPickerOpensOnAttempt: Int? = null,
+        private val hideLensInSpeedPicker: Boolean = false,
         private val keepSpeedPickerOpenAfterSelection: Boolean = false,
         private val suspendLaunch: Boolean = false,
         private val cancelLaunch: Boolean = false,
@@ -1288,7 +1329,7 @@ class DefaultAutomationEngineTest {
                 state = PixelCameraState.TimeLapseSpeedPicker(
                     speed = current.speed,
                     recording = current.recording,
-                    lens = current.lens,
+                    lens = if (hideLensInSpeedPicker) null else current.lens,
                 )
             }
             return dispatched()

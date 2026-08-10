@@ -365,20 +365,21 @@ class DefaultAutomationEngine(
                             it.lens == LensSelection.REAR_MAIN
                     }
 
-                    state.speed != capture.speed -> openTimeLapseSpeedControlAndVerify(
-                        context = context,
-                        dispatchFailure = failure(
-                            AutomationFailureCode.TIME_LAPSE_SPEED_NOT_FOUND,
-                            "Pixel Camera could not open the Time Lapse speed control",
-                        ),
-                        verificationFailure = failure(
-                            AutomationFailureCode.TIME_LAPSE_SPEED_NOT_VERIFIED,
-                            "Pixel Camera did not expose the Time Lapse speed picker",
-                        ),
-                    ) {
-                        it is PixelCameraState.TimeLapseSpeedPicker &&
-                            !it.recording &&
-                            it.lens == LensSelection.REAR_MAIN
+                    state.speed != capture.speed -> {
+                        context.rearMainLensObservedBeforeSpeedPicker = true
+                        openTimeLapseSpeedControlAndVerify(
+                            context = context,
+                            dispatchFailure = failure(
+                                AutomationFailureCode.TIME_LAPSE_SPEED_NOT_FOUND,
+                                "Pixel Camera could not open the Time Lapse speed control",
+                            ),
+                            verificationFailure = failure(
+                                AutomationFailureCode.TIME_LAPSE_SPEED_NOT_VERIFIED,
+                                "Pixel Camera did not expose the Time Lapse speed picker",
+                            ),
+                        ) {
+                            it is PixelCameraState.TimeLapseSpeedPicker && !it.recording
+                        }
                     }
 
                     else -> {
@@ -418,7 +419,9 @@ class DefaultAutomationEngine(
                             ),
                         )
                     }
-                    if (state.lens != LensSelection.REAR_MAIN) {
+                    if (state.lens != LensSelection.REAR_MAIN &&
+                        !context.rearMainLensObservedBeforeSpeedPicker
+                    ) {
                         fail(
                             context,
                             failure(
@@ -1040,6 +1043,7 @@ class DefaultAutomationEngine(
         var current: ExecutionSession,
     ) {
         lateinit var profileUse: ProfileUse
+        var rearMainLensObservedBeforeSpeedPicker: Boolean = false
 
         suspend fun transition(
             state: AutomationStateName,
