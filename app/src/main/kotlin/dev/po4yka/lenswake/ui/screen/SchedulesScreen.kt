@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -36,6 +35,7 @@ import dev.po4yka.lenswake.ui.ScheduleEditorMode
 import dev.po4yka.lenswake.ui.ScheduleEditorUiState
 import dev.po4yka.lenswake.ui.ScheduleFormUiState
 import dev.po4yka.lenswake.ui.ScheduleSummaryUiState
+import dev.po4yka.lenswake.ui.scaffoldContentViewport
 import dev.po4yka.lenswake.ui.screenContentPadding
 import dev.po4yka.lenswake.ui.component.HonestEmptyState
 import dev.po4yka.lenswake.ui.component.ReadinessCard
@@ -61,10 +61,9 @@ fun SchedulesScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .consumeWindowInsets(contentPadding)
+            .scaffoldContentViewport(contentPadding)
             .imePadding(),
         contentPadding = screenContentPadding(
-            scaffoldPadding = contentPadding,
             topMargin = 24.dp,
             bottomMargin = 24.dp,
         ),

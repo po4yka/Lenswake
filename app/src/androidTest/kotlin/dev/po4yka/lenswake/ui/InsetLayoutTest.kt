@@ -10,9 +10,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpRect
 import androidx.compose.ui.unit.LayoutDirection
@@ -20,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import dev.po4yka.lenswake.ui.screen.ProfilesScreen
 import dev.po4yka.lenswake.ui.theme.LenswakeTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -41,6 +44,28 @@ class InsetLayoutTest {
 
         assertDpEquals(root.right - 63.dp, title.right)
         assertDpEquals(root.top + 61.dp, title.top)
+    }
+
+    @Test
+    fun scrolledContentCannotEnterStatusBarInset() {
+        val (root, _) = renderProfileScreen(LayoutDirection.Ltr)
+
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(2)
+        val emptyState = composeRule.onNodeWithText("No profiles").getUnclippedBoundsInRoot()
+
+        assertTrue(
+            "Scrolled content entered the 37dp status-bar inset: ${emptyState.top}",
+            emptyState.top >= root.top + 37.dp,
+        )
+    }
+
+    @Test
+    fun scrollViewportStartsBelowStatusBarInset() {
+        val (root, _) = renderProfileScreen(LayoutDirection.Ltr)
+
+        val viewport = composeRule.onNode(hasScrollToIndexAction()).getUnclippedBoundsInRoot()
+
+        assertDpEquals(root.top + 37.dp, viewport.top)
     }
 
     private fun renderProfileScreen(layoutDirection: LayoutDirection): Pair<DpRect, DpRect> {
