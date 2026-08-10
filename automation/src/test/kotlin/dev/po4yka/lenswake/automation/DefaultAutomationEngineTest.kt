@@ -873,6 +873,37 @@ class DefaultAutomationEngineTest {
     }
 
     @Test
+    fun `uncertain stop redispatches only after the full verification window confirms recording`() = runTest {
+        val session = session(status = SessionStatus.STOPPING).copy(
+            currentAutomationState = AutomationStateName.VERIFYING_STOPPED,
+            recordActionAt = NOW.minusSeconds(60),
+            recordingVerifiedAt = NOW.minusSeconds(59),
+            stopActionAt = NOW.minusSeconds(1),
+        )
+        val camera = FakePixelCamera(
+            state = PixelCameraState.TimeLapse(
+                TimeLapseSpeed.X120,
+                recording = true,
+                lens = LensSelection.REAR_MAIN,
+            ),
+        )
+
+        val result = engine(
+            repository = FakeExecutionRepository(session),
+            device = FakeDeviceControl(interactive = true),
+            camera = camera,
+            attempts = 3,
+        ).stop(session.id)
+
+        assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        assertEquals(1, camera.calls.count { it == "stopRecording" })
+        assertEquals(
+            listOf("inspect", "inspect", "inspect", "inspect", "stop", "inspect"),
+            camera.trace.filter { it == "inspect" || it == "stop" },
+        )
+    }
+
+    @Test
     fun `stop exception preserves checkpoint without redispatching`() = runTest {
         val session = session(status = SessionStatus.RECORDING).copy(
             currentAutomationState = AutomationStateName.RECORDING,
