@@ -208,6 +208,34 @@ class LenswakeAppTest {
     }
 
     @Test
+    fun profileBusyActionsShowProgressWithoutUnavailableCopy() {
+        setContent(
+            state = LenswakeUiState(
+                profileInstall = ProfileInstallUiState.Installing,
+                rehearsal = RehearsalActionUiState.Running,
+                actions = UiActionAvailability(
+                    installCandidateProfileUnavailableReason =
+                        "Camera profile installation is in progress.",
+                    rehearsalUnavailableReason = "A test recording is already running.",
+                ),
+            ),
+        )
+        composeRule.onNodeWithText("Profiles").performClick()
+
+        listOf("Installing profile", "Testing camera").forEach { label ->
+            val busyDescription = SemanticsMatcher.expectValue(
+                SemanticsProperties.StateDescription,
+                label,
+            )
+            composeRule.onNode(hasText(label) and hasClickAction() and busyDescription)
+                .performScrollTo()
+                .assertIsNotEnabled()
+        }
+        composeRule.onNodeWithText("Camera profile installation is in progress.").assertDoesNotExist()
+        composeRule.onNodeWithText("A test recording is already running.").assertDoesNotExist()
+    }
+
+    @Test
     fun primaryRoutesUseActionFocusedCopy() {
         setContent()
 
@@ -262,6 +290,44 @@ class LenswakeAppTest {
         composeRule.onNodeWithText("Save schedule").performScrollTo().assertIsEnabled().performClick()
         composeRule.runOnIdle { assertEquals(1, submitRequests) }
         composeRule.onNodeWithText("120×", substring = true).assertExists()
+    }
+
+    @Test
+    fun scheduleSaveShowsProgressInTheSubmitButton() {
+        val busyMessage = "Saving schedule…"
+        setContent(
+            state = LenswakeUiState(
+                profiles = listOf(
+                    ProfileSummaryUiState(
+                        id = "profile-verified",
+                        title = "Pixel 8 Pro",
+                        environment = "Android 17 - Pixel Camera 69481630 - en-US",
+                        compatibility = "Verified",
+                        verifiedForScheduling = true,
+                    ),
+                ),
+                scheduleEditor = ScheduleEditorUiState.Open(
+                    mode = ScheduleEditorMode.Create,
+                    form = ScheduleFormUiState(
+                        name = "Dawn",
+                        startLocal = LocalDateTime.of(2030, 1, 1, 6, 0),
+                        stopLocal = LocalDateTime.of(2030, 1, 1, 8, 0),
+                        zoneId = ZoneId.of("Asia/Tbilisi"),
+                        profileId = "profile-verified",
+                    ),
+                ),
+                scheduleAction = ScheduleActionUiState.Working(busyMessage),
+            ),
+        )
+        val busyDescription = SemanticsMatcher.expectValue(
+            SemanticsProperties.StateDescription,
+            busyMessage,
+        )
+
+        composeRule.onNode(hasText(busyMessage) and hasClickAction() and busyDescription)
+            .performScrollTo()
+            .assertIsNotEnabled()
+        composeRule.onNode(hasText("Save schedule") and hasClickAction()).assertDoesNotExist()
     }
 
     @Test

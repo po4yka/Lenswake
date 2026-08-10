@@ -63,6 +63,7 @@ import dev.po4yka.lenswake.ui.withStartTime
 import dev.po4yka.lenswake.ui.withStopDate
 import dev.po4yka.lenswake.ui.withStopTime
 import dev.po4yka.lenswake.ui.component.ActionSection
+import dev.po4yka.lenswake.ui.component.BusyButtonLabel
 import dev.po4yka.lenswake.ui.component.ReadinessCard
 import dev.po4yka.lenswake.ui.component.ScreenHeader
 import dev.po4yka.lenswake.ui.component.StatusIcon
@@ -92,7 +93,8 @@ fun SchedulesScreen(
     onConfirmDelete: (String) -> Unit,
     onClearOutcome: () -> Unit,
 ) {
-    val busy = state.scheduleAction is ScheduleActionUiState.Working
+    val busyMessage = (state.scheduleAction as? ScheduleActionUiState.Working)?.message
+    val busy = busyMessage != null
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -130,7 +132,7 @@ fun SchedulesScreen(
                 ScheduleEditor(
                     editor = editor,
                     profiles = state.profiles,
-                    busy = busy,
+                    busyMessage = busyMessage,
                     onUpdateForm = onUpdateForm,
                     onSubmit = onSubmit,
                     onCancel = onCancelEditor,
@@ -203,11 +205,12 @@ fun SchedulesScreen(
 private fun ScheduleEditor(
     editor: ScheduleEditorUiState.Open,
     profiles: List<ProfileSummaryUiState>,
-    busy: Boolean,
+    busyMessage: String?,
     onUpdateForm: (ScheduleFormUiState) -> Unit,
     onSubmit: () -> Unit,
     onCancel: () -> Unit,
 ) {
+    val busy = busyMessage != null
     val form = editor.form
     val validation = form.validateForDisplay(profiles)
     val locale = LocalConfiguration.current.locales[0]
@@ -339,11 +342,21 @@ private fun ScheduleEditor(
             Button(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .sizeIn(minHeight = 48.dp),
+                    .sizeIn(minHeight = 48.dp)
+                    .semantics {
+                        busyMessage?.let { message ->
+                            liveRegion = LiveRegionMode.Polite
+                            stateDescription = message
+                        }
+                    },
                 enabled = !busy && validation.canSubmit,
                 onClick = onSubmit,
             ) {
-                Text(if (editor.mode is ScheduleEditorMode.Create) "Save schedule" else "Save changes")
+                if (busyMessage != null) {
+                    BusyButtonLabel(busyMessage)
+                } else {
+                    Text(if (editor.mode is ScheduleEditorMode.Create) "Save schedule" else "Save changes")
+                }
             }
             OutlinedButton(
                 modifier = Modifier

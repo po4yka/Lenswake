@@ -55,6 +55,7 @@ fun ProfilesScreen(
                     "Install camera profile"
                 },
                 actionEnabled = state.actions.canInstallCandidateProfile,
+                actionInProgress = state.profileInstall is ProfileInstallUiState.Installing,
                 unavailableReason = state.actions.installCandidateProfileUnavailableReason,
                 onAction = onInstallCandidateProfile,
             )
@@ -106,6 +107,7 @@ fun ProfilesScreen(
                     "Test recording"
                 },
                 actionEnabled = state.actions.canRunRehearsal,
+                actionInProgress = state.rehearsal is RehearsalActionUiState.Running,
                 unavailableReason = state.actions.rehearsalUnavailableReason,
                 onAction = onRunRehearsal,
             )

@@ -6,15 +6,18 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -215,6 +218,7 @@ fun ActionSection(
     detail: String,
     actionLabel: String,
     actionEnabled: Boolean,
+    actionInProgress: Boolean = false,
     unavailableReason: String,
     onAction: () -> Unit,
     modifier: Modifier = Modifier,
@@ -235,19 +239,51 @@ fun ActionSection(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Button(
-            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
-            enabled = actionEnabled,
+            modifier = Modifier
+                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                .semantics {
+                    if (actionInProgress) {
+                        liveRegion = LiveRegionMode.Polite
+                        stateDescription = actionLabel
+                    }
+                },
+            enabled = actionEnabled && !actionInProgress,
             onClick = onAction,
         ) {
-            Text(actionLabel)
+            if (actionInProgress) {
+                BusyButtonLabel(actionLabel)
+            } else {
+                Text(actionLabel)
+            }
         }
-        if (!actionEnabled) {
+        if (!actionEnabled && !actionInProgress) {
             Text(
                 text = unavailableReason,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+@Composable
+fun BusyButtonLabel(
+    label: String,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier
+                .size(18.dp)
+                .clearAndSetSemantics {},
+            color = LocalContentColor.current,
+            strokeWidth = 2.dp,
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(label)
     }
 }
 
