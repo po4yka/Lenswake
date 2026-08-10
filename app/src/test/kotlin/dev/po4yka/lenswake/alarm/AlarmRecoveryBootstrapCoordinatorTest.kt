@@ -1,5 +1,6 @@
 package dev.po4yka.lenswake.alarm
 
+import android.app.job.JobParameters
 import android.content.Intent
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -8,6 +9,12 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class AlarmRecoveryBootstrapCoordinatorTest {
+    @Test
+    fun appCancelledRecoveryJobDoesNotConsumeABoundedRetry() {
+        assertFalse(shouldRetryStoppedRecovery(JobParameters.STOP_REASON_CANCELLED_BY_APP))
+        assertTrue(shouldRetryStoppedRecovery(JobParameters.STOP_REASON_DEVICE_STATE))
+    }
+
     @Test
     fun lockedBootPersistsMinimalCheckpointWithoutSchedulingCredentialProtectedRecovery() {
         val persistence = BootstrapCheckpointPersistence()

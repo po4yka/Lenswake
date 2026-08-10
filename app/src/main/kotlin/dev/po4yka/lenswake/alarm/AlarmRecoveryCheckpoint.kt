@@ -178,6 +178,55 @@ internal class AlarmRecoveryRetryCoordinator(
         return escalate(AlarmTransportFailureCode.RECOVERY_REQUEUE_FAILED, schedulingDetail.trim())
     }
 
+    fun retryWithScheduler(
+        detail: String,
+        capabilityUnavailable: Boolean = false,
+    ): Boolean {
+        val persistedCheckpoint = runCatching { persistence.checkpoint() }
+            .getOrElse { error ->
+                escalate(
+                    AlarmTransportFailureCode.RECOVERY_REQUEUE_FAILED,
+                    "$detail Recovery checkpoint could not be read: ${error.message.orEmpty()}",
+                )
+                return false
+            }
+        val currentAttempt = persistedCheckpoint?.attempt ?: 0
+        val reconcileInterruptedSessions =
+            persistedCheckpoint?.reconcileInterruptedSessions == true
+        if (capabilityUnavailable) {
+            persistExhausted(currentAttempt, detail, reconcileInterruptedSessions)
+            escalate(AlarmTransportFailureCode.RECOVERY_CAPABILITY_UNAVAILABLE, detail)
+            return false
+        }
+        if (currentAttempt >= maxAttempts) {
+            persistExhausted(currentAttempt, detail, reconcileInterruptedSessions)
+            escalate(AlarmTransportFailureCode.RECOVERY_ATTEMPTS_EXHAUSTED, detail)
+            return false
+        }
+
+        val nextAttempt = currentAttempt + 1
+        val triggerAt = nowEpochMillis() + backoffMillis(nextAttempt)
+        val persisted = runCatching {
+            persistence.persist(
+                AlarmRecoveryCheckpoint(
+                    attempt = nextAttempt,
+                    lastFailure = detail,
+                    nextAttemptAtEpochMillis = triggerAt,
+                    exhausted = false,
+                    updatedAtEpochMillis = nowEpochMillis(),
+                    reconcileInterruptedSessions = reconcileInterruptedSessions,
+                ),
+            )
+        }.getOrDefault(false)
+        if (persisted) return true
+
+        escalate(
+            AlarmTransportFailureCode.RECOVERY_REQUEUE_FAILED,
+            "$detail Recovery checkpoint could not be persisted.",
+        )
+        return false
+    }
+
     fun resolve(cancelScheduledRetry: Boolean = true): Boolean {
         val cleared = runCatching { persistence.clear() }.getOrDefault(false)
         if (cancelScheduledRetry) runCatching { backend.cancel() }

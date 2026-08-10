@@ -18,13 +18,17 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 
+internal fun shouldRetryStoppedRecovery(stopReason: Int): Boolean =
+    stopReason != JobParameters.STOP_REASON_CANCELLED_BY_APP
+
 /** Restores future alarms and re-arms durable delivery entries without invoking automation. */
 class AlarmRecoveryService : JobService() {
     private val serviceScope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO + CoroutineName("lenswake-alarm-recovery"),
     )
     private val recoveryMutex = Mutex()
-    private val jobs = ConcurrentHashMap<Int, Job>()
+    private val terminalLock = Any()
+    private val jobs = ConcurrentHashMap<Int, RecoveryJobRun>()
     private lateinit var reconciler: AlarmJournalReconciler
     private lateinit var escalator: AlarmTransportEscalator
     private lateinit var retryCoordinator: AlarmRecoveryRetryCoordinator
@@ -51,31 +55,60 @@ class AlarmRecoveryService : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         val action = params.extras.getString(EXTRA_RECOVERY_ACTION)
             ?: ACTION_ALARM_RECOVERY_RETRY
-        lateinit var job: Job
-        job = serviceScope.launch(start = CoroutineStart.LAZY) {
+        val run = RecoveryJobRun()
+        run.job = serviceScope.launch(start = CoroutineStart.LAZY) {
+            var shouldFinish = false
+            var shouldReschedule = false
             try {
-                recoveryMutex.withLock { recover(action) }
-                jobFinished(params, false)
+                recoveryMutex.withLock {
+                    val failure = evaluateRecovery(action)
+                    synchronized(terminalLock) {
+                        synchronized(run) {
+                            if (!run.stopped) {
+                                shouldReschedule = commitRecovery(action, failure)
+                                run.terminalCommitted = true
+                                shouldFinish = true
+                            }
+                        }
+                    }
+                }
+                if (shouldFinish) jobFinished(params, shouldReschedule)
             } finally {
-                jobs.remove(params.jobId, job)
+                jobs.remove(params.jobId, run)
             }
         }
-        jobs.put(params.jobId, job)?.cancel()
-        job.start()
+        jobs.put(params.jobId, run)?.let { previous ->
+            synchronized(terminalLock) {
+                synchronized(previous) {
+                    previous.stopped = true
+                    previous.job.cancel()
+                }
+            }
+        }
+        run.job.start()
         return true
     }
 
     override fun onStopJob(params: JobParameters): Boolean {
-        val job = jobs.remove(params.jobId) ?: return false
-        job.cancel()
-        handleRecoveryFailure(
-            RecoveryFailure(
-                detail = "Alarm recovery job was stopped by Android " +
-                    "(reason=${params.stopReason}).",
-                capabilityUnavailable = false,
-            ),
-        )
-        return false
+        val run = jobs.remove(params.jobId) ?: return false
+        return synchronized(terminalLock) {
+            synchronized(run) {
+                if (run.terminalCommitted) {
+                    false
+                } else {
+                    run.stopped = true
+                    run.job.cancel()
+                    if (shouldRetryStoppedRecovery(params.stopReason)) {
+                        retryCoordinator.retryWithScheduler(
+                            detail = "Alarm recovery job was stopped by Android " +
+                                "(reason=${params.stopReason}).",
+                        )
+                    } else {
+                        false
+                    }
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -83,30 +116,35 @@ class AlarmRecoveryService : JobService() {
         super.onDestroy()
     }
 
-    private suspend fun recover(action: String) {
+    private suspend fun evaluateRecovery(action: String): RecoveryFailure? =
         try {
-            val failure = withTimeout(RECOVERY_DEADLINE_MILLIS) { attemptRecovery(action) }
-            if (failure == null) {
-                retryCoordinator.resolve(
-                    cancelScheduledRetry = action != ACTION_ALARM_RECOVERY_RETRY,
-                )
-                Log.i(TAG, "Alarm recovery completed and its durable checkpoint was cleared")
-            } else {
-                handleRecoveryFailure(failure)
-            }
+            withTimeout(RECOVERY_DEADLINE_MILLIS) { attemptRecovery(action) }
         } catch (error: TimeoutCancellationException) {
             Log.e(TAG, "Alarm recovery exceeded its finite deadline", error)
-            handleRecoveryFailure(
-                RecoveryFailure("Alarm recovery exceeded its finite deadline.", false),
-            )
+            RecoveryFailure("Alarm recovery exceeded its finite deadline.", false)
         } catch (error: CancellationException) {
             throw error
         } catch (error: RuntimeException) {
             Log.e(TAG, "Alarm recovery failed", error)
-            handleRecoveryFailure(
-                RecoveryFailure("Alarm recovery failed: ${error.message.orEmpty()}", false),
+            RecoveryFailure("Alarm recovery failed: ${error.message.orEmpty()}", false)
+        }
+
+    private fun commitRecovery(action: String, failure: RecoveryFailure?): Boolean {
+        if (failure == null) {
+            retryCoordinator.resolve(
+                cancelScheduledRetry = action != ACTION_ALARM_RECOVERY_RETRY,
+            )
+            Log.i(TAG, "Alarm recovery completed and its durable checkpoint was cleared")
+            return false
+        }
+        if (action == ACTION_ALARM_RECOVERY_RETRY) {
+            return retryCoordinator.retryWithScheduler(
+                detail = failure.detail,
+                capabilityUnavailable = failure.capabilityUnavailable,
             )
         }
+        handleRecoveryFailure(failure)
+        return false
     }
 
     private suspend fun attemptRecovery(action: String): RecoveryFailure? {
@@ -186,6 +224,12 @@ class AlarmRecoveryService : JobService() {
         val detail: String,
         val capabilityUnavailable: Boolean,
     )
+
+    private class RecoveryJobRun {
+        lateinit var job: Job
+        var stopped: Boolean = false
+        var terminalCommitted: Boolean = false
+    }
 
     private companion object {
         const val TAG = "LenswakeAlarm"

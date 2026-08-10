@@ -4,6 +4,7 @@ import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.SessionId
 import java.time.Instant
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -340,6 +341,22 @@ class AlarmRecoveryRetryCoordinatorTest {
         assertEquals(listOf(31_000L, 61_000L), backend.scheduled)
         assertTrue(checkpoint.checkpoint()?.exhausted == true)
         assertNull(checkpoint.checkpoint()?.nextAttemptAtEpochMillis)
+        assertEquals(AlarmTransportFailureCode.RECOVERY_ATTEMPTS_EXHAUSTED, failures.single().code)
+    }
+
+    @Test
+    fun schedulerManagedRetriesRemainBoundedWithoutReplacingTheRunningJob() {
+        val checkpoint = FakeRecoveryCheckpointPersistence()
+        val backend = FakeRecoveryRetryBackend()
+        val failures = FakeFailurePersistence()
+        val coordinator = recoveryCoordinator(checkpoint, backend, failures)
+
+        assertTrue(coordinator.retryWithScheduler("system stop one"))
+        assertTrue(coordinator.retryWithScheduler("system stop two"))
+        assertFalse(coordinator.retryWithScheduler("system stop three"))
+
+        assertTrue(backend.scheduled.isEmpty())
+        assertTrue(checkpoint.checkpoint()?.exhausted == true)
         assertEquals(AlarmTransportFailureCode.RECOVERY_ATTEMPTS_EXHAUSTED, failures.single().code)
     }
 
