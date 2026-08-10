@@ -1,16 +1,21 @@
 package dev.po4yka.lenswake.alarm
 
 import android.Manifest
+import android.app.AlarmManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.os.Process
+import android.os.SystemClock
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
+import org.junit.Assume.assumeFalse
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -80,6 +85,33 @@ class AutomationExecutionServiceManifestTest {
     @Test
     fun serviceContractUsesRedeliveryForProcessRecreation() {
         assertEquals(android.app.Service.START_REDELIVER_INTENT, AUTOMATION_SERVICE_RESTART_MODE)
+    }
+
+    @Test
+    fun recoveryServiceSurvivesMissingSystemExemptedPrerequisite() {
+        val alarmManager = context.getSystemService(AlarmManager::class.java)
+        assumeFalse(alarmManager.canScheduleExactAlarms())
+        val processId = Process.myPid()
+
+        context.startForegroundService(
+            Intent(context, AlarmRecoveryService::class.java)
+                .setAction(Intent.ACTION_MY_PACKAGE_REPLACED),
+        )
+        SystemClock.sleep(1_000L)
+
+        assertEquals(processId, Process.myPid())
+    }
+
+    @Test
+    fun bootRecoveryReceiverDoesNotStartIneligibleSystemExemptedService() {
+        val alarmManager = context.getSystemService(AlarmManager::class.java)
+        assumeFalse(alarmManager.canScheduleExactAlarms())
+        val processId = Process.myPid()
+
+        AlarmRecoveryReceiver().onReceive(context, Intent(Intent.ACTION_BOOT_COMPLETED))
+        SystemClock.sleep(1_000L)
+
+        assertEquals(processId, Process.myPid())
     }
 
 }

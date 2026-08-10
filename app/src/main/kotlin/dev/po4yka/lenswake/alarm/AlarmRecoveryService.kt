@@ -32,6 +32,7 @@ class AlarmRecoveryService : Service() {
     private lateinit var reconciler: AlarmJournalReconciler
     private lateinit var retryCoordinator: AlarmRecoveryRetryCoordinator
     private lateinit var checkpointPersistence: AlarmRecoveryCheckpointPersistence
+    private var foregroundAdmitted = false
 
     override fun onCreate() {
         super.onCreate()
@@ -51,18 +52,19 @@ class AlarmRecoveryService : Service() {
             escalator = escalator,
         )
         createNotificationChannel()
-        startForeground(
-            NOTIFICATION_ID,
-            notification(),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED,
-        )
+        foregroundAdmitted = enterForeground()
+        if (!foregroundAdmitted) return
         serviceScope.launch {
             for (action in queue) recover(action)
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int =
-        lifecycleGate.onStart(startId) {
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!foregroundAdmitted) {
+            stopSelfResult(startId)
+            return START_NOT_STICKY
+        }
+        return lifecycleGate.onStart(startId) {
             lifecycleGate.workAccepted()
             val action = intent?.action ?: ACTION_ALARM_RECOVERY_RETRY
             if (queue.trySend(action).isFailure) {
@@ -71,6 +73,7 @@ class AlarmRecoveryService : Service() {
             }
             ALARM_RECOVERY_RESTART_MODE
         }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -178,6 +181,30 @@ class AlarmRecoveryService : Service() {
                 setShowBadge(false)
             },
         )
+    }
+
+    private fun enterForeground(): Boolean = try {
+        startForeground(
+            NOTIFICATION_ID,
+            notification(),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED,
+        )
+        true
+    } catch (error: SecurityException) {
+        Log.e(
+            TAG,
+            "Alarm recovery foreground admission failed because exact-alarm access is unavailable",
+            error,
+        )
+        handleRecoveryFailure(
+            RecoveryFailure(
+                detail = "Alarm recovery foreground admission failed because exact-alarm access " +
+                    "is unavailable: ${error.message.orEmpty()}",
+                capabilityUnavailable = true,
+            ),
+        )
+        stopSelf()
+        false
     }
 
     private fun notification(): Notification = Notification.Builder(this, CHANNEL_ID)

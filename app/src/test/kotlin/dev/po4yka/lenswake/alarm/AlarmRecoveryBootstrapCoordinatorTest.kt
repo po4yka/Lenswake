@@ -64,6 +64,7 @@ class AlarmRecoveryBootstrapCoordinatorTest {
         )
         val coordinator = AlarmRecoveryBootstrapCoordinator(
             persistence = persistence,
+            serviceAdmission = AlarmRecoveryServiceAdmission { true },
             serviceStarter = starter,
             failureHandler = retry,
             nowEpochMillis = { 1_000L },
@@ -79,6 +80,46 @@ class AlarmRecoveryBootstrapCoordinatorTest {
         assertFalse(persistence.clearCalled)
         assertTrue(persistence.checkpoint()?.reconcileInterruptedSessions == true)
         assertTrue(retry.details.single().contains("FGS start rejected"))
+        assertEquals(listOf(false), retry.capabilityUnavailable)
+    }
+
+    @Test
+    fun missingExactAlarmAccessBlocksSystemExemptedRecoveryAfterUpdateAndBoot() {
+        val persistence = BootstrapCheckpointPersistence()
+        val starter = RecoveryServiceStarterSpy()
+        val retry = RecoveryFailureHandlerSpy(
+            AlarmRecoveryRetryResult.Escalated(
+                code = AlarmTransportFailureCode.RECOVERY_CAPABILITY_UNAVAILABLE,
+                result = AlarmTransportEscalationResult(
+                    markerPersisted = true,
+                    notification = FailureNotificationResult.PERMISSION_UNAVAILABLE,
+                ),
+            ),
+        )
+        val coordinator = AlarmRecoveryBootstrapCoordinator(
+            persistence = persistence,
+            serviceAdmission = AlarmRecoveryServiceAdmission { false },
+            serviceStarter = starter,
+            failureHandler = retry,
+            nowEpochMillis = { 1_000L },
+        )
+
+        val results = listOf(
+            Intent.ACTION_MY_PACKAGE_REPLACED,
+            Intent.ACTION_BOOT_COMPLETED,
+        ).map { action -> coordinator.handle(action, userUnlocked = true) }
+
+        assertEquals(
+            List(2) {
+                AlarmRecoveryBootstrapResult.Escalated(
+                    AlarmTransportFailureCode.RECOVERY_CAPABILITY_UNAVAILABLE,
+                )
+            },
+            results,
+        )
+        assertTrue(starter.actions.isEmpty())
+        assertEquals(listOf(true, true), retry.capabilityUnavailable)
+        assertTrue(retry.details.all { it.contains("exact-alarm access") })
     }
 
     @Test
@@ -123,6 +164,7 @@ class AlarmRecoveryBootstrapCoordinatorTest {
         starter: RecoveryServiceStarterSpy,
     ) = AlarmRecoveryBootstrapCoordinator(
         persistence = persistence,
+        serviceAdmission = AlarmRecoveryServiceAdmission { true },
         serviceStarter = starter,
         failureHandler = RecoveryFailureHandlerSpy(
             AlarmRecoveryRetryResult.Scheduled(1, 31_000L),
@@ -170,9 +212,14 @@ private class RecoveryFailureHandlerSpy(
     private val result: AlarmRecoveryRetryResult,
 ) : AlarmRecoveryFailureHandler {
     val details = mutableListOf<String>()
+    val capabilityUnavailable = mutableListOf<Boolean>()
 
-    override fun retry(detail: String): AlarmRecoveryRetryResult {
+    override fun retry(
+        detail: String,
+        capabilityUnavailable: Boolean,
+    ): AlarmRecoveryRetryResult {
         details += detail
+        this.capabilityUnavailable += capabilityUnavailable
         return result
     }
 }

@@ -1,5 +1,6 @@
 package dev.po4yka.lenswake.alarm
 
+import android.app.AlarmManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -10,8 +11,12 @@ internal fun interface AlarmRecoveryServiceStarter {
     fun start(action: String): Result<Unit>
 }
 
+internal fun interface AlarmRecoveryServiceAdmission {
+    fun canStart(): Boolean
+}
+
 internal fun interface AlarmRecoveryFailureHandler {
-    fun retry(detail: String): AlarmRecoveryRetryResult
+    fun retry(detail: String, capabilityUnavailable: Boolean): AlarmRecoveryRetryResult
 }
 
 internal sealed interface AlarmRecoveryBootstrapResult {
@@ -28,6 +33,7 @@ internal sealed interface AlarmRecoveryBootstrapResult {
 /** Direct-Boot-safe transport coordinator. It never opens Room or invokes Camera automation. */
 internal class AlarmRecoveryBootstrapCoordinator(
     private val persistence: AlarmRecoveryCheckpointPersistence,
+    private val serviceAdmission: AlarmRecoveryServiceAdmission,
     private val serviceStarter: AlarmRecoveryServiceStarter,
     private val failureHandler: AlarmRecoveryFailureHandler,
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
@@ -38,17 +44,26 @@ internal class AlarmRecoveryBootstrapCoordinator(
         if (!runCatching { persistence.persist(checkpoint) }.getOrDefault(false)) {
             return failureHandler.retry(
                 "Recovery requested by $action, but its Direct Boot checkpoint could not be persisted.",
+                capabilityUnavailable = false,
             ).toBootstrapResult()
         }
         if (action == Intent.ACTION_LOCKED_BOOT_COMPLETED || !userUnlocked) {
             return AlarmRecoveryBootstrapResult.DeferredUntilUnlock
         }
 
+        if (!serviceAdmission.canStart()) {
+            return failureHandler.retry(
+                "Alarm recovery foreground service was not started for $action because " +
+                    "exact-alarm access is unavailable.",
+                capabilityUnavailable = true,
+            ).toBootstrapResult()
+        }
         val startFailure = serviceStarter.start(action).exceptionOrNull()
             ?: return AlarmRecoveryBootstrapResult.Started
         return failureHandler.retry(
             "Recovery service admission failed for $action: " +
                 "${startFailure.javaClass.simpleName}: ${startFailure.message.orEmpty()}",
+            capabilityUnavailable = false,
         ).toBootstrapResult()
     }
 
@@ -117,8 +132,12 @@ class AlarmRecoveryReceiver : BroadcastReceiver() {
             backend = AndroidAlarmRecoveryRetryBackend(context),
             escalator = escalator,
         )
+        val alarmManager = context.getSystemService(AlarmManager::class.java)
         val coordinator = AlarmRecoveryBootstrapCoordinator(
             persistence = persistence,
+            serviceAdmission = AlarmRecoveryServiceAdmission {
+                runCatching { alarmManager.canScheduleExactAlarms() }.getOrDefault(false)
+            },
             serviceStarter = AlarmRecoveryServiceStarter { recoveryAction ->
                 runCatching {
                     context.startForegroundService(
@@ -126,8 +145,8 @@ class AlarmRecoveryReceiver : BroadcastReceiver() {
                     )
                 }.map { }
             },
-            failureHandler = AlarmRecoveryFailureHandler { detail ->
-                retryCoordinator.retry(detail)
+            failureHandler = AlarmRecoveryFailureHandler { detail, capabilityUnavailable ->
+                retryCoordinator.retry(detail, capabilityUnavailable)
             },
         )
         val userUnlocked = context.getSystemService(UserManager::class.java).isUserUnlocked
