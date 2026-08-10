@@ -44,6 +44,9 @@ data class RuntimePreflightObservation(
     val deviceWake: RuntimeCapabilityObservation,
     val accessibilityEnabled: RuntimeCapabilityObservation,
     val accessibilityConnected: RuntimeCapabilityObservation,
+    val battery: RuntimeCapabilityObservation,
+    val charging: RuntimeCapabilityObservation,
+    val storage: RuntimeCapabilityObservation,
     val successfulRehearsals: Map<ProfileId, ExecutionSession> = emptyMap(),
     val rehearsalEvidenceFailure: String? = null,
 )
@@ -63,6 +66,15 @@ class RuntimePreflightEvaluator {
             observation.deviceWake.toCheck(PreflightCheckType.DEVICE_WAKE),
             observation.accessibilityEnabled.toCheck(PreflightCheckType.ACCESSIBILITY_ENABLED),
             observation.accessibilityConnected.toCheck(PreflightCheckType.ACCESSIBILITY_CONNECTED),
+            observation.battery.toCheck(PreflightCheckType.BATTERY),
+            observation.charging.toResourceCheck(
+                type = PreflightCheckType.CHARGING,
+                knownFailureSeverity = PreflightSeverity.WARNING,
+            ),
+            observation.storage.toResourceCheck(
+                type = PreflightCheckType.STORAGE,
+                knownFailureSeverity = PreflightSeverity.WARNING,
+            ),
             profileAvailableCheck(profiles),
             profileCompatibilityCheck(profiles, observation.cameraEnvironment),
             rehearsalCurrentCheck(observation, profiles),
@@ -83,6 +95,22 @@ class RuntimePreflightEvaluator {
             message = message,
             remediation = remediation,
         )
+
+    /** Unknown resource state blocks scheduling; known advisory failures remain visible warnings. */
+    private fun RuntimeCapabilityObservation.toResourceCheck(
+        type: PreflightCheckType,
+        knownFailureSeverity: PreflightSeverity,
+    ): PreflightCheck = PreflightCheck(
+        type = type,
+        severity = if (status == PreflightStatus.UNKNOWN) {
+            PreflightSeverity.BLOCKING
+        } else {
+            knownFailureSeverity
+        },
+        status = status,
+        message = message,
+        remediation = remediation,
+    )
 
     private fun profileAvailableCheck(profiles: List<PixelCameraProfile>): PreflightCheck =
         PreflightCheck(

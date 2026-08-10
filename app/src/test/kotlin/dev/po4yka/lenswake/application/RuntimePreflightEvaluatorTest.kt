@@ -6,6 +6,7 @@ import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
 import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.PreflightCheckType
+import dev.po4yka.lenswake.core.PreflightSeverity
 import dev.po4yka.lenswake.core.PreflightStatus
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
@@ -91,6 +92,69 @@ class RuntimePreflightEvaluatorTest {
         assertEquals(
             SetupRemediationAction.OPEN_FULL_SCREEN_INTENT_SETTINGS,
             checks.getValue(PreflightCheckType.FULL_SCREEN_INTENT).remediation,
+        )
+    }
+
+    @Test
+    fun unknownResourceChecksFailClosed() {
+        val report = evaluator.evaluate(
+            observation = observation(
+                battery = unknown("Battery unavailable."),
+                charging = unknown("Charging unavailable."),
+                storage = unknown("Storage unavailable."),
+            ),
+            profiles = emptyList(),
+        )
+        val checks = report.checks.associateBy { it.type }
+
+        assertEquals(PreflightStatus.UNKNOWN, checks.getValue(PreflightCheckType.BATTERY).status)
+        assertEquals(
+            PreflightSeverity.BLOCKING,
+            checks.getValue(PreflightCheckType.BATTERY).severity,
+        )
+        assertEquals(
+            PreflightSeverity.BLOCKING,
+            checks.getValue(PreflightCheckType.CHARGING).severity,
+        )
+        assertEquals(
+            PreflightSeverity.BLOCKING,
+            checks.getValue(PreflightCheckType.STORAGE).severity,
+        )
+        val blocked = assertInstanceOf(ScheduleReadiness.Blocked::class.java, report.readiness)
+        assertEquals(
+            setOf(PreflightCheckType.BATTERY, PreflightCheckType.CHARGING, PreflightCheckType.STORAGE),
+            blocked.blockers.map { it.type }.filter {
+                it in setOf(
+                    PreflightCheckType.BATTERY,
+                    PreflightCheckType.CHARGING,
+                    PreflightCheckType.STORAGE,
+                )
+            }.toSet(),
+        )
+    }
+
+    @Test
+    fun lowBatteryBlocksWhileKnownChargingAndStorageFailuresRemainAdvisory() {
+        val checks = evaluator.evaluate(
+            observation = observation(
+                battery = failed("Battery is low."),
+                charging = failed("Not charging."),
+                storage = failed("Storage is low."),
+            ),
+            profiles = emptyList(),
+        ).checks.associateBy { it.type }
+
+        assertEquals(
+            PreflightSeverity.BLOCKING,
+            checks.getValue(PreflightCheckType.BATTERY).severity,
+        )
+        assertEquals(
+            PreflightSeverity.WARNING,
+            checks.getValue(PreflightCheckType.CHARGING).severity,
+        )
+        assertEquals(
+            PreflightSeverity.WARNING,
+            checks.getValue(PreflightCheckType.STORAGE).severity,
         )
     }
 
@@ -184,6 +248,9 @@ class RuntimePreflightEvaluatorTest {
         deviceWake: RuntimeCapabilityObservation = passed("Device wake available."),
         accessibilityEnabled: RuntimeCapabilityObservation = passed("Accessibility enabled."),
         accessibilityConnected: RuntimeCapabilityObservation = passed("Accessibility connected."),
+        battery: RuntimeCapabilityObservation = passed("Battery sufficient."),
+        charging: RuntimeCapabilityObservation = passed("Charging."),
+        storage: RuntimeCapabilityObservation = passed("Storage sufficient."),
     ) = RuntimePreflightObservation(
         exactAlarms = exactAlarms,
         notifications = notifications,
@@ -194,6 +261,9 @@ class RuntimePreflightEvaluatorTest {
         deviceWake = deviceWake,
         accessibilityEnabled = accessibilityEnabled,
         accessibilityConnected = accessibilityConnected,
+        battery = battery,
+        charging = charging,
+        storage = storage,
     )
 
     private fun profile(environment: PixelCameraEnvironment) = PixelCameraProfile(

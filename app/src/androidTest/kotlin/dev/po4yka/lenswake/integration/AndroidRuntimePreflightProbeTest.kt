@@ -3,6 +3,8 @@ package dev.po4yka.lenswake.integration
 import android.app.AlarmManager
 import android.app.NotificationManager
 import android.content.pm.PackageManager
+import android.os.BatteryManager
+import android.os.StatFs
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.po4yka.lenswake.LenswakeApplication
@@ -80,6 +82,48 @@ class AndroidRuntimePreflightProbeTest {
         assertTrue(checks.containsKey(PreflightCheckType.ACCESSIBILITY_ENABLED))
         assertTrue(checks.containsKey(PreflightCheckType.ACCESSIBILITY_CONNECTED))
         assertEquals(PreflightStatus.PASSED, checks.getValue(PreflightCheckType.DEVICE_WAKE).status)
+        val batteryManager = application.getSystemService(BatteryManager::class.java)
+        val batteryPercent = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        assertEquals(
+            if (batteryPercent in MINIMUM_BATTERY_PERCENT..100) {
+                PreflightStatus.PASSED
+            } else if (batteryPercent in 0 until MINIMUM_BATTERY_PERCENT) {
+                PreflightStatus.FAILED
+            } else {
+                PreflightStatus.UNKNOWN
+            },
+            checks.getValue(PreflightCheckType.BATTERY).status,
+        )
+        assertEquals(
+            when (batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS)) {
+                BatteryManager.BATTERY_STATUS_CHARGING,
+                BatteryManager.BATTERY_STATUS_FULL,
+                -> PreflightStatus.PASSED
+                BatteryManager.BATTERY_STATUS_DISCHARGING,
+                BatteryManager.BATTERY_STATUS_NOT_CHARGING,
+                -> PreflightStatus.FAILED
+                else -> PreflightStatus.UNKNOWN
+            },
+            checks.getValue(PreflightCheckType.CHARGING).status,
+        )
+        val primarySharedStorage = application.getExternalFilesDir(null)
+        if (primarySharedStorage != null) {
+            val available = StatFs(primarySharedStorage.absolutePath).availableBytes
+            assertEquals(
+                if (available >= MINIMUM_AVAILABLE_STORAGE_BYTES) {
+                    PreflightStatus.PASSED
+                } else {
+                    PreflightStatus.FAILED
+                },
+                checks.getValue(PreflightCheckType.STORAGE).status,
+            )
+            assertTrue(available >= 0)
+        } else {
+            assertEquals(
+                PreflightStatus.UNKNOWN,
+                checks.getValue(PreflightCheckType.STORAGE).status,
+            )
+        }
         assertTrue(report.readiness is dev.po4yka.lenswake.core.ScheduleReadiness.Blocked)
     }
 

@@ -5,6 +5,8 @@ import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.BatteryManager
+import android.os.StatFs
 import android.provider.Settings
 import dev.po4yka.lenswake.accessibility.PixelCameraAccessibilityRuntime
 import dev.po4yka.lenswake.accessibility.PixelCameraAccessibilityService
@@ -37,6 +39,7 @@ class AndroidRuntimePreflightProbe(
     private val applicationContext = context.applicationContext
     private val alarmManager = applicationContext.getSystemService(AlarmManager::class.java)
     private val notificationManager = applicationContext.getSystemService(NotificationManager::class.java)
+    private val batteryManager = applicationContext.getSystemService(BatteryManager::class.java)
 
     override val invalidations: Flow<Unit> = PixelCameraAccessibilityRuntime.connectionState
         .map { }
@@ -83,6 +86,17 @@ class AndroidRuntimePreflightProbe(
                 deviceWake = deviceWakeObservation(),
                 accessibilityEnabled = accessibilityEnabledObservation(),
                 accessibilityConnected = accessibilityConnectedObservation(),
+                battery = batteryObservation(
+                    runCatching {
+                        batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+                    }.getOrNull(),
+                ),
+                charging = chargingObservation(
+                    runCatching {
+                        batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS)
+                    }.getOrNull(),
+                ),
+                storage = storageObservation(),
                 successfulRehearsals = rehearsalEvidence.getOrDefault(emptyMap()),
                 rehearsalEvidenceFailure = rehearsalEvidence.exceptionOrNull()?.let { error ->
                     "Successful rehearsal evidence could not be loaded: ${error.javaClass.simpleName}."
@@ -248,4 +262,86 @@ class AndroidRuntimePreflightProbe(
             remediation = if (connected) null else SetupRemediationAction.OPEN_ACCESSIBILITY_SETTINGS,
         )
     }
+
+    private fun storageObservation(): RuntimeCapabilityObservation = runCatching {
+        val primarySharedStorage = applicationContext.getExternalFilesDir(null)
+            ?: return@runCatching storageObservation(
+                availableBytes = null,
+            )
+        storageObservation(
+            availableBytes = StatFs(primarySharedStorage.absolutePath).availableBytes,
+        )
+    }.getOrElse {
+        storageObservation(
+            availableBytes = null,
+        )
+    }
 }
+
+internal const val MINIMUM_BATTERY_PERCENT = 30
+internal const val MINIMUM_AVAILABLE_STORAGE_BYTES = 1024L * 1024L * 1024L
+
+internal fun batteryObservation(percent: Int?): RuntimeCapabilityObservation {
+    val validPercent = percent?.takeIf { it in 0..100 }
+        ?: return RuntimeCapabilityObservation(
+            status = PreflightStatus.UNKNOWN,
+            message = "Battery level could not be determined.",
+        )
+    return RuntimeCapabilityObservation(
+        status = if (validPercent >= MINIMUM_BATTERY_PERCENT) {
+            PreflightStatus.PASSED
+        } else {
+            PreflightStatus.FAILED
+        },
+        message = if (validPercent >= MINIMUM_BATTERY_PERCENT) {
+            "Battery is at $validPercent%, meeting the $MINIMUM_BATTERY_PERCENT% minimum."
+        } else {
+            "Battery is at $validPercent%, below the $MINIMUM_BATTERY_PERCENT% minimum."
+        },
+    )
+}
+
+internal fun chargingObservation(status: Int?): RuntimeCapabilityObservation = when (status) {
+    BatteryManager.BATTERY_STATUS_CHARGING,
+    BatteryManager.BATTERY_STATUS_FULL,
+    -> RuntimeCapabilityObservation(
+        status = PreflightStatus.PASSED,
+        message = "The device is charging.",
+    )
+
+    BatteryManager.BATTERY_STATUS_DISCHARGING,
+    BatteryManager.BATTERY_STATUS_NOT_CHARGING,
+    -> RuntimeCapabilityObservation(
+        status = PreflightStatus.FAILED,
+        message = "The device is not charging; external power is recommended for unattended sessions.",
+    )
+
+    else -> RuntimeCapabilityObservation(
+        status = PreflightStatus.UNKNOWN,
+        message = "Charging state could not be determined.",
+    )
+}
+
+internal fun storageObservation(
+    availableBytes: Long?,
+): RuntimeCapabilityObservation {
+    if (availableBytes == null || availableBytes < 0L) {
+        return RuntimeCapabilityObservation(
+            status = PreflightStatus.UNKNOWN,
+            message = "Available primary storage could not be determined.",
+        )
+    }
+    val sufficient = availableBytes >= MINIMUM_AVAILABLE_STORAGE_BYTES
+    return RuntimeCapabilityObservation(
+        status = if (sufficient) PreflightStatus.PASSED else PreflightStatus.FAILED,
+        message = if (sufficient) {
+            "Primary storage has ${availableBytes.toReadableMiB()} MiB available, meeting the " +
+                "${MINIMUM_AVAILABLE_STORAGE_BYTES.toReadableMiB()} MiB safety floor."
+        } else {
+            "Primary storage has ${availableBytes.toReadableMiB()} MiB available, below the " +
+                "${MINIMUM_AVAILABLE_STORAGE_BYTES.toReadableMiB()} MiB safety floor."
+        },
+    )
+}
+
+private fun Long.toReadableMiB(): Long = this / (1024L * 1024L)
