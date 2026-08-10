@@ -12,6 +12,7 @@ import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
+import dev.po4yka.lenswake.core.SetupRemediationAction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 
@@ -26,6 +27,7 @@ fun interface RuntimePreflightProbe {
 data class RuntimeCapabilityObservation(
     val status: PreflightStatus,
     val message: String,
+    val remediation: SetupRemediationAction? = null,
 ) {
     init {
         require(message.isNotBlank()) { "Runtime capability message must not be blank" }
@@ -34,6 +36,8 @@ data class RuntimeCapabilityObservation(
 
 data class RuntimePreflightObservation(
     val exactAlarms: RuntimeCapabilityObservation,
+    val notifications: RuntimeCapabilityObservation,
+    val fullScreenIntent: RuntimeCapabilityObservation,
     val pixelCameraInstalled: RuntimeCapabilityObservation,
     val cameraEnvironment: PixelCameraEnvironment?,
     val secureCameraResolves: RuntimeCapabilityObservation,
@@ -52,6 +56,8 @@ class RuntimePreflightEvaluator {
     ): PreflightReport = PreflightReport(
         checks = listOf(
             observation.exactAlarms.toCheck(PreflightCheckType.EXACT_ALARMS),
+            observation.notifications.toCheck(PreflightCheckType.NOTIFICATIONS),
+            observation.fullScreenIntent.toCheck(PreflightCheckType.FULL_SCREEN_INTENT),
             observation.pixelCameraInstalled.toCheck(PreflightCheckType.PIXEL_CAMERA_INSTALLED),
             observation.secureCameraResolves.toCheck(PreflightCheckType.SECURE_CAMERA_RESOLVES),
             observation.deviceWake.toCheck(PreflightCheckType.DEVICE_WAKE),
@@ -75,6 +81,7 @@ class RuntimePreflightEvaluator {
             severity = PreflightSeverity.BLOCKING,
             status = status,
             message = message,
+            remediation = remediation,
         )
 
     private fun profileAvailableCheck(profiles: List<PixelCameraProfile>): PreflightCheck =

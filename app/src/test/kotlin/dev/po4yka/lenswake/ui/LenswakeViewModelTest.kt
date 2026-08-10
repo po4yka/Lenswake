@@ -32,6 +32,7 @@ import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.TimeLapseSpeed
+import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.application.RuntimePreflightProbe
 import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfile
 import dev.po4yka.lenswake.application.KnownPixelCameraProfileCatalog
@@ -103,6 +104,31 @@ class LenswakeViewModelTest {
         assertTrue(state.actions.canInstallCandidateProfile)
         assertFalse(state.actions.canExportDiagnostics)
         assertEquals("Diagnostic export is not implemented yet.", state.actions.exportDiagnosticsUnavailableReason)
+    }
+
+    @Test
+    fun mapperKeepsTypedSetupRemediationWithItsFailedCapability() {
+        val state = LenswakeUiStateMapper.map(
+            schedules = emptyList(),
+            profiles = emptyList(),
+            events = emptyList(),
+            preflight = PreflightReport(
+                listOf(
+                    PreflightCheck(
+                        type = PreflightCheckType.NOTIFICATIONS,
+                        severity = PreflightSeverity.BLOCKING,
+                        status = PreflightStatus.FAILED,
+                        message = "Notifications unavailable.",
+                        remediation = SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION,
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(
+            SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION,
+            state.capabilities.single().remediation,
+        )
     }
 
     @Test

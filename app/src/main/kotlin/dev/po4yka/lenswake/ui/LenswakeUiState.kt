@@ -1,6 +1,7 @@
 package dev.po4yka.lenswake.ui
 
 import androidx.compose.runtime.Immutable
+import dev.po4yka.lenswake.core.SetupRemediationAction
 
 @Immutable
 data class LenswakeUiState(
@@ -18,6 +19,7 @@ data class LenswakeUiState(
     val scheduleAction: ScheduleActionUiState = ScheduleActionUiState.Idle,
     val pendingDeleteScheduleId: String? = null,
     val actions: UiActionAvailability = UiActionAvailability(),
+    val setupRemediationMessage: String? = null,
 )
 
 @Immutable
@@ -150,6 +152,7 @@ data class CapabilityUiState(
     val status: CapabilityStatus,
     val detail: String,
     val required: Boolean,
+    val remediation: SetupRemediationAction? = null,
 )
 
 enum class CapabilityStatus {

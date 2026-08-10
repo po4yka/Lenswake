@@ -452,6 +452,8 @@ class ScheduleWorkflow(
         )
         val requiredPreflightChecks = setOf(
             dev.po4yka.lenswake.core.PreflightCheckType.EXACT_ALARMS,
+            dev.po4yka.lenswake.core.PreflightCheckType.NOTIFICATIONS,
+            dev.po4yka.lenswake.core.PreflightCheckType.FULL_SCREEN_INTENT,
             dev.po4yka.lenswake.core.PreflightCheckType.PIXEL_CAMERA_INSTALLED,
             dev.po4yka.lenswake.core.PreflightCheckType.SECURE_CAMERA_RESOLVES,
             dev.po4yka.lenswake.core.PreflightCheckType.DEVICE_WAKE,

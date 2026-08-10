@@ -6,6 +6,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.ui.theme.LenswakeTheme
 import org.junit.Rule
 import org.junit.Test
@@ -20,6 +21,7 @@ class LenswakeAppTest {
         onInstallCandidateProfile: () -> Unit = {},
         onRunRehearsal: () -> Unit = {},
         onSubmitSchedule: () -> Unit = {},
+        onRemediate: (SetupRemediationAction) -> Unit = {},
     ) {
         composeRule.setContent {
             LenswakeTheme {
@@ -28,6 +30,7 @@ class LenswakeAppTest {
                     onInstallCandidateProfile = onInstallCandidateProfile,
                     onRunRehearsal = onRunRehearsal,
                     onSubmitSchedule = onSubmitSchedule,
+                    onRemediate = onRemediate,
                 )
             }
         }
@@ -55,6 +58,31 @@ class LenswakeAppTest {
         composeRule.onNodeWithText("Schedules").performClick()
         composeRule.onNodeWithText("Review setup").performClick()
         composeRule.onNodeWithText("Readiness checks").assertExists()
+    }
+
+    @Test
+    fun setupDispatchesTypedRemediationFromFailedCapability() {
+        var dispatched: SetupRemediationAction? = null
+        setContent(
+            state = LenswakeUiState(
+                capabilities = listOf(
+                    CapabilityUiState(
+                        name = "Notifications",
+                        status = CapabilityStatus.BLOCKED,
+                        detail = "Notification permission is required.",
+                        required = true,
+                        remediation = SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION,
+                    ),
+                ),
+            ),
+            onRemediate = { dispatched = it },
+        )
+
+        composeRule.onNodeWithText("Review setup").performClick()
+        composeRule.onNodeWithText("Resolve").performClick()
+        composeRule.runOnIdle {
+            assertEquals(SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION, dispatched)
+        }
     }
 
     @Test

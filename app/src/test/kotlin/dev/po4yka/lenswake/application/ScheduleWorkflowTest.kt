@@ -448,6 +448,8 @@ class ScheduleWorkflowTest {
         fun readyPreflight() = PreflightReport(
             listOf(
                 PreflightCheckType.EXACT_ALARMS,
+                PreflightCheckType.NOTIFICATIONS,
+                PreflightCheckType.FULL_SCREEN_INTENT,
                 PreflightCheckType.PIXEL_CAMERA_INSTALLED,
                 PreflightCheckType.SECURE_CAMERA_RESOLVES,
                 PreflightCheckType.DEVICE_WAKE,

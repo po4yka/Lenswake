@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.po4yka.lenswake.ui.LenswakeUiState
+import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.ui.component.CapabilityRow
 import dev.po4yka.lenswake.ui.component.ReadinessCard
 import dev.po4yka.lenswake.ui.component.ScreenHeader
@@ -21,6 +22,8 @@ fun SetupScreen(
     state: LenswakeUiState,
     contentPadding: PaddingValues,
     onBack: () -> Unit,
+    onRemediate: (SetupRemediationAction) -> Unit,
+    onClearRemediationMessage: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -51,8 +54,18 @@ fun SetupScreen(
             )
         }
         item { SectionHeading("Readiness checks") }
+        state.setupRemediationMessage?.let { message ->
+            item {
+                TextButton(onClick = onClearRemediationMessage) {
+                    Text(message)
+                }
+            }
+        }
         items(state.capabilities.size, key = { state.capabilities[it].name }) { index ->
-            CapabilityRow(capability = state.capabilities[index])
+            CapabilityRow(
+                capability = state.capabilities[index],
+                onRemediate = onRemediate,
+            )
             if (index < state.capabilities.lastIndex) {
                 HorizontalDivider()
             }

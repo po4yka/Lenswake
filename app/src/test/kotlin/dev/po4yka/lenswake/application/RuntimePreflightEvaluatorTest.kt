@@ -10,6 +10,7 @@ import dev.po4yka.lenswake.core.PreflightStatus
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.ScheduleReadiness
+import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
@@ -38,6 +39,8 @@ class RuntimePreflightEvaluatorTest {
         val checks = report.checks.associateBy { it.type }
 
         assertEquals(PreflightStatus.FAILED, checks.getValue(PreflightCheckType.EXACT_ALARMS).status)
+        assertEquals(PreflightStatus.PASSED, checks.getValue(PreflightCheckType.NOTIFICATIONS).status)
+        assertEquals(PreflightStatus.PASSED, checks.getValue(PreflightCheckType.FULL_SCREEN_INTENT).status)
         assertEquals(PreflightStatus.UNKNOWN, checks.getValue(PreflightCheckType.PIXEL_CAMERA_INSTALLED).status)
         assertEquals(PreflightStatus.UNKNOWN, checks.getValue(PreflightCheckType.SECURE_CAMERA_RESOLVES).status)
         assertEquals(PreflightStatus.PASSED, checks.getValue(PreflightCheckType.ACCESSIBILITY_ENABLED).status)
@@ -60,6 +63,35 @@ class RuntimePreflightEvaluatorTest {
         assertEquals(PreflightStatus.PASSED, checks.getValue(PreflightCheckType.PROFILE_COMPATIBILITY).status)
         val blocked = assertInstanceOf(ScheduleReadiness.Blocked::class.java, report.readiness)
         assertEquals(listOf(PreflightCheckType.REHEARSAL_CURRENT), blocked.blockers.map { it.type })
+    }
+
+    @Test
+    fun notificationAndFullScreenFailuresAreSeparateBlockingChecksWithTypedRemediation() {
+        val report = evaluator.evaluate(
+            observation = observation(
+                notifications = RuntimeCapabilityObservation(
+                    PreflightStatus.FAILED,
+                    "Notification permission denied.",
+                    SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION,
+                ),
+                fullScreenIntent = RuntimeCapabilityObservation(
+                    PreflightStatus.FAILED,
+                    "Full-screen intent denied.",
+                    SetupRemediationAction.OPEN_FULL_SCREEN_INTENT_SETTINGS,
+                ),
+            ),
+            profiles = emptyList(),
+        )
+        val checks = report.checks.associateBy { it.type }
+
+        assertEquals(
+            SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION,
+            checks.getValue(PreflightCheckType.NOTIFICATIONS).remediation,
+        )
+        assertEquals(
+            SetupRemediationAction.OPEN_FULL_SCREEN_INTENT_SETTINGS,
+            checks.getValue(PreflightCheckType.FULL_SCREEN_INTENT).remediation,
+        )
     }
 
     @Test
@@ -144,6 +176,8 @@ class RuntimePreflightEvaluatorTest {
 
     private fun observation(
         exactAlarms: RuntimeCapabilityObservation = passed("Exact alarms available."),
+        notifications: RuntimeCapabilityObservation = passed("Notifications available."),
+        fullScreenIntent: RuntimeCapabilityObservation = passed("Full-screen intents available."),
         pixelCameraInstalled: RuntimeCapabilityObservation = passed("Pixel Camera installed."),
         cameraEnvironment: PixelCameraEnvironment? = environment(),
         secureCameraResolves: RuntimeCapabilityObservation = passed("Secure camera resolves."),
@@ -152,6 +186,8 @@ class RuntimePreflightEvaluatorTest {
         accessibilityConnected: RuntimeCapabilityObservation = passed("Accessibility connected."),
     ) = RuntimePreflightObservation(
         exactAlarms = exactAlarms,
+        notifications = notifications,
+        fullScreenIntent = fullScreenIntent,
         pixelCameraInstalled = pixelCameraInstalled,
         cameraEnvironment = cameraEnvironment,
         secureCameraResolves = secureCameraResolves,

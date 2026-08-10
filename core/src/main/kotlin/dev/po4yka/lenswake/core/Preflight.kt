@@ -29,6 +29,7 @@ data class PreflightCheck(
     val severity: PreflightSeverity,
     val status: PreflightStatus,
     val message: String,
+    val remediation: SetupRemediationAction? = null,
 ) {
     init {
         require(message.isNotBlank()) { "Preflight message must not be blank" }
@@ -37,6 +38,8 @@ data class PreflightCheck(
 
 enum class PreflightCheckType {
     EXACT_ALARMS,
+    NOTIFICATIONS,
+    FULL_SCREEN_INTENT,
     PIXEL_CAMERA_INSTALLED,
     SECURE_CAMERA_RESOLVES,
     DEVICE_WAKE,
@@ -49,6 +52,15 @@ enum class PreflightCheckType {
     BATTERY,
     CHARGING,
     STORAGE,
+}
+
+/** A user-visible, typed route for resolving a failed readiness check. */
+enum class SetupRemediationAction {
+    REQUEST_NOTIFICATION_PERMISSION,
+    OPEN_NOTIFICATION_SETTINGS,
+    OPEN_EXACT_ALARM_SETTINGS,
+    OPEN_ACCESSIBILITY_SETTINGS,
+    OPEN_FULL_SCREEN_INTENT_SETTINGS,
 }
 
 enum class PreflightSeverity {

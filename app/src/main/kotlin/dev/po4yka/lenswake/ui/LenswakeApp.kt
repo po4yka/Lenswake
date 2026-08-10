@@ -8,12 +8,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
@@ -22,7 +19,7 @@ import dev.po4yka.lenswake.ui.screen.DiagnosticsScreen
 import dev.po4yka.lenswake.ui.screen.ProfilesScreen
 import dev.po4yka.lenswake.ui.screen.SchedulesScreen
 import dev.po4yka.lenswake.ui.screen.SetupScreen
-import dev.po4yka.lenswake.LenswakeApplication
+import dev.po4yka.lenswake.core.SetupRemediationAction
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -50,10 +47,10 @@ private val topLevelDestinations = listOf(
 )
 
 @Composable
-fun LenswakeApp() {
-    val application = LocalContext.current.applicationContext as LenswakeApplication
-    val factory = remember(application) { LenswakeViewModel.Factory(application.graph) }
-    val viewModel: LenswakeViewModel = viewModel(factory = factory)
+fun LenswakeApp(
+    viewModel: LenswakeViewModel,
+    onRemediate: (SetupRemediationAction) -> Unit,
+) {
     LifecycleResumeEffect(viewModel) {
         viewModel.refreshPreflight()
         onPauseOrDispose { }
@@ -73,6 +70,8 @@ fun LenswakeApp() {
         onCancelDeleteSchedule = viewModel::cancelDeleteSchedule,
         onConfirmDeleteSchedule = viewModel::confirmDeleteSchedule,
         onClearScheduleOutcome = viewModel::clearScheduleOutcome,
+        onRemediate = onRemediate,
+        onClearRemediationMessage = viewModel::clearSetupRemediationMessage,
     )
 }
 
@@ -92,6 +91,8 @@ fun LenswakeApp(
     onCancelDeleteSchedule: () -> Unit = {},
     onConfirmDeleteSchedule: (String) -> Unit = {},
     onClearScheduleOutcome: () -> Unit = {},
+    onRemediate: (SetupRemediationAction) -> Unit = {},
+    onClearRemediationMessage: () -> Unit = {},
 ) {
     val backStack = rememberNavBackStack(SchedulesRoute)
     val currentDestination = backStack.lastOrNull()
@@ -158,6 +159,8 @@ fun LenswakeApp(
                         state = state,
                         contentPadding = contentPadding,
                         onBack = { backStack.removeLastOrNull() },
+                        onRemediate = onRemediate,
+                        onClearRemediationMessage = onClearRemediationMessage,
                     )
                 }
             },

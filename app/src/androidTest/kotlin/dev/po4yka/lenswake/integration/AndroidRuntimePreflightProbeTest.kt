@@ -1,6 +1,8 @@
 package dev.po4yka.lenswake.integration
 
 import android.app.AlarmManager
+import android.app.NotificationManager
+import android.content.pm.PackageManager
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.po4yka.lenswake.LenswakeApplication
@@ -47,6 +49,21 @@ class AndroidRuntimePreflightProbeTest {
         assertEquals(
             if (alarmManager.canScheduleExactAlarms()) PreflightStatus.PASSED else PreflightStatus.FAILED,
             checks.getValue(PreflightCheckType.EXACT_ALARMS).status,
+        )
+        val notificationManager = application.getSystemService(NotificationManager::class.java)
+        val notificationPermission = application.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        assertEquals(
+            if (notificationPermission && notificationManager.areNotificationsEnabled()) {
+                PreflightStatus.PASSED
+            } else {
+                PreflightStatus.FAILED
+            },
+            checks.getValue(PreflightCheckType.NOTIFICATIONS).status,
+        )
+        assertEquals(
+            if (notificationManager.canUseFullScreenIntent()) PreflightStatus.PASSED else PreflightStatus.FAILED,
+            checks.getValue(PreflightCheckType.FULL_SCREEN_INTENT).status,
         )
         assertEquals(
             PreflightStatus.PASSED,

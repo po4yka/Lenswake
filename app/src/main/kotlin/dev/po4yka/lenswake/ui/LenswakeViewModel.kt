@@ -29,6 +29,7 @@ import dev.po4yka.lenswake.core.RehearsalRequest
 import dev.po4yka.lenswake.core.ScheduleReadiness
 import dev.po4yka.lenswake.core.ScheduleRepository
 import dev.po4yka.lenswake.core.ScheduleId
+import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.di.ApplicationGraph
 import java.time.Duration
@@ -67,6 +68,7 @@ class LenswakeViewModel(
     private val scheduleEditor = MutableStateFlow<ScheduleEditorUiState>(ScheduleEditorUiState.Closed)
     private val scheduleAction = MutableStateFlow<ScheduleActionUiState>(ScheduleActionUiState.Idle)
     private val pendingDeleteScheduleId = MutableStateFlow<String?>(null)
+    private val setupRemediationMessage = MutableStateFlow<String?>(null)
     private val profiles = profileRepository.observeProfiles()
     private val preflightInvalidations = merge(
         preflightRefresh.map { Unit },
@@ -96,8 +98,8 @@ class LenswakeViewModel(
     private val transientUiState = combine(
         profileInstall,
         rehearsal,
-        combine(scheduleEditor, scheduleAction, pendingDeleteScheduleId) { editor, action, pendingDelete ->
-            ScheduleTransientUiState(editor, action, pendingDelete)
+        combine(scheduleEditor, scheduleAction, pendingDeleteScheduleId, setupRemediationMessage) { editor, action, pendingDelete, remediationMessage ->
+            ScheduleTransientUiState(editor, action, pendingDelete, remediationMessage)
         },
     ) { install, rehearsalAction, scheduleTransient ->
         TransientUiState(install, rehearsalAction, scheduleTransient)
@@ -122,6 +124,7 @@ class LenswakeViewModel(
             scheduleEditor = transientState.schedule.editor,
             scheduleAction = transientState.schedule.action,
             pendingDeleteScheduleId = transientState.schedule.pendingDeleteScheduleId,
+            setupRemediationMessage = transientState.schedule.remediationMessage,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -131,6 +134,15 @@ class LenswakeViewModel(
 
     fun refreshPreflight() {
         preflightRefresh.value += 1
+    }
+
+    fun reportSetupRemediationUnavailable(action: SetupRemediationAction) {
+        setupRemediationMessage.value = "Unable to open ${action.remediationLabel}; resolve this requirement in Android system settings."
+        refreshPreflight()
+    }
+
+    fun clearSetupRemediationMessage() {
+        setupRemediationMessage.value = null
     }
 
     fun installCandidateProfile() {
@@ -346,10 +358,11 @@ class LenswakeViewModel(
     }
 }
 
-private data class ScheduleTransientUiState(
-    val editor: ScheduleEditorUiState,
-    val action: ScheduleActionUiState,
-    val pendingDeleteScheduleId: String?,
+    private data class ScheduleTransientUiState(
+        val editor: ScheduleEditorUiState,
+        val action: ScheduleActionUiState,
+        val pendingDeleteScheduleId: String?,
+        val remediationMessage: String?,
 )
 
 private data class TransientUiState(
@@ -357,6 +370,15 @@ private data class TransientUiState(
     val rehearsal: RehearsalActionUiState,
     val schedule: ScheduleTransientUiState,
 )
+
+private val SetupRemediationAction.remediationLabel: String
+    get() = when (this) {
+        SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION -> "the notification permission request"
+        SetupRemediationAction.OPEN_NOTIFICATION_SETTINGS -> "notification settings"
+        SetupRemediationAction.OPEN_EXACT_ALARM_SETTINGS -> "exact-alarm settings"
+        SetupRemediationAction.OPEN_ACCESSIBILITY_SETTINGS -> "Accessibility settings"
+        SetupRemediationAction.OPEN_FULL_SCREEN_INTENT_SETTINGS -> "full-screen intent settings"
+    }
 
 private fun ScheduleFormUiState.toCommandOrNull(): ScheduleCommand? = runCatching {
     val zone = ZoneId.of(zoneId.trim())
@@ -467,6 +489,7 @@ internal object LenswakeUiStateMapper {
         scheduleEditor: ScheduleEditorUiState = ScheduleEditorUiState.Closed,
         scheduleAction: ScheduleActionUiState = ScheduleActionUiState.Idle,
         pendingDeleteScheduleId: String? = null,
+        setupRemediationMessage: String? = null,
     ): LenswakeUiState = LenswakeUiState(
         readiness = readiness(preflight),
         schedules = schedules
@@ -482,6 +505,7 @@ internal object LenswakeUiStateMapper {
         scheduleEditor = scheduleEditor,
         scheduleAction = scheduleAction,
         pendingDeleteScheduleId = pendingDeleteScheduleId,
+        setupRemediationMessage = setupRemediationMessage,
         actions = UiActionAvailability(
             canCreateSchedule = preflight.hasAllScheduleChecksPassed() &&
                 profiles.any { it.compatibility == ProfileCompatibility.VERIFIED && it.verifiedAt != null } &&
@@ -574,11 +598,14 @@ internal object LenswakeUiStateMapper {
         },
         detail = check.message,
         required = check.severity == PreflightSeverity.BLOCKING,
+        remediation = check.remediation,
     )
 
     private val PreflightCheckType.displayName: String
         get() = when (this) {
             PreflightCheckType.EXACT_ALARMS -> "Exact alarms"
+            PreflightCheckType.NOTIFICATIONS -> "Notifications"
+            PreflightCheckType.FULL_SCREEN_INTENT -> "Full-screen intent"
             PreflightCheckType.PIXEL_CAMERA_INSTALLED -> "Pixel Camera installed"
             PreflightCheckType.SECURE_CAMERA_RESOLVES -> "Secure Pixel Camera launch"
             PreflightCheckType.DEVICE_WAKE -> "Device wake"
@@ -659,10 +686,13 @@ internal object LenswakeUiStateMapper {
     )
 
     private val scheduleRequiredChecks = rehearsalRequiredChecks + setOf(
+        PreflightCheckType.NOTIFICATIONS,
+        PreflightCheckType.FULL_SCREEN_INTENT,
         PreflightCheckType.DEVICE_WAKE,
         PreflightCheckType.PROFILE_COMPATIBILITY,
         PreflightCheckType.REHEARSAL_CURRENT,
     )
 
     private val editorTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm", Locale.ROOT)
+
 }

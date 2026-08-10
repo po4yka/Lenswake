@@ -1,8 +1,10 @@
 package dev.po4yka.lenswake.integration
 
 import android.app.AlarmManager
+import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.pm.PackageManager
 import android.provider.Settings
 import dev.po4yka.lenswake.accessibility.PixelCameraAccessibilityRuntime
 import dev.po4yka.lenswake.accessibility.PixelCameraAccessibilityService
@@ -15,6 +17,7 @@ import dev.po4yka.lenswake.core.ExecutionRepository
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PreflightReport
 import dev.po4yka.lenswake.core.PreflightStatus
+import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.platform.PlatformCapability
 import dev.po4yka.lenswake.platform.AndroidDeviceWakeController
 import dev.po4yka.lenswake.platform.DeviceWakeController
@@ -33,6 +36,7 @@ class AndroidRuntimePreflightProbe(
 ) : RuntimePreflightProbe {
     private val applicationContext = context.applicationContext
     private val alarmManager = applicationContext.getSystemService(AlarmManager::class.java)
+    private val notificationManager = applicationContext.getSystemService(NotificationManager::class.java)
 
     override val invalidations: Flow<Unit> = PixelCameraAccessibilityRuntime.connectionState
         .map { }
@@ -64,6 +68,8 @@ class AndroidRuntimePreflightProbe(
         return evaluator.evaluate(
             observation = RuntimePreflightObservation(
                 exactAlarms = exactAlarmObservation(),
+                notifications = notificationObservation(),
+                fullScreenIntent = fullScreenIntentObservation(),
                 pixelCameraInstalled = RuntimeCapabilityObservation(
                     status = cameraStatus,
                     message = currentEnvironment?.let {
@@ -95,11 +101,60 @@ class AndroidRuntimePreflightProbe(
             } else {
                 "Exact-alarm access is not granted in system settings."
             },
+            remediation = if (available) null else SetupRemediationAction.OPEN_EXACT_ALARM_SETTINGS,
         )
     }.getOrElse { error ->
         RuntimeCapabilityObservation(
             status = PreflightStatus.UNKNOWN,
             message = "Exact-alarm access could not be checked: ${error.javaClass.simpleName}.",
+        )
+    }
+
+    private fun notificationObservation(): RuntimeCapabilityObservation = runCatching {
+        val permissionGranted = applicationContext.checkSelfPermission(
+            android.Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+        val notificationsEnabled = notificationManager.areNotificationsEnabled()
+        when {
+            !permissionGranted -> RuntimeCapabilityObservation(
+                status = PreflightStatus.FAILED,
+                message = "Lenswake does not have notification permission.",
+                remediation = SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION,
+            )
+
+            !notificationsEnabled -> RuntimeCapabilityObservation(
+                status = PreflightStatus.FAILED,
+                message = "Notifications are disabled for Lenswake in system settings.",
+                remediation = SetupRemediationAction.OPEN_NOTIFICATION_SETTINGS,
+            )
+
+            else -> RuntimeCapabilityObservation(
+                status = PreflightStatus.PASSED,
+                message = "Notification permission is granted and notifications are enabled for Lenswake.",
+            )
+        }
+    }.getOrElse { error ->
+        RuntimeCapabilityObservation(
+            status = PreflightStatus.UNKNOWN,
+            message = "Notification capability could not be checked: ${error.javaClass.simpleName}.",
+        )
+    }
+
+    private fun fullScreenIntentObservation(): RuntimeCapabilityObservation = runCatching {
+        val available = notificationManager.canUseFullScreenIntent()
+        RuntimeCapabilityObservation(
+            status = if (available) PreflightStatus.PASSED else PreflightStatus.FAILED,
+            message = if (available) {
+                "Lenswake may use full-screen intents for alarm wake handling."
+            } else {
+                "Full-screen intent access is not granted in system settings."
+            },
+            remediation = if (available) null else SetupRemediationAction.OPEN_FULL_SCREEN_INTENT_SETTINGS,
+        )
+    }.getOrElse { error ->
+        RuntimeCapabilityObservation(
+            status = PreflightStatus.UNKNOWN,
+            message = "Full-screen intent capability could not be checked: ${error.javaClass.simpleName}.",
         )
     }
 
@@ -177,6 +232,7 @@ class AndroidRuntimePreflightProbe(
             } else {
                 "Lenswake Accessibility Service is not enabled in system settings."
             },
+            remediation = if (enabled) null else SetupRemediationAction.OPEN_ACCESSIBILITY_SETTINGS,
         )
     }
 
@@ -189,6 +245,7 @@ class AndroidRuntimePreflightProbe(
             } else {
                 "Lenswake Accessibility Service is not connected to this process."
             },
+            remediation = if (connected) null else SetupRemediationAction.OPEN_ACCESSIBILITY_SETTINGS,
         )
     }
 }

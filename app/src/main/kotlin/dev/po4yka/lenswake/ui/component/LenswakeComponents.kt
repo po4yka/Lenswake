@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import dev.po4yka.lenswake.ui.CapabilityStatus
 import dev.po4yka.lenswake.ui.CapabilityUiState
 import dev.po4yka.lenswake.ui.ReadinessUiState
+import dev.po4yka.lenswake.core.SetupRemediationAction
 
 @Composable
 fun ScreenHeader(
@@ -121,6 +122,7 @@ fun ReadinessCard(
 @Composable
 fun CapabilityRow(
     capability: CapabilityUiState,
+    onRemediate: (SetupRemediationAction) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val statusLabel = when (capability.status) {
@@ -155,6 +157,14 @@ fun CapabilityRow(
                 text = capability.detail,
                 style = MaterialTheme.typography.bodyMedium,
             )
+            capability.remediation?.let { action ->
+                OutlinedButton(
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                    onClick = { onRemediate(action) },
+                ) {
+                    Text("Resolve")
+                }
+            }
         }
     }
 }
