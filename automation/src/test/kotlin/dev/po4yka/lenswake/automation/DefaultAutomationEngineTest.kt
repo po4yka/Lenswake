@@ -842,6 +842,7 @@ class DefaultAutomationEngineTest {
                 lens = LensSelection.REAR_MAIN,
             ),
             suspendStop = true,
+            stopCompletesOnVerificationInspection = 2,
             onStopRecording = { checkpointAtPortCall = repository.get(session.id) },
         )
         val engine = engine(
@@ -866,7 +867,7 @@ class DefaultAutomationEngineTest {
         assertInstanceOf(AutomationRunResult.StopVerifiedAfterFailure::class.java, reconciled)
         assertEquals(1, camera.calls.count { it == "stopRecording" })
         assertEquals(
-            listOf("inspect", "stop", "inspect", "inspect"),
+            listOf("inspect", "stop", "inspect", "inspect", "inspect"),
             camera.trace.filter { it == "inspect" || it == "stop" },
         )
     }
@@ -1469,6 +1470,7 @@ class DefaultAutomationEngineTest {
         private val stopDispatch: ActionDispatch? = null,
         private val onStopRecording: (suspend () -> Unit)? = null,
         private val stateAfterStop: PixelCameraState? = null,
+        private val stopCompletesOnVerificationInspection: Int? = null,
     ) : PixelCameraPort {
         val calls = mutableListOf<String>()
         val trace = mutableListOf<String>()
@@ -1493,6 +1495,12 @@ class DefaultAutomationEngineTest {
             }
             if (calls.lastOrNull() == "stopRecording" && state is PixelCameraState.TimeLapse && (state as PixelCameraState.TimeLapse).recording) {
                 stopVerificationInspections += 1
+                if (
+                    stopCompletesOnVerificationInspection != null &&
+                    stopVerificationInspections >= stopCompletesOnVerificationInspection
+                ) {
+                    state = stateAfterStop ?: (state as PixelCameraState.TimeLapse).copy(recording = false)
+                }
             }
             return PortResult.Observed(state)
         }
@@ -1617,7 +1625,7 @@ class DefaultAutomationEngineTest {
             onStopRecording?.invoke()
             stopException?.let { throw it }
             stopDispatch?.let { return it }
-            if (confirmStop) {
+            if (confirmStop && stopCompletesOnVerificationInspection == null) {
                 state = stateAfterStop ?: (state as PixelCameraState.TimeLapse).copy(recording = false)
             }
             if (suspendStop) awaitCancellation()

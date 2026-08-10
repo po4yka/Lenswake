@@ -153,6 +153,7 @@ class DefaultAutomationEngine(
     override suspend fun stop(sessionId: SessionId): AutomationRunResult = execute(sessionId) { context ->
         val originalStatus = context.current.status
         val originalFailure = context.current.failure
+        val uncertainStopAtEntry = context.current.stopActionAt != null
         val hasOwnership = context.current.recordActionAt != null &&
             context.current.cameraOwnershipReleasedAt == null
         val stopOutstanding = context.current.stoppedVerifiedAt == null
@@ -220,6 +221,12 @@ class DefaultAutomationEngine(
         }
 
         val capture = context.current.capture as CaptureConfiguration.TimeLapse
+        if (
+            uncertainStopAtEntry &&
+            (beforeStop.isConfirmedRecording(capture) || beforeStop is PixelCameraState.RecordingUnknownMode)
+        ) {
+            beforeStop = reconcileUncertainStop(context, capture)
+        }
         // RecordingUnknownMode means the profile matched its recording control while Pixel Camera
         // hid mode/speed/lens controls. The write-ahead recordActionAt checkpoint is the ownership
         // boundary: STOP is safe, but a missing recordingVerifiedAt keeps the execution failed.
@@ -262,6 +269,87 @@ class DefaultAutomationEngine(
             ) { session, now -> session.copy(stoppedVerifiedAt = now, failure = null) }
             AutomationRunResult.Succeeded(context.current)
         }
+    }
+
+    private suspend fun reconcileUncertainStop(
+        context: RunContext,
+        capture: CaptureConfiguration.TimeLapse,
+    ): PixelCameraState {
+        val operation = AutomationOperation.VERIFY_STOPPED
+        val state = AutomationStateName.VERIFYING_STOPPED
+        val policy = config.policyFor(operation)
+        var lastObserved: PixelCameraState? = null
+        var lastFailure: AutomationFailure? = null
+
+        for (attempt in 1..policy.maxAttempts) {
+            if (attempt > 1) {
+                retryTransition(context, operation, attempt, state)
+                sleeper.sleep(policy.delayBeforeAttempt(attempt))
+            }
+            context.transition(
+                state = state,
+                operation = operation,
+                outcome = AutomationOutcome.STARTED,
+                attempt = attempt,
+                metadata = mapOf("reconciliation" to "uncertain_stop"),
+            )
+            val inspection = try {
+                when (val timed = timed(operation) { pixelCamera.inspect(context.profileUse) }) {
+                    is TimedCall.Completed -> timed.value
+                    TimedCall.TimedOut -> PortResult.Unavailable(timeoutFailure(operation))
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                PortResult.Unavailable(
+                    operationFailure(
+                        AutomationFailureCode.STOP_NOT_CONFIRMED,
+                        "Pixel Camera state could not be inspected while reconciling an uncertain Stop",
+                        error,
+                    ),
+                )
+            }
+            when (inspection) {
+                is PortResult.Observed -> {
+                    lastObserved = inspection.value
+                    if (inspection.value.isConfirmedStopped()) {
+                        context.transition(
+                            state = state,
+                            operation = operation,
+                            outcome = AutomationOutcome.SUCCEEDED,
+                            attempt = attempt,
+                            metadata = mapOf("reconciliation" to "uncertain_stop_effect_observed"),
+                        )
+                        return inspection.value
+                    }
+                }
+
+                is PortResult.Unavailable -> {
+                    lastObserved = null
+                    lastFailure = inspection.failure
+                }
+            }
+        }
+
+        val confirmedRecording = lastObserved?.takeIf {
+            it.isConfirmedRecording(capture) || it is PixelCameraState.RecordingUnknownMode
+        } ?: fail(
+            context,
+            lastFailure ?: failure(
+                AutomationFailureCode.STOP_NOT_CONFIRMED,
+                "An uncertain Stop could not be reconciled to a safe camera state",
+            ),
+        )
+        context.transition(
+            state = AutomationStateName.RETRYING,
+            operation = operation,
+            outcome = AutomationOutcome.RETRYING,
+            attempt = policy.maxAttempts,
+            metadata = mapOf(
+                "reconciliation" to "confirmed_recording_before_redispatch",
+                "returnState" to AutomationStateName.STOPPING_RECORDING.name,
+            ),
+        )
+        return confirmedRecording
     }
 
     private suspend fun convergeStart(context: RunContext): AutomationRunResult {
