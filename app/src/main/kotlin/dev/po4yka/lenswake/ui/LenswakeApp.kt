@@ -1,14 +1,19 @@
 package dev.po4yka.lenswake.ui
 
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.navigation3.runtime.NavKey
@@ -100,74 +105,101 @@ fun LenswakeApp(
     val backStack = rememberNavBackStack(SchedulesRoute)
     val currentDestination = backStack.lastOrNull()
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        bottomBar = {
-            NavigationBar {
-                topLevelDestinations.forEach { destination ->
-                    NavigationBarItem(
-                        selected = currentDestination == destination.key,
-                        onClick = {
-                            if (currentDestination != destination.key) {
-                                backStack.add(destination.key)
-                            }
-                        },
-                        icon = { Text(destination.glyph) },
-                        label = { Text(destination.label) },
-                    )
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val useNavigationRail = maxWidth >= NavigationRailMinWidth
+
+        Row(modifier = Modifier.fillMaxSize()) {
+            if (useNavigationRail) {
+                NavigationRail {
+                    topLevelDestinations.forEach { destination ->
+                        NavigationRailItem(
+                            selected = currentDestination == destination.key,
+                            onClick = {
+                                if (currentDestination != destination.key) {
+                                    backStack.add(destination.key)
+                                }
+                            },
+                            icon = { Text(destination.glyph) },
+                            label = { Text(destination.label) },
+                        )
+                    }
                 }
             }
-        },
-    ) { contentPadding ->
-        NavDisplay(
-            modifier = Modifier.fillMaxSize(),
-            backStack = backStack,
-            onBack = { backStack.removeLastOrNull() },
-            entryProvider = entryProvider {
-                entry<SchedulesRoute> {
-                    SchedulesScreen(
-                        state = state,
-                        contentPadding = contentPadding,
-                        onOpenSetup = { backStack.add(SetupRoute) },
-                        onBeginCreate = onBeginCreateSchedule,
-                        onBeginEdit = onBeginEditSchedule,
-                        onUpdateForm = onUpdateScheduleForm,
-                        onSubmit = onSubmitSchedule,
-                        onCancelEditor = onCancelScheduleEditor,
-                        onSetEnabled = onSetScheduleEnabled,
-                        onRequestDelete = onRequestDeleteSchedule,
-                        onCancelDelete = onCancelDeleteSchedule,
-                        onConfirmDelete = onConfirmDeleteSchedule,
-                        onClearOutcome = onClearScheduleOutcome,
-                    )
-                }
-                entry<ProfilesRoute> {
-                    ProfilesScreen(
-                        state = state,
-                        contentPadding = contentPadding,
-                        onOpenSetup = { backStack.add(SetupRoute) },
-                        onInstallCandidateProfile = onInstallCandidateProfile,
-                        onRunRehearsal = onRunRehearsal,
-                    )
-                }
-                entry<DiagnosticsRoute> {
-                    DiagnosticsScreen(
-                        state = state,
-                        contentPadding = contentPadding,
-                        onOpenSetup = { backStack.add(SetupRoute) },
-                        onOpenPixelCamera = onOpenPixelCamera,
-                    )
-                }
-                entry<SetupRoute> {
-                    SetupScreen(
-                        state = state,
-                        contentPadding = contentPadding,
-                        onBack = { backStack.removeLastOrNull() },
-                        onRemediate = onRemediate,
-                        onClearRemediationMessage = onClearRemediationMessage,
-                    )
-                }
-            },
-        )
+
+            Scaffold(
+                modifier = Modifier.weight(1f),
+                bottomBar = {
+                    if (!useNavigationRail) {
+                        NavigationBar {
+                            topLevelDestinations.forEach { destination ->
+                                NavigationBarItem(
+                                    selected = currentDestination == destination.key,
+                                    onClick = {
+                                        if (currentDestination != destination.key) {
+                                            backStack.add(destination.key)
+                                        }
+                                    },
+                                    icon = { Text(destination.glyph) },
+                                    label = { Text(destination.label) },
+                                )
+                            }
+                        }
+                    }
+                },
+            ) { contentPadding ->
+                NavDisplay(
+                    modifier = Modifier.fillMaxSize(),
+                    backStack = backStack,
+                    onBack = { backStack.removeLastOrNull() },
+                    entryProvider = entryProvider {
+                        entry<SchedulesRoute> {
+                            SchedulesScreen(
+                                state = state,
+                                contentPadding = contentPadding,
+                                onOpenSetup = { backStack.add(SetupRoute) },
+                                onBeginCreate = onBeginCreateSchedule,
+                                onBeginEdit = onBeginEditSchedule,
+                                onUpdateForm = onUpdateScheduleForm,
+                                onSubmit = onSubmitSchedule,
+                                onCancelEditor = onCancelScheduleEditor,
+                                onSetEnabled = onSetScheduleEnabled,
+                                onRequestDelete = onRequestDeleteSchedule,
+                                onCancelDelete = onCancelDeleteSchedule,
+                                onConfirmDelete = onConfirmDeleteSchedule,
+                                onClearOutcome = onClearScheduleOutcome,
+                            )
+                        }
+                        entry<ProfilesRoute> {
+                            ProfilesScreen(
+                                state = state,
+                                contentPadding = contentPadding,
+                                onOpenSetup = { backStack.add(SetupRoute) },
+                                onInstallCandidateProfile = onInstallCandidateProfile,
+                                onRunRehearsal = onRunRehearsal,
+                            )
+                        }
+                        entry<DiagnosticsRoute> {
+                            DiagnosticsScreen(
+                                state = state,
+                                contentPadding = contentPadding,
+                                onOpenSetup = { backStack.add(SetupRoute) },
+                                onOpenPixelCamera = onOpenPixelCamera,
+                            )
+                        }
+                        entry<SetupRoute> {
+                            SetupScreen(
+                                state = state,
+                                contentPadding = contentPadding,
+                                onBack = { backStack.removeLastOrNull() },
+                                onRemediate = onRemediate,
+                                onClearRemediationMessage = onClearRemediationMessage,
+                            )
+                        }
+                    },
+                )
+            }
+        }
     }
 }
+
+private val NavigationRailMinWidth = 600.dp
