@@ -18,6 +18,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.platform.LocalContext
 import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.ui.theme.LenswakeTheme
+import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import org.junit.Rule
@@ -209,6 +210,53 @@ class LenswakeAppTest {
         composeRule.onNodeWithText("Profiles").performClick()
         composeRule.onNode(hasText("Test recording") and hasClickAction()).performClick()
         composeRule.runOnIdle { assertEquals(1, rehearsalRequests) }
+    }
+
+    @Test
+    fun profilesRouteShowsRestoredRehearsalDeadlineAndDisablesTest() {
+        val detail = "Session session-rehearsal-active · STOP deadline 2026-08-10T06:30:00+04:00[Asia/Tbilisi]"
+        setContent(
+            state = LenswakeUiState(
+                activeSession = ActiveSessionUiState(
+                    sessionId = "session-rehearsal-active",
+                    kind = ActiveSessionKind.REHEARSAL,
+                    stopDeadline = Instant.parse("2026-08-10T02:30:00Z"),
+                    title = "Active test recording",
+                    detail = detail,
+                    status = "STOP pending",
+                ),
+                actions = UiActionAvailability(
+                    canRunRehearsal = false,
+                    rehearsalUnavailableReason = "A test recording is active.",
+                ),
+            ),
+        )
+
+        composeRule.onNodeWithText("Profiles").performClick()
+        composeRule.onNodeWithText("Active test recording").assertExists()
+        composeRule.onNodeWithText(detail).assertExists()
+        composeRule.onNode(hasText("Test recording") and hasClickAction()).assertIsNotEnabled()
+    }
+
+    @Test
+    fun schedulesRouteShowsRestoredScheduledSessionDeadline() {
+        val detail = "Session session-scheduled-active · STOP deadline 2026-08-10T08:00:00+04:00[Asia/Tbilisi]"
+        setContent(
+            state = LenswakeUiState(
+                activeSession = ActiveSessionUiState(
+                    sessionId = "session-scheduled-active",
+                    kind = ActiveSessionKind.SCHEDULED,
+                    stopDeadline = Instant.parse("2026-08-10T04:00:00Z"),
+                    title = "Active recording: Dawn",
+                    detail = detail,
+                    status = "Recording expected",
+                ),
+            ),
+        )
+
+        composeRule.onNodeWithText("Active recording: Dawn").assertExists()
+        composeRule.onNodeWithText(detail).assertExists()
+        composeRule.onNodeWithText("Recording expected").assertExists()
     }
 
     @Test

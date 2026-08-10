@@ -21,6 +21,7 @@ import dev.po4yka.lenswake.core.AutomationEvent
 import dev.po4yka.lenswake.core.AutomationProfileRepository
 import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.ExecutionRepository
+import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.LenswakeClock
 import dev.po4yka.lenswake.core.PixelCameraProfile
@@ -36,6 +37,7 @@ import dev.po4yka.lenswake.core.RehearsalRequest
 import dev.po4yka.lenswake.core.ScheduleReadiness
 import dev.po4yka.lenswake.core.ScheduleRepository
 import dev.po4yka.lenswake.core.ScheduleId
+import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.core.SystemLenswakeClock
 import dev.po4yka.lenswake.core.TimeLapseSpeed
@@ -48,12 +50,14 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
@@ -81,12 +85,43 @@ class LenswakeViewModel internal constructor(
     private val pendingDeleteScheduleId = MutableStateFlow<String?>(null)
     private val setupRemediationMessage = MutableStateFlow<String?>(null)
     private val profiles = profileRepository.observeProfiles()
+    private val executions = executionRepository.observeExecutions()
+    private val activeSession = executions.map { sessions ->
+        sessions.asSequence()
+            .filter(ExecutionSession::ownsPixelCamera)
+            .sortedWith(
+                compareBy<ExecutionSession> { it.expectedStopAt }
+                    .thenBy { it.createdAt }
+                    .thenBy { it.id.value },
+            )
+            .firstOrNull()
+    }
+    private val observedActiveSession = activeSession.flatMapLatest { session ->
+        flow {
+            var observedAt = clock.now()
+            emit(ObservedActiveSession(session, observedAt))
+            while (session != null && session.expectedStopAt.isAfter(observedAt)) {
+                val remaining = Duration.between(observedAt, session.expectedStopAt)
+                val floorMillis = remaining.toMillis()
+                val ceilingMillis = if (remaining.minusMillis(floorMillis).isZero) {
+                    floorMillis
+                } else {
+                    floorMillis + 1L
+                }
+                delay(ceilingMillis.coerceIn(1L, DEADLINE_RECHECK_MILLIS))
+                observedAt = clock.now()
+            }
+            if (session != null) {
+                emit(ObservedActiveSession(session, observedAt))
+            }
+        }
+    }
     private val profilePersistenceIssues = profileRepository.observePersistenceIssues()
     private val preflightInvalidations = merge(
         preflightRefresh.map { Unit },
         runtimePreflightProbe.invalidations,
     )
-    private val diagnosticEvents = executionRepository.observeExecutions()
+    private val diagnosticEvents = executions
         .flatMapLatest { executions ->
             val eventFlows = executions
                 .sortedByDescending { it.updatedAt }
@@ -125,6 +160,7 @@ class LenswakeViewModel internal constructor(
             diagnosticEvents,
             alarmTransportIncidents,
             profilePersistenceIssues,
+            observedActiveSession,
             ::DiagnosticsUiData,
         ),
         combine(profiles, preflightInvalidations) { currentProfiles, _ ->
@@ -138,6 +174,8 @@ class LenswakeViewModel internal constructor(
             events = diagnostics.events,
             incidents = diagnostics.incidents,
             profileIssues = diagnostics.profileIssues,
+            activeSession = diagnostics.activeSession.session,
+            now = diagnostics.activeSession.observedAt,
             preflight = preflight,
             profileInstall = transientState.profileInstall,
             rehearsal = transientState.rehearsal,
@@ -403,6 +441,7 @@ class LenswakeViewModel internal constructor(
         const val STOP_TIMEOUT_MILLIS = 5_000L
         const val REHEARSAL_DURATION_SECONDS = 10L
         const val DEFAULT_RECORDING_DURATION_HOURS = 1L
+        const val DEADLINE_RECHECK_MILLIS = 30_000L
     }
 }
 
@@ -423,6 +462,12 @@ private data class DiagnosticsUiData(
     val events: List<AutomationEvent>,
     val incidents: List<AlarmTransportIncident>,
     val profileIssues: List<ProfilePersistenceIssue>,
+    val activeSession: ObservedActiveSession,
+)
+
+private data class ObservedActiveSession(
+    val session: ExecutionSession?,
+    val observedAt: java.time.Instant,
 )
 
 private fun SetupRemediationAction.remediationLabel(strings: UiStringProvider): String = strings.get(
@@ -500,7 +545,8 @@ private fun RehearsalResult.toUiState(strings: UiStringProvider): RehearsalActio
         message,
     )
     is RehearsalResult.SafetyStopPending -> RehearsalActionUiState.SafetyStopPending(
-        strings.get(R.string.rehearsal_safety_stop_pending, message),
+        sessionId = sessionId.value,
+        message = strings.get(R.string.rehearsal_safety_stop_pending, message),
     )
 }
 
@@ -559,6 +605,8 @@ internal object LenswakeUiStateMapper {
         preflight: PreflightReport,
         profileInstall: ProfileInstallUiState = ProfileInstallUiState.Idle,
         rehearsal: RehearsalActionUiState = RehearsalActionUiState.Idle,
+        activeSession: ExecutionSession? = null,
+        now: java.time.Instant,
         scheduleEditor: ScheduleEditorUiState = ScheduleEditorUiState.Closed,
         scheduleAction: ScheduleActionUiState = ScheduleActionUiState.Idle,
         pendingDeleteScheduleId: String? = null,
@@ -577,7 +625,11 @@ internal object LenswakeUiStateMapper {
         alarmTransportIncidents = incidents.map(::incidentSummary),
         profilePersistenceIssues = profileIssues.map { profilePersistenceIssueSummary(it, strings) },
         profileInstall = profileInstall,
-        rehearsal = rehearsal,
+        rehearsal = rehearsal.takeUnless {
+            it is RehearsalActionUiState.SafetyStopPending &&
+                activeSession?.id?.value != it.sessionId
+        } ?: RehearsalActionUiState.Idle,
+        activeSession = activeSession?.toActiveSessionUiState(now, strings),
         scheduleEditor = scheduleEditor,
         scheduleAction = scheduleAction,
         pendingDeleteScheduleId = pendingDeleteScheduleId,
@@ -602,8 +654,14 @@ internal object LenswakeUiStateMapper {
                 profiles.isEmpty() -> strings.get(R.string.action_profile_retry)
                 else -> strings.get(R.string.action_profile_update_check)
             },
-            canRunRehearsal = canRunRehearsal(profiles, preflight, rehearsal),
-            rehearsalUnavailableReason = rehearsalUnavailableReason(profiles, preflight, rehearsal, strings),
+            canRunRehearsal = canRunRehearsal(profiles, preflight, rehearsal, activeSession),
+            rehearsalUnavailableReason = rehearsalUnavailableReason(
+                profiles,
+                preflight,
+                rehearsal,
+                activeSession,
+                strings,
+            ),
             canExportDiagnostics = false,
             exportDiagnosticsUnavailableReason = if (events.isEmpty()) {
                 strings.get(R.string.action_diagnostics_empty_default)
@@ -617,9 +675,10 @@ internal object LenswakeUiStateMapper {
         profiles: List<PixelCameraProfile>,
         preflight: PreflightReport,
         rehearsal: RehearsalActionUiState,
+        activeSession: ExecutionSession?,
     ): Boolean = profiles.isNotEmpty() &&
+        activeSession == null &&
         rehearsal !is RehearsalActionUiState.Running &&
-        rehearsal !is RehearsalActionUiState.SafetyStopPending &&
         rehearsalRequiredChecks.all { type ->
             preflight.checks.singleOrNull { it.type == type }?.status == PreflightStatus.PASSED
         }
@@ -636,11 +695,15 @@ internal object LenswakeUiStateMapper {
         profiles: List<PixelCameraProfile>,
         preflight: PreflightReport,
         rehearsal: RehearsalActionUiState,
+        activeSession: ExecutionSession?,
         strings: UiStringProvider,
     ): String = when {
+        activeSession != null -> strings.get(
+            R.string.action_rehearsal_active_session,
+            activeSession.id.value,
+            formatStopDeadline(activeSession),
+        )
         rehearsal is RehearsalActionUiState.Running -> strings.get(R.string.action_rehearsal_running)
-        rehearsal is RehearsalActionUiState.SafetyStopPending ->
-            strings.get(R.string.action_rehearsal_stopping)
         profiles.isEmpty() -> strings.get(R.string.action_rehearsal_profile_required)
         else -> rehearsalRequiredChecks.firstNotNullOfOrNull { type ->
             preflight.checks.singleOrNull { it.type == type }
@@ -648,6 +711,43 @@ internal object LenswakeUiStateMapper {
                 ?.message
         } ?: strings.get(R.string.action_rehearsal_ready)
     }
+
+    private fun ExecutionSession.toActiveSessionUiState(
+        now: java.time.Instant,
+        strings: UiStringProvider,
+    ): ActiveSessionUiState = ActiveSessionUiState(
+        sessionId = id.value,
+        kind = when (kind) {
+            SessionKind.SCHEDULED -> ActiveSessionKind.SCHEDULED
+            SessionKind.REHEARSAL -> ActiveSessionKind.REHEARSAL
+        },
+        stopDeadline = expectedStopAt,
+        title = when (kind) {
+            SessionKind.SCHEDULED -> scheduleName?.takeIf(String::isNotBlank)?.let { name ->
+                strings.get(R.string.schedules_active_session_named_title, name)
+            } ?: strings.get(R.string.schedules_active_session_title)
+            SessionKind.REHEARSAL -> strings.get(R.string.profiles_active_rehearsal_title)
+        },
+        detail = strings.get(
+            R.string.active_session_detail,
+            id.value,
+            formatStopDeadline(this),
+        ),
+        status = when {
+            !expectedStopAt.isAfter(now) -> strings.get(R.string.status_stop_overdue)
+            status == dev.po4yka.lenswake.core.SessionStatus.STOPPING ||
+                status == dev.po4yka.lenswake.core.SessionStatus.FAILED ||
+                stopActionAt != null ||
+                alarmStopDeliveredAt != null -> strings.get(R.string.status_stop_pending)
+            status == dev.po4yka.lenswake.core.SessionStatus.PENDING ||
+                status == dev.po4yka.lenswake.core.SessionStatus.STARTING ->
+                strings.get(R.string.status_preparing)
+            else -> strings.get(R.string.status_recording_expected)
+        },
+    )
+
+    private fun formatStopDeadline(session: ExecutionSession): String =
+        session.expectedStopAt.atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ISO_ZONED_DATE_TIME)
 
     private fun readiness(
         preflight: PreflightReport,

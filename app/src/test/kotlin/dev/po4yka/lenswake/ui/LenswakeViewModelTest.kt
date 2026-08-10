@@ -49,6 +49,7 @@ import java.time.Instant
 import java.time.Duration
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
@@ -92,6 +93,7 @@ class LenswakeViewModelTest {
             profiles = listOf(profile()),
             events = listOf(event()),
             preflight = blockedPreflight(),
+            now = now,
             strings = TestUiStringProvider,
         )
 
@@ -130,6 +132,7 @@ class LenswakeViewModelTest {
                     ),
                 ),
             ),
+            now = now,
             strings = TestUiStringProvider,
         )
 
@@ -156,6 +159,7 @@ class LenswakeViewModelTest {
                 ),
             ),
             preflight = blockedPreflight(),
+            now = now,
             strings = TestUiStringProvider,
         )
 
@@ -178,6 +182,7 @@ class LenswakeViewModelTest {
                 ),
             ),
             preflight = blockedPreflight(),
+            now = now,
             strings = TestUiStringProvider,
         )
 
@@ -392,18 +397,21 @@ class LenswakeViewModelTest {
     fun runRehearsalUsesBoundedProductionRequestAndSurfacesPendingSafetyStop() = runTest {
         val profiles = FakeProfileRepository().also { it.save(profile()) }
         val schedules = FakeScheduleRepository()
+        val executions = FakeExecutionRepository()
+        val activeSession = activeRehearsalSession()
         var received: RehearsalRequest? = null
         val coordinator = RehearsalCoordinator { request ->
             received = request
+            executions.persist(activeSession)
             RehearsalResult.SafetyStopPending(
-                sessionId = sessionId,
+                sessionId = activeSession.id,
                 message = "STOP remains unverified.",
             )
         }
         val viewModel = LenswakeViewModel(
             schedules,
             profiles,
-            FakeExecutionRepository(),
+            executions,
             RuntimePreflightProbe { rehearsalEligiblePreflight() },
             installUseCase(profiles),
             coordinator,
@@ -423,10 +431,156 @@ class LenswakeViewModelTest {
         assertEquals(TimeLapseSpeed.X120, received?.capture?.speed)
         assertEquals(dev.po4yka.lenswake.core.LensSelection.REAR_MAIN, received?.capture?.lens)
         assertFalse(pending.actions.canRunRehearsal)
-        assertEquals(
-            "Wait while Lenswake confirms that Pixel Camera has stopped.",
-            pending.actions.rehearsalUnavailableReason,
+        assertTrue(
+            pending.actions.rehearsalUnavailableReason.contains(activeSession.id.value),
         )
+
+        val replacementSession = activeSession.copy(
+            id = SessionId("session-rehearsal-replacement"),
+            executionKey = "rehearsal:session-rehearsal-replacement",
+            expectedStopAt = activeSession.expectedStopAt.plusSeconds(30),
+        )
+        executions.persist(replacementSession)
+        executions.persist(
+            activeSession.copy(
+                status = SessionStatus.COMPLETED,
+                stoppedVerifiedAt = activeSession.expectedStopAt,
+                revision = activeSession.revision + 1,
+                updatedAt = activeSession.expectedStopAt,
+            ),
+        )
+
+        val replacement = viewModel.state.first {
+            it.activeSession?.sessionId == replacementSession.id.value &&
+                it.rehearsal == RehearsalActionUiState.Idle
+        }
+        assertFalse(replacement.actions.canRunRehearsal)
+        executions.persist(
+            replacementSession.copy(
+                status = SessionStatus.COMPLETED,
+                stoppedVerifiedAt = replacementSession.expectedStopAt,
+                revision = replacementSession.revision + 1,
+                updatedAt = replacementSession.expectedStopAt,
+            ),
+        )
+        val reconciled = viewModel.state.first { it.activeSession == null }
+        assertTrue(reconciled.actions.canRunRehearsal)
+    }
+
+    @Test
+    fun recreatedViewModelRestoresActiveSessionAndStopDeadline() = runTest {
+        val profiles = FakeProfileRepository().also { it.save(profile()) }
+        val schedules = FakeScheduleRepository()
+        val executions = FakeExecutionRepository()
+        val activeSession = activeRehearsalSession()
+        val laterSession = activeSession.copy(
+            id = SessionId("session-rehearsal-later"),
+            executionKey = "rehearsal:session-rehearsal-later",
+            expectedStopAt = activeSession.expectedStopAt.plusSeconds(30),
+            status = SessionStatus.FAILED,
+        )
+        executions.persist(laterSession)
+        executions.persist(activeSession)
+        val viewModel = LenswakeViewModel(
+            schedules,
+            profiles,
+            executions,
+            RuntimePreflightProbe { rehearsalEligiblePreflight() },
+            installUseCase(profiles),
+            unavailableRehearsalCoordinator(),
+            scheduleWorkflow(schedules, profiles),
+            TestUiStringProvider,
+            clock = LenswakeClock { now.plusSeconds(20) },
+        )
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.state.collect()
+        }
+
+        val restored = viewModel.state.first { it.activeSession != null }
+
+        assertEquals(activeSession.id.value, restored.activeSession?.sessionId)
+        assertEquals(activeSession.expectedStopAt, restored.activeSession?.stopDeadline)
+        assertTrue(restored.activeSession?.detail?.contains(activeSession.id.value) == true)
+        assertTrue(
+            restored.activeSession?.detail?.contains(
+                activeSession.expectedStopAt.atZone(ZoneId.systemDefault())
+                    .format(DateTimeFormatter.ISO_ZONED_DATE_TIME),
+            ) == true,
+        )
+        assertEquals("STOP overdue", restored.activeSession?.status)
+        assertFalse(restored.actions.canRunRehearsal)
+
+        executions.persist(
+            activeSession.copy(
+                status = SessionStatus.COMPLETED,
+                stoppedVerifiedAt = activeSession.expectedStopAt,
+                revision = activeSession.revision + 1,
+                updatedAt = activeSession.expectedStopAt,
+            ),
+        )
+
+        val promoted = viewModel.state.first { it.activeSession?.sessionId == laterSession.id.value }
+        assertEquals(laterSession.expectedStopAt, promoted.activeSession?.stopDeadline)
+        assertEquals("STOP pending", promoted.activeSession?.status)
+        executions.persist(
+            laterSession.copy(
+                status = SessionStatus.COMPLETED,
+                stoppedVerifiedAt = laterSession.expectedStopAt,
+                revision = laterSession.revision + 1,
+                updatedAt = laterSession.expectedStopAt,
+            ),
+        )
+
+        val cleared = viewModel.state.first { it.activeSession == null }
+        assertTrue(cleared.actions.canRunRehearsal)
+
+        val scheduledSession = session()
+        executions.persist(scheduledSession)
+        val scheduled = viewModel.state.first { it.activeSession?.sessionId == scheduledSession.id.value }
+        assertEquals(ActiveSessionKind.SCHEDULED, scheduled.activeSession?.kind)
+        assertEquals("Active recording: Morning capture", scheduled.activeSession?.title)
+        assertEquals(scheduledSession.expectedStopAt, scheduled.activeSession?.stopDeadline)
+    }
+
+    @Test
+    fun activeSessionBecomesOverdueWhenStopDeadlinePassesWithoutRepositoryUpdate() = runTest {
+        val profiles = FakeProfileRepository().also { it.save(profile()) }
+        val schedules = FakeScheduleRepository()
+        val executions = FakeExecutionRepository()
+        val activeSession = activeRehearsalSession()
+        var clockNow = now
+        executions.persist(activeSession)
+        val viewModel = LenswakeViewModel(
+            schedules,
+            profiles,
+            executions,
+            RuntimePreflightProbe { rehearsalEligiblePreflight() },
+            installUseCase(profiles),
+            unavailableRehearsalCoordinator(),
+            scheduleWorkflow(schedules, profiles),
+            TestUiStringProvider,
+            clock = LenswakeClock { clockNow },
+        )
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.state.collect()
+        }
+
+        assertEquals(
+            "Recording expected",
+            viewModel.state.first { it.activeSession != null }.activeSession?.status,
+        )
+
+        clockNow = activeSession.expectedStopAt.minusNanos(1)
+        testScheduler.advanceTimeBy(Duration.ofSeconds(10).toMillis())
+        testScheduler.runCurrent()
+
+        assertEquals("Recording expected", viewModel.state.value.activeSession?.status)
+
+        clockNow = activeSession.expectedStopAt.plusNanos(1)
+        testScheduler.advanceTimeBy(1)
+        testScheduler.runCurrent()
+
+        assertEquals("STOP overdue", viewModel.state.value.activeSession?.status)
     }
 
     @Test
@@ -588,6 +742,10 @@ class LenswakeViewModelTest {
             val stream = events.getOrPut(event.sessionId) { MutableStateFlow(emptyList()) }
             stream.value = stream.value + event
         }
+
+        fun persist(session: ExecutionSession) {
+            executions.value = executions.value.filterNot { it.id == session.id } + session
+        }
     }
 
     private class FakeRecordingScheduler : RecordingScheduler {
@@ -672,6 +830,23 @@ class LenswakeViewModelTest {
             status = SessionStatus.STARTING,
             createdAt = now,
             updatedAt = now,
+        )
+
+        fun activeRehearsalSession() = ExecutionSession(
+            id = SessionId("session-rehearsal-active"),
+            executionKey = "rehearsal:session-rehearsal-active",
+            kind = SessionKind.REHEARSAL,
+            scheduleId = null,
+            scheduleName = null,
+            profileId = profileId,
+            capture = CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120),
+            expectedStartAt = now,
+            expectedStopAt = now.plusSeconds(10),
+            status = SessionStatus.RECORDING,
+            recordActionAt = now.plusSeconds(1),
+            recordingVerifiedAt = now.plusSeconds(2),
+            createdAt = now,
+            updatedAt = now.plusSeconds(2),
         )
 
         fun event() = AutomationEvent(

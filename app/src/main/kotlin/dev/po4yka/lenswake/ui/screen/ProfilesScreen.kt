@@ -11,6 +11,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.ui.LenswakeUiState
+import dev.po4yka.lenswake.ui.ActiveSessionKind
 import dev.po4yka.lenswake.ui.ProfileInstallUiState
 import dev.po4yka.lenswake.ui.RehearsalActionUiState
 import dev.po4yka.lenswake.ui.scaffoldContentViewport
@@ -27,6 +28,8 @@ fun ProfilesScreen(
     onInstallCandidateProfile: () -> Unit,
     onRunRehearsal: () -> Unit,
 ) {
+    val activeRehearsal = state.activeSession?.takeIf { it.kind == ActiveSessionKind.REHEARSAL }
+    val rehearsalInProgress = state.rehearsal is RehearsalActionUiState.Running
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -98,21 +101,30 @@ fun ProfilesScreen(
         item {
             ActionSection(
                 title = stringResource(R.string.profiles_test_title),
-                detail = if (state.rehearsal is RehearsalActionUiState.Running) {
+                detail = activeRehearsal?.detail ?: if (state.rehearsal is RehearsalActionUiState.Running) {
                     stringResource(R.string.profiles_test_running_detail)
                 } else {
                     stringResource(R.string.profiles_test_detail)
                 },
-                actionLabel = if (state.rehearsal is RehearsalActionUiState.Running) {
+                actionLabel = if (rehearsalInProgress) {
                     stringResource(R.string.profiles_testing)
                 } else {
                     stringResource(R.string.action_test_recording)
                 },
                 actionEnabled = state.actions.canRunRehearsal,
-                actionInProgress = state.rehearsal is RehearsalActionUiState.Running,
+                actionInProgress = rehearsalInProgress,
                 unavailableReason = state.actions.rehearsalUnavailableReason,
                 onAction = onRunRehearsal,
             )
+        }
+        activeRehearsal?.let { active ->
+            item(key = "active-rehearsal-${active.sessionId}") {
+                SummaryCard(
+                    title = stringResource(R.string.profiles_active_rehearsal_title),
+                    detail = active.detail,
+                    status = active.status,
+                )
+            }
         }
         when (val rehearsal = state.rehearsal) {
             RehearsalActionUiState.Idle -> Unit

@@ -71,6 +71,7 @@ import dev.po4yka.lenswake.ui.component.BusyButtonLabel
 import dev.po4yka.lenswake.ui.component.ReadinessCard
 import dev.po4yka.lenswake.ui.component.ScreenHeader
 import dev.po4yka.lenswake.ui.component.StatusIcon
+import dev.po4yka.lenswake.ui.component.SummaryCard
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -121,6 +122,15 @@ fun SchedulesScreen(
                 readiness = state.readiness,
                 onOpenSetup = onOpenSetup,
             )
+        }
+        state.activeSession?.let { activeSession ->
+            item(key = "active-session-${activeSession.sessionId}") {
+                SummaryCard(
+                    title = activeSession.title,
+                    detail = activeSession.detail,
+                    status = activeSession.status,
+                )
+            }
         }
         if (state.scheduleAction !is ScheduleActionUiState.Idle) {
             item {

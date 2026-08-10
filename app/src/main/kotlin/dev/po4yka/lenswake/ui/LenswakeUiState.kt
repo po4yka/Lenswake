@@ -2,6 +2,7 @@ package dev.po4yka.lenswake.ui
 
 import androidx.compose.runtime.Immutable
 import dev.po4yka.lenswake.core.SetupRemediationAction
+import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 
@@ -19,12 +20,28 @@ data class LenswakeUiState(
     val profilePersistenceIssues: List<ProfilePersistenceIssueUiState> = emptyList(),
     val profileInstall: ProfileInstallUiState = ProfileInstallUiState.Idle,
     val rehearsal: RehearsalActionUiState = RehearsalActionUiState.Idle,
+    val activeSession: ActiveSessionUiState? = null,
     val scheduleEditor: ScheduleEditorUiState = ScheduleEditorUiState.Closed,
     val scheduleAction: ScheduleActionUiState = ScheduleActionUiState.Idle,
     val pendingDeleteScheduleId: String? = null,
     val actions: UiActionAvailability = UiActionAvailability(),
     val setupRemediationMessage: String? = null,
 )
+
+@Immutable
+data class ActiveSessionUiState(
+    val sessionId: String,
+    val kind: ActiveSessionKind,
+    val stopDeadline: Instant,
+    val title: String,
+    val detail: String,
+    val status: String,
+)
+
+enum class ActiveSessionKind {
+    SCHEDULED,
+    REHEARSAL,
+}
 
 @Immutable
 sealed interface ScheduleEditorUiState {
@@ -115,6 +132,7 @@ sealed interface RehearsalActionUiState {
 
     @Immutable
     data class SafetyStopPending(
+        val sessionId: String,
         val message: String,
     ) : RehearsalActionUiState
 }

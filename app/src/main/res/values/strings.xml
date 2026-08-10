@@ -42,6 +42,10 @@
     <string name="status_ready_with_warnings">Ready with warnings</string>
     <string name="status_recorded_event">Recorded event</string>
     <string name="status_safety_alarm_armed">Safety alarm armed</string>
+    <string name="status_preparing">Preparing</string>
+    <string name="status_recording_expected">Recording expected</string>
+    <string name="status_stop_pending">STOP pending</string>
+    <string name="status_stop_overdue">STOP overdue</string>
     <string name="status_unknown">Unknown</string>
     <string name="status_working">Working</string>
     <string name="status_required_format">%1$s · Required</string>
@@ -72,6 +76,10 @@
     <string name="profiles_test_passed_title">Test recording passed</string>
     <string name="profiles_test_failed_title">Test recording failed</string>
     <string name="profiles_waiting_for_stop_title">Waiting for Pixel Camera to stop</string>
+    <string name="profiles_active_rehearsal_title">Active test recording</string>
+    <string name="schedules_active_session_title">Active scheduled recording</string>
+    <string name="schedules_active_session_named_title">Active recording: %1$s</string>
+    <string name="active_session_detail">Session %1$s · STOP deadline %2$s</string>
 
     <string name="diagnostics_no_activity_title">No activity yet</string>
     <string name="profile_storage_issue_title">Camera profile storage issue</string>
@@ -170,6 +178,7 @@
     <string name="action_profile_update_check">Check the installed profile after Pixel Camera changes.</string>
     <string name="action_diagnostics_not_implemented">Diagnostic export is not implemented yet.</string>
     <string name="action_rehearsal_running">A test recording is already running.</string>
+    <string name="action_rehearsal_active_session">Recording session %1$s owns Pixel Camera. STOP deadline: %2$s.</string>
     <string name="action_rehearsal_stopping">Wait while Lenswake confirms that Pixel Camera has stopped.</string>
     <string name="action_rehearsal_profile_required">Install a Pixel Camera profile before testing.</string>
     <string name="action_rehearsal_ready">Camera testing is ready.</string>

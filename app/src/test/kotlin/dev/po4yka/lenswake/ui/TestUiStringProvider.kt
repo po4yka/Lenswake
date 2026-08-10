@@ -7,10 +7,20 @@ internal object TestUiStringProvider : UiStringProvider {
     private val values = mapOf(
         R.string.action_diagnostics_not_implemented to "Diagnostic export is not implemented yet.",
         R.string.action_rehearsal_stopping to "Wait while Lenswake confirms that Pixel Camera has stopped.",
+        R.string.action_rehearsal_active_session to
+            "Recording session %1\$s owns Pixel Camera. STOP deadline: %2\$s.",
         R.string.capability_accessibility_service to "Lenswake Accessibility Service",
         R.string.default_schedule_name to "Time Lapse",
         R.string.profile_compatibility_needs_test to "Needs test",
         R.string.profile_compatibility_verified to "Verified for scheduling",
+        R.string.active_session_detail to "Session %1\$s · STOP deadline %2\$s",
+        R.string.profiles_active_rehearsal_title to "Active test recording",
+        R.string.schedules_active_session_title to "Active scheduled recording",
+        R.string.schedules_active_session_named_title to "Active recording: %1\$s",
+        R.string.status_preparing to "Preparing",
+        R.string.status_recording_expected to "Recording expected",
+        R.string.status_stop_pending to "STOP pending",
+        R.string.status_stop_overdue to "STOP overdue",
         R.string.profile_installed to "Camera profile installed. Test recording is required before scheduling.",
         R.string.profile_storage_issue_title to "Camera profile storage issue",
         R.string.profile_storage_issue_detail to
