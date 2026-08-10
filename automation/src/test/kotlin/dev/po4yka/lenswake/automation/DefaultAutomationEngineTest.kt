@@ -484,6 +484,29 @@ class DefaultAutomationEngineTest {
     }
 
     @Test
+    fun `start accepts recording confirmation after eighth verification without redispatch`() = runTest {
+        val session = session(status = SessionStatus.PENDING)
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(
+            state = readyToRecordState(),
+            confirmStart = false,
+            recordingStartsOnVerificationInspection = 9,
+        )
+
+        val result = engine(
+            repository,
+            FakeDeviceControl(interactive = true),
+            camera,
+            attempts = 2,
+            verifyRecordingAttempts = 12,
+        ).start(session.id)
+
+        assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        assertEquals(9, camera.verificationInspections)
+        assertEquals(1, camera.calls.count { it == "startRecording" })
+    }
+
+    @Test
     fun `start fails when initial speed picker hides lens without current run proof`() = runTest {
         val session = session(status = SessionStatus.PENDING)
         val repository = FakeExecutionRepository(session)
@@ -1242,6 +1265,7 @@ class DefaultAutomationEngineTest {
         device: FakeDeviceControl,
         camera: FakePixelCamera,
         attempts: Int = 3,
+        verifyRecordingAttempts: Int = attempts,
         profile: PixelCameraProfile? = profile(),
         timeout: Duration = 5_000.milliseconds,
     ) = DefaultAutomationEngine(
@@ -1251,9 +1275,13 @@ class DefaultAutomationEngineTest {
         pixelCamera = camera,
         clock = { NOW },
         config = AutomationConfig(
-            retryPolicies = AutomationOperation.entries.associateWith {
+            retryPolicies = AutomationOperation.entries.associateWith { operation ->
                 RetryPolicy(
-                    maxAttempts = attempts,
+                    maxAttempts = if (operation == AutomationOperation.VERIFY_RECORDING) {
+                        verifyRecordingAttempts
+                    } else {
+                        attempts
+                    },
                     initialDelay = Duration.ZERO,
                     maxDelay = Duration.ZERO,
                     multiplier = 1.0,
@@ -1340,6 +1368,7 @@ class DefaultAutomationEngineTest {
         private val suspendLaunch: Boolean = false,
         private val cancelLaunch: Boolean = false,
         private val suspendStart: Boolean = false,
+        private val recordingStartsOnVerificationInspection: Int? = null,
         private val startException: Exception? = null,
         private val startDispatch: ActionDispatch? = null,
         private val onStartRecording: (suspend () -> Unit)? = null,
@@ -1363,6 +1392,11 @@ class DefaultAutomationEngineTest {
             trace += "inspect"
             if (calls.lastOrNull() == "startRecording" && state is PixelCameraState.TimeLapse && !(state as PixelCameraState.TimeLapse).recording) {
                 verificationInspections += 1
+                if (recordingStartsOnVerificationInspection != null &&
+                    verificationInspections >= recordingStartsOnVerificationInspection
+                ) {
+                    state = (state as PixelCameraState.TimeLapse).copy(recording = true)
+                }
             }
             if (calls.lastOrNull() == "stopRecording" && state is PixelCameraState.TimeLapse && (state as PixelCameraState.TimeLapse).recording) {
                 stopVerificationInspections += 1

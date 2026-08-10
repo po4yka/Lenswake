@@ -57,15 +57,16 @@ data class AutomationConfig(
         fun production(): AutomationConfig {
             val interaction = RetryPolicy(3, 200.milliseconds, 1.seconds, 2.0)
             val inspection = RetryPolicy(8, 250.milliseconds, 1.seconds, 1.5)
+            val recordingVerification = RetryPolicy(12, 250.milliseconds, 1.seconds, 1.5)
             return AutomationConfig(
                 retryPolicies = AutomationOperation.entries.associateWith { operation ->
                     when (operation) {
                         AutomationOperation.WAKE_DEVICE -> RetryPolicy(3, 250.milliseconds, 1.seconds, 2.0)
                         AutomationOperation.LAUNCH_CAMERA -> RetryPolicy(3, 500.milliseconds, 2.seconds, 2.0)
                         AutomationOperation.INSPECT_CAMERA,
-                        AutomationOperation.VERIFY_RECORDING,
                         AutomationOperation.VERIFY_STOPPED,
                         -> inspection
+                        AutomationOperation.VERIFY_RECORDING -> recordingVerification
                         else -> interaction
                     }
                 },

@@ -10,6 +10,15 @@ import org.junit.jupiter.api.Test
 
 class RetryPolicyTest {
     @Test
+    fun `production keeps recording verification bounded while allowing cold camera latency`() {
+        val policy = AutomationConfig.production().policyFor(AutomationOperation.VERIFY_RECORDING)
+
+        assertEquals(12, policy.maxAttempts)
+        assertEquals(1.seconds, policy.maxDelay)
+        assertEquals(1.seconds, policy.delayBeforeAttempt(12))
+    }
+
+    @Test
     fun `delay grows exponentially and is capped`() {
         val policy = RetryPolicy(
             maxAttempts = 5,
