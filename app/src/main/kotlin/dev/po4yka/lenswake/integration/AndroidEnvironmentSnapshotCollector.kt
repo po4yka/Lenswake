@@ -64,6 +64,7 @@ class AndroidEnvironmentSnapshotCollector(
     private suspend fun accessibilityStatus(): EnvironmentCapabilityStatus = try {
         when (PixelCameraAccessibilityRuntime.snapshot()) {
             AccessibilitySnapshotResult.ServiceDisconnected -> EnvironmentCapabilityStatus.UNAVAILABLE
+            AccessibilitySnapshotResult.RootRefreshFailed -> EnvironmentCapabilityStatus.UNKNOWN
             is AccessibilitySnapshotResult.Available,
             AccessibilitySnapshotResult.NoActiveWindow,
             AccessibilitySnapshotResult.PixelCameraNotForeground,

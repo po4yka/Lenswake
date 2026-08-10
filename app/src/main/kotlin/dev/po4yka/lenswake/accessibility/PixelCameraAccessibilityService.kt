@@ -28,6 +28,9 @@ sealed interface AccessibilitySnapshotResult {
     data object NoActiveWindow : AccessibilitySnapshotResult
 
     data object PixelCameraNotForeground : AccessibilitySnapshotResult
+
+    /** The active-window node could not be refreshed, so its contents are not safe to inspect. */
+    data object RootRefreshFailed : AccessibilitySnapshotResult
 }
 
 sealed interface AccessibilityDispatchResult {
@@ -38,6 +41,9 @@ sealed interface AccessibilityDispatchResult {
     data object GestureSubmitted : AccessibilityDispatchResult
 
     data object ServiceDisconnected : AccessibilityDispatchResult
+
+    /** The active-window node could not be refreshed, so a path must not be resolved against it. */
+    data object RootRefreshFailed : AccessibilityDispatchResult
 
     data object TargetNotFound : AccessibilityDispatchResult
 
@@ -71,6 +77,7 @@ class PixelCameraAccessibilityService : AccessibilityService() {
 
     internal fun readSnapshot(): AccessibilitySnapshotResult {
         val root = rootInActiveWindow ?: return AccessibilitySnapshotResult.NoActiveWindow
+        if (!root.refreshSafely()) return AccessibilitySnapshotResult.RootRefreshFailed
         if (root.packageName?.toString() != PIXEL_CAMERA_PACKAGE) {
             return AccessibilitySnapshotResult.PixelCameraNotForeground
         }
@@ -89,6 +96,7 @@ class PixelCameraAccessibilityService : AccessibilityService() {
 
     internal fun dispatchClick(nodePath: String): AccessibilityDispatchResult {
         val root = rootInActiveWindow ?: return AccessibilityDispatchResult.TargetNotFound
+        if (!root.refreshSafely()) return AccessibilityDispatchResult.RootRefreshFailed
         if (root.packageName?.toString() != PIXEL_CAMERA_PACKAGE) {
             return AccessibilityDispatchResult.TargetNotEligible
         }
@@ -199,6 +207,12 @@ class PixelCameraAccessibilityService : AccessibilityService() {
             current = current.getChild(index) ?: return null
         }
         return current
+    }
+
+    private fun AccessibilityNodeInfo.refreshSafely(): Boolean = try {
+        refresh()
+    } catch (_: RuntimeException) {
+        false
     }
 
     private companion object {

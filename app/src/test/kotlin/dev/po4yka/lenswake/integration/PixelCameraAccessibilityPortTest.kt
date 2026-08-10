@@ -52,6 +52,32 @@ class PixelCameraAccessibilityPortTest {
     }
 
     @Test
+    fun `inspection rejects an accessibility snapshot whose root could not refresh`() = runTest {
+        val result = port(
+            gateway = FakeAccessibilityGateway(
+                snapshotResult = AccessibilitySnapshotResult.RootRefreshFailed,
+            ),
+        ).inspect(profileUse())
+
+        val unavailable = assertInstanceOf(PortResult.Unavailable::class.java, result)
+        assertEquals(AutomationFailureCode.ACCESSIBILITY_REFRESH_FAILED, unavailable.failure.code)
+    }
+
+    @Test
+    fun `dispatch rejects when the active root could not refresh before path resolution`() = runTest {
+        val gateway = FakeAccessibilityGateway(
+            nodes = listOf(node(LENS_ACTION_RESOURCE)),
+            dispatchResult = AccessibilityDispatchResult.RootRefreshFailed,
+        )
+
+        val result = port(gateway = gateway).selectRearMainLens(profileUse())
+
+        val rejected = assertInstanceOf(ActionDispatch.Rejected::class.java, result)
+        assertEquals(AutomationFailureCode.ACCESSIBILITY_REFRESH_FAILED, rejected.failure.code)
+        assertEquals("node-$LENS_ACTION_RESOURCE", gateway.clickedNodePath)
+    }
+
+    @Test
     fun `time lapse lens remains unknown when configured rear main signal does not match`() = runTest {
         val gateway = FakeAccessibilityGateway(
             activeSignals(
@@ -391,8 +417,9 @@ class PixelCameraAccessibilityPortTest {
     )
 
     private class FakeAccessibilityGateway(
-        private val nodes: List<UiNodeSnapshot>,
+        private val nodes: List<UiNodeSnapshot> = emptyList(),
         private val dispatchResult: AccessibilityDispatchResult = AccessibilityDispatchResult.TargetNotFound,
+        private val snapshotResult: AccessibilitySnapshotResult? = null,
     ) : PixelCameraAccessibilityGateway {
         var snapshotCalls: Int = 0
             private set
@@ -402,7 +429,7 @@ class PixelCameraAccessibilityPortTest {
 
         override suspend fun snapshot(): AccessibilitySnapshotResult {
             snapshotCalls += 1
-            return AccessibilitySnapshotResult.Available(nodes = nodes, truncated = false)
+            return snapshotResult ?: AccessibilitySnapshotResult.Available(nodes = nodes, truncated = false)
         }
 
         override suspend fun dispatchClick(nodePath: String): AccessibilityDispatchResult {
