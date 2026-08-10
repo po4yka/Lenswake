@@ -9,7 +9,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.ui.LenswakeUiState
 import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.ui.scaffoldContentViewport
@@ -39,13 +41,13 @@ fun SetupScreen(
     ) {
         item {
             TextButton(onClick = onBack) {
-                Text("Back")
+                Text(stringResource(R.string.action_back))
             }
         }
         item {
             ScreenHeader(
-                title = "Setup",
-                summary = "Finish the device settings Lenswake needs before it can run a schedule.",
+                title = stringResource(R.string.screen_setup_title),
+                summary = stringResource(R.string.screen_setup_summary),
             )
         }
         item {
@@ -55,7 +57,7 @@ fun SetupScreen(
                 showSetupAction = false,
             )
         }
-        item { SectionHeading("Readiness checks") }
+        item { SectionHeading(stringResource(R.string.section_readiness_checks)) }
         state.setupRemediationMessage?.let { message ->
             item {
                 TextButton(onClick = onClearRemediationMessage) {

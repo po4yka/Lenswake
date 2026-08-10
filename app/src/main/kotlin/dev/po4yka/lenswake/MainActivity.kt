@@ -12,12 +12,16 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.ui.LenswakeApp
+import dev.po4yka.lenswake.ui.AndroidUiStringProvider
 import dev.po4yka.lenswake.ui.LenswakeViewModel
 import dev.po4yka.lenswake.ui.theme.LenswakeTheme
 
 class MainActivity : ComponentActivity() {
     private val viewModel: LenswakeViewModel by viewModels {
-        LenswakeViewModel.Factory((application as LenswakeApplication).graph)
+        LenswakeViewModel.Factory(
+            graph = (application as LenswakeApplication).graph,
+            strings = AndroidUiStringProvider(applicationContext),
+        )
     }
     private val notificationPermissionRequest = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),

@@ -3,6 +3,7 @@ package dev.po4yka.lenswake.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfile
 import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfileResult
 import dev.po4yka.lenswake.application.AlarmTransportIncident
@@ -67,6 +68,7 @@ class LenswakeViewModel internal constructor(
     private val installKnownPixelCameraProfile: InstallKnownPixelCameraProfile,
     private val rehearsalCoordinator: RehearsalCoordinator,
     private val scheduleWorkflow: ScheduleWorkflow,
+    private val strings: UiStringProvider,
     alarmTransportIncidentSource: AlarmTransportIncidentSource = EmptyAlarmTransportIncidentSource,
     private val clock: LenswakeClock = SystemLenswakeClock(),
 ) : ViewModel() {
@@ -135,11 +137,12 @@ class LenswakeViewModel internal constructor(
             scheduleAction = transientState.schedule.action,
             pendingDeleteScheduleId = transientState.schedule.pendingDeleteScheduleId,
             setupRemediationMessage = transientState.schedule.remediationMessage,
+            strings = strings,
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
-        initialValue = LenswakeUiState(),
+        initialValue = LenswakeUiStateMapper.initial(strings),
     )
 
     fun refreshPreflight() {
@@ -147,7 +150,10 @@ class LenswakeViewModel internal constructor(
     }
 
     fun reportSetupRemediationUnavailable(action: SetupRemediationAction) {
-        setupRemediationMessage.value = "Unable to open ${action.remediationLabel}; resolve this requirement in Android system settings."
+        setupRemediationMessage.value = strings.get(
+            R.string.remediation_unavailable,
+            action.remediationLabel(strings),
+        )
         refreshPreflight()
     }
 
@@ -160,7 +166,7 @@ class LenswakeViewModel internal constructor(
 
         profileInstall.value = ProfileInstallUiState.Installing
         viewModelScope.launch {
-            profileInstall.value = installKnownPixelCameraProfile().toUiState()
+            profileInstall.value = installKnownPixelCameraProfile().toUiState(strings)
         }
     }
 
@@ -174,7 +180,7 @@ class LenswakeViewModel internal constructor(
                     .sortedBy { it.id.value }
                     .firstOrNull()
                 rehearsal.value = if (profile == null) {
-                    RehearsalActionUiState.Failed("Install a Pixel Camera profile before testing.")
+                    RehearsalActionUiState.Failed(strings.get(R.string.rehearsal_profile_required))
                 } else {
                     rehearsalCoordinator.run(
                         RehearsalRequest(
@@ -185,14 +191,14 @@ class LenswakeViewModel internal constructor(
                             ),
                             recordingDuration = Duration.ofSeconds(REHEARSAL_DURATION_SECONDS),
                         ),
-                    ).toUiState()
+                    ).toUiState(strings)
                 }
                 refreshPreflight()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
                 rehearsal.value = RehearsalActionUiState.Failed(
-                    "The test recording stopped unexpectedly. Review Diagnostics, then try again.",
+                    strings.get(R.string.rehearsal_unexpected_failure),
                 )
                 refreshPreflight()
             }
@@ -209,7 +215,7 @@ class LenswakeViewModel internal constructor(
         val profile = state.value.profiles.firstOrNull { it.verifiedForScheduling }
         if (profile == null) {
             scheduleAction.value = ScheduleActionUiState.Failed(
-                "Install and test a Pixel Camera profile before creating a schedule.",
+                strings.get(R.string.action_create_profile_required),
             )
             return
         }
@@ -219,7 +225,7 @@ class LenswakeViewModel internal constructor(
         scheduleEditor.value = ScheduleEditorUiState.Open(
             mode = ScheduleEditorMode.Create,
             form = ScheduleFormUiState(
-                name = "Time Lapse",
+                name = strings.get(R.string.default_schedule_name),
                 startLocal = startLocal,
                 stopLocal = startLocal.plusHours(DEFAULT_RECORDING_DURATION_HOURS),
                 profileId = profile.id,
@@ -231,7 +237,9 @@ class LenswakeViewModel internal constructor(
     fun beginEditSchedule(scheduleId: String) {
         val schedule = state.value.schedules.firstOrNull { it.id == scheduleId }
         if (schedule == null) {
-            scheduleAction.value = ScheduleActionUiState.Failed("The selected schedule no longer exists.")
+            scheduleAction.value = ScheduleActionUiState.Failed(
+                strings.get(R.string.schedule_selected_missing),
+            )
             return
         }
         scheduleAction.value = ScheduleActionUiState.Idle
@@ -264,11 +272,11 @@ class LenswakeViewModel internal constructor(
         val command = editor.form.toCommandOrNull()
         if (command == null) {
             scheduleEditor.value = editor.copy(
-                error = "Choose a valid name, start, end, and verified camera setup.",
+                error = strings.get(R.string.validation_schedule_form_invalid),
             )
             return
         }
-        launchScheduleMutation("Saving schedule…") {
+        launchScheduleMutation(strings.get(R.string.schedule_saving)) {
             when (val mode = editor.mode) {
                 ScheduleEditorMode.Create -> scheduleWorkflow.create(command)
                 is ScheduleEditorMode.Edit -> scheduleWorkflow.edit(ScheduleId(mode.scheduleId), command)
@@ -277,7 +285,9 @@ class LenswakeViewModel internal constructor(
     }
 
     fun setScheduleEnabled(scheduleId: String, enabled: Boolean) {
-        launchScheduleMutation(if (enabled) "Enabling schedule…" else "Disabling schedule…") {
+        launchScheduleMutation(
+            strings.get(if (enabled) R.string.schedule_enabling else R.string.schedule_disabling),
+        ) {
             scheduleWorkflow.setEnabled(ScheduleId(scheduleId), enabled)
         }
     }
@@ -295,7 +305,7 @@ class LenswakeViewModel internal constructor(
         if (pendingDeleteScheduleId.value != scheduleId) return
         if (scheduleAction.value is ScheduleActionUiState.Working) return
         pendingDeleteScheduleId.value = null
-        launchScheduleMutation("Deleting schedule…") {
+        launchScheduleMutation(strings.get(R.string.schedule_deleting)) {
             scheduleWorkflow.delete(ScheduleId(scheduleId))
         }
     }
@@ -315,7 +325,7 @@ class LenswakeViewModel internal constructor(
         viewModelScope.launch {
             try {
                 val result = operation()
-                scheduleAction.value = result.toUiState()
+                scheduleAction.value = result.toUiState(strings)
                 if (result is ScheduleWorkflowResult.Applied || result is ScheduleWorkflowResult.Deleted) {
                     scheduleEditor.value = ScheduleEditorUiState.Closed
                     pendingDeleteScheduleId.value = null
@@ -325,7 +335,7 @@ class LenswakeViewModel internal constructor(
                 throw cancelled
             } catch (failure: Exception) {
                 scheduleAction.value = ScheduleActionUiState.Failed(
-                    "The schedule could not be changed. Review Diagnostics, then try again.",
+                    strings.get(R.string.schedule_change_failed),
                 )
             }
         }
@@ -339,10 +349,14 @@ class LenswakeViewModel internal constructor(
         private val installKnownPixelCameraProfile: InstallKnownPixelCameraProfile,
         private val rehearsalCoordinator: RehearsalCoordinator,
         private val scheduleWorkflow: ScheduleWorkflow,
+        private val strings: UiStringProvider,
         private val alarmTransportIncidentSource: AlarmTransportIncidentSource = EmptyAlarmTransportIncidentSource,
         private val clock: LenswakeClock = SystemLenswakeClock(),
     ) : ViewModelProvider.Factory {
-        constructor(graph: ApplicationGraph) : this(
+        constructor(
+            graph: ApplicationGraph,
+            strings: UiStringProvider,
+        ) : this(
             scheduleRepository = graph.scheduleRepository,
             profileRepository = graph.profileRepository,
             executionRepository = graph.executionRepository,
@@ -351,6 +365,7 @@ class LenswakeViewModel internal constructor(
             installKnownPixelCameraProfile = graph.installKnownPixelCameraProfile,
             rehearsalCoordinator = graph.rehearsalCoordinator,
             scheduleWorkflow = graph.scheduleWorkflow,
+            strings = strings,
             clock = graph.clock,
         )
 
@@ -368,6 +383,7 @@ class LenswakeViewModel internal constructor(
                 installKnownPixelCameraProfile = installKnownPixelCameraProfile,
                 rehearsalCoordinator = rehearsalCoordinator,
                 scheduleWorkflow = scheduleWorkflow,
+                strings = strings,
                 clock = clock,
             ) as T
         }
@@ -400,14 +416,16 @@ private data class DiagnosticsUiData(
     val incidents: List<AlarmTransportIncident>,
 )
 
-private val SetupRemediationAction.remediationLabel: String
-    get() = when (this) {
-        SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION -> "the notification permission request"
-        SetupRemediationAction.OPEN_NOTIFICATION_SETTINGS -> "notification settings"
-        SetupRemediationAction.OPEN_EXACT_ALARM_SETTINGS -> "exact-alarm settings"
-        SetupRemediationAction.OPEN_ACCESSIBILITY_SETTINGS -> "Accessibility settings"
-        SetupRemediationAction.OPEN_FULL_SCREEN_INTENT_SETTINGS -> "full-screen intent settings"
-    }
+private fun SetupRemediationAction.remediationLabel(strings: UiStringProvider): String = strings.get(
+    when (this) {
+        SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION -> R.string.remediation_notification_permission
+        SetupRemediationAction.OPEN_NOTIFICATION_SETTINGS -> R.string.remediation_notification_settings
+        SetupRemediationAction.OPEN_EXACT_ALARM_SETTINGS -> R.string.remediation_exact_alarm_settings
+        SetupRemediationAction.OPEN_ACCESSIBILITY_SETTINGS -> R.string.remediation_accessibility_settings
+        SetupRemediationAction.OPEN_FULL_SCREEN_INTENT_SETTINGS ->
+            R.string.remediation_full_screen_intent_settings
+    },
+)
 
 private fun ScheduleFormUiState.toCommandOrNull(): ScheduleCommand? = runCatching {
     val start = requireNotNull(startLocal)
@@ -430,26 +448,26 @@ private fun LocalDateTime.toUnambiguousInstant(zoneId: ZoneId): java.time.Instan
     return toInstant(offsets.single())
 }
 
-private fun ScheduleWorkflowResult.toUiState(): ScheduleActionUiState = when (this) {
+private fun ScheduleWorkflowResult.toUiState(strings: UiStringProvider): ScheduleActionUiState = when (this) {
     is ScheduleWorkflowResult.Applied -> ScheduleActionUiState.Succeeded(
         when (operation) {
             ScheduleOperation.CREATED -> if (schedule.enabled) {
-                "Schedule created. Start and end times are set."
+                strings.get(R.string.schedule_created)
             } else {
-                "Draft schedule created. No recording times are active."
+                strings.get(R.string.schedule_draft_created)
             }
             ScheduleOperation.UPDATED -> if (schedule.enabled) {
-                "Schedule updated. New start and end times are set."
+                strings.get(R.string.schedule_updated)
             } else {
-                "Draft schedule updated. No recording times are active."
+                strings.get(R.string.schedule_draft_updated)
             }
-            ScheduleOperation.ENABLED -> "Schedule enabled. Start and end times are set."
-            ScheduleOperation.DISABLED -> "Schedule disabled. Its recording times were cancelled."
+            ScheduleOperation.ENABLED -> strings.get(R.string.schedule_enabled)
+            ScheduleOperation.DISABLED -> strings.get(R.string.schedule_disabled)
         },
     )
 
     is ScheduleWorkflowResult.Deleted -> ScheduleActionUiState.Succeeded(
-        "Schedule deleted. Its recording times were cancelled.",
+        strings.get(R.string.schedule_deleted),
     )
 
     is ScheduleWorkflowResult.Rejected -> ScheduleActionUiState.Failed(
@@ -462,53 +480,65 @@ private fun ScheduleWorkflowResult.toUiState(): ScheduleActionUiState = when (th
     )
 }
 
-private fun RehearsalResult.toUiState(): RehearsalActionUiState = when (this) {
+private fun RehearsalResult.toUiState(strings: UiStringProvider): RehearsalActionUiState = when (this) {
     is RehearsalResult.Completed -> RehearsalActionUiState.Passed(
-        "Lenswake started and stopped Pixel Camera successfully. This profile is ready for scheduling.",
+        strings.get(R.string.rehearsal_passed),
     )
     is RehearsalResult.Busy -> RehearsalActionUiState.Failed(
-        "Another test recording is already running.",
+        strings.get(R.string.rehearsal_busy),
     )
     is RehearsalResult.Rejected -> RehearsalActionUiState.Failed(
         message,
     )
     is RehearsalResult.SafetyStopPending -> RehearsalActionUiState.SafetyStopPending(
-        "$message Lenswake will keep trying to stop Pixel Camera automatically.",
+        strings.get(R.string.rehearsal_safety_stop_pending, message),
     )
 }
 
-private fun InstallKnownPixelCameraProfileResult.toUiState(): ProfileInstallUiState = when (this) {
+private fun InstallKnownPixelCameraProfileResult.toUiState(
+    strings: UiStringProvider,
+): ProfileInstallUiState = when (this) {
     is InstallKnownPixelCameraProfileResult.Installed -> ProfileInstallUiState.Succeeded(
         message = if (replacedExisting) {
-            "Camera profile updated. Test recording is required before scheduling."
+            strings.get(R.string.profile_updated)
         } else {
-            "Camera profile installed. Test recording is required before scheduling."
+            strings.get(R.string.profile_installed)
         },
     )
 
     is InstallKnownPixelCameraProfileResult.AlreadyInstalled -> ProfileInstallUiState.Succeeded(
-        message = "This camera profile is already installed. Test it before scheduling.",
+        message = strings.get(R.string.profile_already_installed),
     )
 
     is InstallKnownPixelCameraProfileResult.UnsupportedEnvironment -> ProfileInstallUiState.Failed(
-        message = "No camera profile is available for ${environment.deviceModel} with this Pixel Camera version and language.",
+        message = strings.get(R.string.profile_unsupported_environment, environment.deviceModel),
     )
 
     is InstallKnownPixelCameraProfileResult.EnvironmentUnavailable -> ProfileInstallUiState.Failed(
-        message = "Lenswake could not check this Pixel Camera setup. ${failure.message}",
+        message = strings.get(R.string.profile_environment_unavailable, failure.message),
     )
 
     is InstallKnownPixelCameraProfileResult.PersistenceFailure -> ProfileInstallUiState.Failed(
-        message = "Lenswake could not save the camera profile. $detail.",
+        message = strings.get(R.string.profile_persistence_failure, detail),
     )
 }
 
 internal object LenswakeUiStateMapper {
-    private val scheduleTimeFormatter = DateTimeFormatter.ofPattern(
-        "MMM d, yyyy HH:mm z",
-        Locale.ENGLISH,
-    )
     private val eventTimeFormatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
+
+    fun initial(strings: UiStringProvider): LenswakeUiState = LenswakeUiState(
+        readiness = ReadinessUiState.Blocked(
+            title = strings.get(R.string.readiness_setup_required_title),
+            summary = strings.get(R.string.readiness_setup_required_summary),
+        ),
+        capabilities = initialCapabilities(strings),
+        actions = UiActionAvailability(
+            createScheduleUnavailableReason = strings.get(R.string.action_create_unavailable_default),
+            installCandidateProfileUnavailableReason = strings.get(R.string.action_profile_unchecked_default),
+            rehearsalUnavailableReason = strings.get(R.string.action_rehearsal_unavailable_default),
+            exportDiagnosticsUnavailableReason = strings.get(R.string.action_diagnostics_empty_default),
+        ),
+    )
 
     fun map(
         schedules: List<RecordingSchedule>,
@@ -522,15 +552,16 @@ internal object LenswakeUiStateMapper {
         scheduleAction: ScheduleActionUiState = ScheduleActionUiState.Idle,
         pendingDeleteScheduleId: String? = null,
         setupRemediationMessage: String? = null,
+        strings: UiStringProvider,
     ): LenswakeUiState = LenswakeUiState(
-        readiness = readiness(preflight),
+        readiness = readiness(preflight, strings),
         schedules = schedules
             .sortedBy { it.startAt }
-            .map(::scheduleSummary),
+            .map { scheduleSummary(it, strings) },
         profiles = profiles
             .sortedWith(compareBy({ it.environment.deviceModel }, { it.id.value }))
-            .map(::profileSummary),
-        capabilities = preflight.checks.map(::capability),
+            .map { profileSummary(it, strings) },
+        capabilities = preflight.checks.map { capability(it, strings) },
         diagnosticEvents = events.map(::eventSummary),
         alarmTransportIncidents = incidents.map(::incidentSummary),
         profileInstall = profileInstall,
@@ -545,27 +576,27 @@ internal object LenswakeUiStateMapper {
                 scheduleAction !is ScheduleActionUiState.Working,
             createScheduleUnavailableReason = when {
                 !preflight.hasAllScheduleChecksPassed() ->
-                    "Finish all required Setup checks before creating a schedule."
+                    strings.get(R.string.action_create_setup_required)
                 profiles.none { it.compatibility == ProfileCompatibility.VERIFIED && it.verifiedAt != null } ->
-                    "Install and test the Pixel Camera profile before creating a schedule."
-                scheduleAction is ScheduleActionUiState.Working -> "Wait for the current schedule change to finish."
-                else -> "Schedule creation is available."
+                    strings.get(R.string.action_create_profile_required)
+                scheduleAction is ScheduleActionUiState.Working -> strings.get(R.string.action_create_busy)
+                else -> strings.get(R.string.action_create_available)
             },
             canInstallCandidateProfile = profileInstall !is ProfileInstallUiState.Installing &&
                 profileInstall !is ProfileInstallUiState.Succeeded,
             installCandidateProfileUnavailableReason = when {
-                profileInstall is ProfileInstallUiState.Installing -> "Camera profile installation is in progress."
-                profileInstall is ProfileInstallUiState.Succeeded -> "The camera profile is installed."
-                profiles.isEmpty() -> "Camera profile installation can be retried."
-                else -> "Check the installed profile after Pixel Camera changes."
+                profileInstall is ProfileInstallUiState.Installing -> strings.get(R.string.action_profile_installing)
+                profileInstall is ProfileInstallUiState.Succeeded -> strings.get(R.string.action_profile_installed)
+                profiles.isEmpty() -> strings.get(R.string.action_profile_retry)
+                else -> strings.get(R.string.action_profile_update_check)
             },
             canRunRehearsal = canRunRehearsal(profiles, preflight, rehearsal),
-            rehearsalUnavailableReason = rehearsalUnavailableReason(profiles, preflight, rehearsal),
+            rehearsalUnavailableReason = rehearsalUnavailableReason(profiles, preflight, rehearsal, strings),
             canExportDiagnostics = false,
             exportDiagnosticsUnavailableReason = if (events.isEmpty()) {
-                "There are no diagnostic events to export."
+                strings.get(R.string.action_diagnostics_empty_default)
             } else {
-                "Diagnostic export is not implemented yet."
+                strings.get(R.string.action_diagnostics_not_implemented)
             },
         ),
     )
@@ -593,44 +624,51 @@ internal object LenswakeUiStateMapper {
         profiles: List<PixelCameraProfile>,
         preflight: PreflightReport,
         rehearsal: RehearsalActionUiState,
+        strings: UiStringProvider,
     ): String = when {
-        rehearsal is RehearsalActionUiState.Running -> "A test recording is already running."
+        rehearsal is RehearsalActionUiState.Running -> strings.get(R.string.action_rehearsal_running)
         rehearsal is RehearsalActionUiState.SafetyStopPending ->
-            "Wait while Lenswake confirms that Pixel Camera has stopped."
-        profiles.isEmpty() -> "Install a Pixel Camera profile before testing."
+            strings.get(R.string.action_rehearsal_stopping)
+        profiles.isEmpty() -> strings.get(R.string.action_rehearsal_profile_required)
         else -> rehearsalRequiredChecks.firstNotNullOfOrNull { type ->
             preflight.checks.singleOrNull { it.type == type }
                 ?.takeIf { it.status != PreflightStatus.PASSED }
                 ?.message
-        } ?: "Camera testing is ready."
+        } ?: strings.get(R.string.action_rehearsal_ready)
     }
 
-    private fun readiness(preflight: PreflightReport): ReadinessUiState = when (
+    private fun readiness(
+        preflight: PreflightReport,
+        strings: UiStringProvider,
+    ): ReadinessUiState = when (
         val readiness = preflight.readiness
     ) {
         ScheduleReadiness.Ready -> ReadinessUiState.Ready(
-            title = "Ready to schedule",
-            summary = "This device is ready for scheduled recordings.",
+            title = strings.get(R.string.readiness_ready_title),
+            summary = strings.get(R.string.readiness_ready_summary),
         )
 
         is ScheduleReadiness.ReadyWithWarnings -> ReadinessUiState.ReadyWithWarnings(
-            title = "Ready with warnings",
-            summary = "Scheduling is ready, but some optional setup still needs attention.",
+            title = strings.get(R.string.status_ready_with_warnings),
+            summary = strings.get(R.string.readiness_warnings_summary),
             warnings = readiness.warnings.map(PreflightCheck::message),
         )
 
         is ScheduleReadiness.Blocked -> ReadinessUiState.Blocked(
-            title = "Setup required",
-            summary = if (readiness.blockers.size == 1) {
-                "1 required setup item needs attention."
-            } else {
-                "${readiness.blockers.size} required setup items need attention."
-            },
+            title = strings.get(R.string.readiness_setup_required_title),
+            summary = strings.quantity(
+                R.plurals.readiness_blocker_count,
+                readiness.blockers.size,
+                readiness.blockers.size,
+            ),
         )
     }
 
-    private fun capability(check: PreflightCheck): CapabilityUiState = CapabilityUiState(
-        name = check.type.displayName,
+    private fun capability(
+        check: PreflightCheck,
+        strings: UiStringProvider,
+    ): CapabilityUiState = CapabilityUiState(
+        name = check.type.displayName(strings),
         status = when (check.status) {
             PreflightStatus.PASSED -> CapabilityStatus.AVAILABLE
             PreflightStatus.FAILED -> CapabilityStatus.BLOCKED
@@ -641,26 +679,33 @@ internal object LenswakeUiStateMapper {
         remediation = check.remediation,
     )
 
-    private val PreflightCheckType.displayName: String
-        get() = when (this) {
-            PreflightCheckType.EXACT_ALARMS -> "Exact alarms"
-            PreflightCheckType.NOTIFICATIONS -> "Notifications"
-            PreflightCheckType.FULL_SCREEN_INTENT -> "Full-screen intent"
-            PreflightCheckType.PIXEL_CAMERA_INSTALLED -> "Pixel Camera installed"
-            PreflightCheckType.SECURE_CAMERA_RESOLVES -> "Secure Pixel Camera launch"
-            PreflightCheckType.DEVICE_WAKE -> "Device wake"
-            PreflightCheckType.ACCESSIBILITY_ENABLED -> "Lenswake Accessibility Service"
-            PreflightCheckType.ACCESSIBILITY_CONNECTED -> "Accessibility runtime connection"
-            PreflightCheckType.PROFILE_AVAILABLE -> "Pixel Camera profile"
-            PreflightCheckType.PROFILE_COMPATIBILITY -> "Profile compatibility"
-            PreflightCheckType.REHEARSAL_CURRENT -> "Camera test"
-            PreflightCheckType.PRIVILEGED_FALLBACK -> "Privileged fallback"
-            PreflightCheckType.BATTERY -> "Battery"
-            PreflightCheckType.CHARGING -> "Charging"
-            PreflightCheckType.STORAGE -> "Storage"
-        }
+    private fun PreflightCheckType.displayName(strings: UiStringProvider): String = strings.get(
+        when (this) {
+            PreflightCheckType.EXACT_ALARMS -> R.string.capability_exact_alarms
+            PreflightCheckType.NOTIFICATIONS -> R.string.capability_notifications
+            PreflightCheckType.FULL_SCREEN_INTENT -> R.string.capability_full_screen_intent
+            PreflightCheckType.PIXEL_CAMERA_INSTALLED -> R.string.capability_pixel_camera_installed
+            PreflightCheckType.SECURE_CAMERA_RESOLVES -> R.string.capability_secure_camera_launch
+            PreflightCheckType.DEVICE_WAKE -> R.string.capability_device_wake
+            PreflightCheckType.ACCESSIBILITY_ENABLED -> R.string.capability_accessibility_service
+            PreflightCheckType.ACCESSIBILITY_CONNECTED -> R.string.capability_accessibility_connection
+            PreflightCheckType.PROFILE_AVAILABLE -> R.string.capability_camera_profile
+            PreflightCheckType.PROFILE_COMPATIBILITY -> R.string.capability_profile_compatibility
+            PreflightCheckType.REHEARSAL_CURRENT -> R.string.capability_camera_test
+            PreflightCheckType.PRIVILEGED_FALLBACK -> R.string.capability_privileged_fallback
+            PreflightCheckType.BATTERY -> R.string.capability_battery
+            PreflightCheckType.CHARGING -> R.string.capability_charging
+            PreflightCheckType.STORAGE -> R.string.capability_storage
+        },
+    )
 
-    private fun scheduleSummary(schedule: RecordingSchedule): ScheduleSummaryUiState {
+    private fun scheduleSummary(
+        schedule: RecordingSchedule,
+        strings: UiStringProvider,
+    ): ScheduleSummaryUiState {
+        val scheduleTimeFormatter = DateTimeFormatter
+            .ofLocalizedDateTime(java.time.format.FormatStyle.MEDIUM, java.time.format.FormatStyle.SHORT)
+            .withLocale(Locale.getDefault())
         val start = schedule.startAt.atZone(schedule.zoneId).format(scheduleTimeFormatter)
         val stop = schedule.stopAt.atZone(schedule.zoneId).format(scheduleTimeFormatter)
         val startLocal = schedule.startAt.atZone(schedule.zoneId).toLocalDateTime()
@@ -668,8 +713,8 @@ internal object LenswakeUiStateMapper {
         return ScheduleSummaryUiState(
             id = schedule.id.value,
             title = schedule.name,
-            timing = "$start - $stop",
-            status = if (schedule.enabled) "Enabled" else "Disabled",
+            timing = strings.get(R.string.schedule_time_range, start, stop),
+            status = strings.get(if (schedule.enabled) R.string.status_enabled else R.string.status_disabled),
             startLocal = startLocal,
             stopLocal = stopLocal,
             zoneId = schedule.zoneId,
@@ -678,7 +723,10 @@ internal object LenswakeUiStateMapper {
         )
     }
 
-    private fun profileSummary(profile: PixelCameraProfile): ProfileSummaryUiState {
+    private fun profileSummary(
+        profile: PixelCameraProfile,
+        strings: UiStringProvider,
+    ): ProfileSummaryUiState {
         val environment = profile.environment
         val title = if (
             environment.deviceModel.startsWith(environment.deviceManufacturer, ignoreCase = true)
@@ -690,13 +738,17 @@ internal object LenswakeUiStateMapper {
         return ProfileSummaryUiState(
             id = profile.id.value,
             title = title,
-            environment = "Android ${environment.androidSdk} · Pixel Camera version ${environment.cameraVersionCode} · " +
-                Locale.forLanguageTag(environment.localeTag).getDisplayName(Locale.ENGLISH),
+            environment = strings.get(
+                R.string.profile_environment_summary,
+                environment.androidSdk,
+                environment.cameraVersionCode,
+                Locale.forLanguageTag(environment.localeTag).getDisplayName(Locale.getDefault()),
+            ),
             compatibility = when (profile.compatibility) {
-                ProfileCompatibility.VERIFIED -> "Verified for scheduling"
-                ProfileCompatibility.PROBABLY_COMPATIBLE -> "Likely compatible · test required"
-                ProfileCompatibility.NEEDS_REHEARSAL -> "Needs test"
-                ProfileCompatibility.INCOMPATIBLE -> "Incompatible"
+                ProfileCompatibility.VERIFIED -> strings.get(R.string.profile_compatibility_verified)
+                ProfileCompatibility.PROBABLY_COMPATIBLE -> strings.get(R.string.profile_compatibility_likely)
+                ProfileCompatibility.NEEDS_REHEARSAL -> strings.get(R.string.profile_compatibility_needs_test)
+                ProfileCompatibility.INCOMPATIBLE -> strings.get(R.string.profile_compatibility_incompatible)
             },
             verifiedForScheduling = profile.compatibility == ProfileCompatibility.VERIFIED && profile.verifiedAt != null,
         )
@@ -730,6 +782,45 @@ internal object LenswakeUiStateMapper {
                 null -> null
             },
         )
+
+    private fun initialCapabilities(strings: UiStringProvider): List<CapabilityUiState> = listOf(
+        CapabilityUiState(
+            name = strings.get(R.string.capability_exact_alarms),
+            status = CapabilityStatus.UNKNOWN,
+            detail = strings.get(R.string.capability_exact_alarms_unchecked),
+            required = true,
+        ),
+        CapabilityUiState(
+            name = strings.get(R.string.capability_device_wake),
+            status = CapabilityStatus.BLOCKED,
+            detail = strings.get(R.string.capability_device_wake_unavailable),
+            required = true,
+        ),
+        CapabilityUiState(
+            name = strings.get(R.string.capability_accessibility_service),
+            status = CapabilityStatus.BLOCKED,
+            detail = strings.get(R.string.capability_accessibility_unchecked),
+            required = true,
+        ),
+        CapabilityUiState(
+            name = strings.get(R.string.capability_camera_profile),
+            status = CapabilityStatus.BLOCKED,
+            detail = strings.get(R.string.capability_profile_unavailable),
+            required = true,
+        ),
+        CapabilityUiState(
+            name = strings.get(R.string.capability_camera_test),
+            status = CapabilityStatus.BLOCKED,
+            detail = strings.get(R.string.capability_test_required),
+            required = true,
+        ),
+        CapabilityUiState(
+            name = strings.get(R.string.capability_privileged_fallback),
+            status = CapabilityStatus.UNKNOWN,
+            detail = strings.get(R.string.capability_privileged_unchecked),
+            required = false,
+        ),
+    )
 
     private val rehearsalRequiredChecks = setOf(
         PreflightCheckType.EXACT_ALARMS,

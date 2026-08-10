@@ -15,6 +15,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.platform.LocalContext
 import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.ui.theme.LenswakeTheme
 import java.time.LocalDateTime
@@ -28,7 +29,7 @@ class LenswakeAppTest {
     val composeRule = createComposeRule()
 
     private fun setContent(
-        state: LenswakeUiState = LenswakeUiState(),
+        state: LenswakeUiState? = null,
         onInstallCandidateProfile: () -> Unit = {},
         onRunRehearsal: () -> Unit = {},
         onUpdateScheduleForm: (ScheduleFormUiState) -> Unit = {},
@@ -40,8 +41,11 @@ class LenswakeAppTest {
     ) {
         composeRule.setContent {
             LenswakeTheme {
+                val resolvedState = state ?: LenswakeUiStateMapper.initial(
+                    AndroidUiStringProvider(LocalContext.current),
+                )
                 LenswakeApp(
-                    state = state,
+                    state = resolvedState,
                     onInstallCandidateProfile = onInstallCandidateProfile,
                     onRunRehearsal = onRunRehearsal,
                     onUpdateScheduleForm = onUpdateScheduleForm,

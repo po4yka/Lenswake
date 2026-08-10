@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -106,10 +107,10 @@ fun ReadinessCard(
     showSetupAction: Boolean = true,
 ) {
     val statusLabel = when (readiness) {
-        is ReadinessUiState.Blocked -> "Blocked"
-        is ReadinessUiState.Checking -> "Checking"
-        is ReadinessUiState.Ready -> "Ready"
-        is ReadinessUiState.ReadyWithWarnings -> "Ready with warnings"
+        is ReadinessUiState.Blocked -> stringResource(R.string.status_blocked)
+        is ReadinessUiState.Checking -> stringResource(R.string.status_checking)
+        is ReadinessUiState.Ready -> stringResource(R.string.status_ready)
+        is ReadinessUiState.ReadyWithWarnings -> stringResource(R.string.status_ready_with_warnings)
     }
     val visuals = statusVisuals(statusLabel)
 
@@ -155,7 +156,7 @@ fun ReadinessCard(
                     modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                     onClick = onOpenSetup,
                 ) {
-                    Text("Review setup")
+                    Text(stringResource(R.string.action_review_setup))
                 }
             }
         }
@@ -169,9 +170,9 @@ fun CapabilityRow(
     modifier: Modifier = Modifier,
 ) {
     val statusLabel = when (capability.status) {
-        CapabilityStatus.UNKNOWN -> "Unknown"
-        CapabilityStatus.AVAILABLE -> "Available"
-        CapabilityStatus.BLOCKED -> "Blocked"
+        CapabilityStatus.UNKNOWN -> stringResource(R.string.status_unknown)
+        CapabilityStatus.AVAILABLE -> stringResource(R.string.status_available)
+        CapabilityStatus.BLOCKED -> stringResource(R.string.status_blocked)
     }
     Row(
         modifier = modifier
@@ -192,7 +193,10 @@ fun CapabilityRow(
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = if (capability.required) "$statusLabel · Required" else "$statusLabel · Optional",
+                text = stringResource(
+                    if (capability.required) R.string.status_required_format else R.string.status_optional_format,
+                    statusLabel,
+                ),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -205,7 +209,7 @@ fun CapabilityRow(
                     modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                     onClick = { onRemediate(action) },
                 ) {
-                    Text("Resolve")
+                    Text(stringResource(R.string.action_resolve))
                 }
             }
         }
@@ -410,12 +414,13 @@ private fun StatusIcon(
     visuals: StatusVisuals,
     modifier: Modifier = Modifier,
 ) {
+    val statusContentDescription = stringResource(R.string.status_content_description, statusLabel)
     Surface(
         modifier = Modifier
             .then(modifier)
             .size(32.dp)
             .clearAndSetSemantics {
-                contentDescription = "$statusLabel status"
+                contentDescription = statusContentDescription
             },
         shape = CircleShape,
         color = visuals.indicatorContainerColor,
@@ -442,7 +447,7 @@ private fun StatusIcon(
 @Composable
 private fun statusVisuals(statusLabel: String): StatusVisuals {
     val colorScheme = MaterialTheme.colorScheme
-    val state = statusVisualState(statusLabel)
+    val state = localizedStatusVisualState(statusLabel)
     return when (state) {
         StatusVisualState.ERROR -> StatusVisuals(
             state = state,
@@ -478,7 +483,7 @@ private fun statusVisuals(statusLabel: String): StatusVisuals {
         )
         StatusVisualState.NEUTRAL -> StatusVisuals(
             state = state,
-            iconResource = if (statusLabel.equals("Unknown", ignoreCase = true)) {
+            iconResource = if (statusLabel == stringResource(R.string.status_unknown)) {
                 R.drawable.ic_help_24
             } else {
                 R.drawable.ic_info_24
@@ -489,4 +494,31 @@ private fun statusVisuals(statusLabel: String): StatusVisuals {
             indicatorContentColor = colorScheme.onSurface,
         )
     }
+}
+
+@Composable
+private fun localizedStatusVisualState(statusLabel: String): StatusVisualState = when (statusLabel) {
+    stringResource(R.string.status_blocked),
+    stringResource(R.string.status_failed),
+    stringResource(R.string.status_incompatible),
+    -> StatusVisualState.ERROR
+
+    stringResource(R.string.status_ready_with_warnings),
+    stringResource(R.string.status_needs_attention),
+    stringResource(R.string.status_needs_test),
+    stringResource(R.string.status_safety_alarm_armed),
+    -> StatusVisualState.WARNING
+
+    stringResource(R.string.status_ready),
+    stringResource(R.string.status_available),
+    stringResource(R.string.status_completed),
+    stringResource(R.string.status_passed),
+    stringResource(R.string.status_enabled),
+    -> StatusVisualState.SUCCESS
+
+    stringResource(R.string.status_checking),
+    stringResource(R.string.status_working),
+    -> StatusVisualState.IN_PROGRESS
+
+    else -> statusVisualState(statusLabel)
 }

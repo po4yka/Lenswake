@@ -90,6 +90,7 @@ class LenswakeViewModelTest {
             profiles = listOf(profile()),
             events = listOf(event()),
             preflight = blockedPreflight(),
+            strings = TestUiStringProvider,
         )
 
         assertInstanceOf(ReadinessUiState.Blocked::class.java, state.readiness)
@@ -127,6 +128,7 @@ class LenswakeViewModelTest {
                     ),
                 ),
             ),
+            strings = TestUiStringProvider,
         )
 
         assertEquals(
@@ -152,6 +154,7 @@ class LenswakeViewModelTest {
                 ),
             ),
             preflight = blockedPreflight(),
+            strings = TestUiStringProvider,
         )
 
         val incident = state.alarmTransportIncidents.single()
@@ -172,6 +175,7 @@ class LenswakeViewModelTest {
             installUseCase(profiles),
             unavailableRehearsalCoordinator(),
             scheduleWorkflow(schedules, profiles),
+            TestUiStringProvider,
         )
 
         try {
@@ -194,6 +198,7 @@ class LenswakeViewModelTest {
             installUseCase(profiles),
             unavailableRehearsalCoordinator(),
             scheduleWorkflow(schedules, profiles),
+            TestUiStringProvider,
         )
 
         try {
@@ -231,6 +236,7 @@ class LenswakeViewModelTest {
             installUseCase(profiles),
             unavailableRehearsalCoordinator(),
             scheduleWorkflow(schedules, profiles),
+            TestUiStringProvider,
         )
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             viewModel.state.collect()
@@ -272,6 +278,7 @@ class LenswakeViewModelTest {
             installUseCase(profiles),
             unavailableRehearsalCoordinator(),
             scheduleWorkflow(schedules, profiles),
+            TestUiStringProvider,
         )
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             viewModel.state.collect()
@@ -311,6 +318,7 @@ class LenswakeViewModelTest {
             ),
             unavailableRehearsalCoordinator(),
             scheduleWorkflow(schedules, profiles),
+            TestUiStringProvider,
         )
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             viewModel.state.collect()
@@ -346,6 +354,7 @@ class LenswakeViewModelTest {
             installUseCase(profiles),
             coordinator,
             scheduleWorkflow(schedules, profiles),
+            TestUiStringProvider,
         )
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             viewModel.state.collect()
@@ -378,6 +387,7 @@ class LenswakeViewModelTest {
             installUseCase(profiles),
             unavailableRehearsalCoordinator(),
             scheduleWorkflow(schedules, profiles),
+            TestUiStringProvider,
         )
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             viewModel.state.collect()
@@ -418,6 +428,7 @@ class LenswakeViewModelTest {
                 clock = LenswakeClock { now.minusSeconds(60) },
                 preflightProbe = RuntimePreflightProbe { scheduleEligiblePreflight() },
             ),
+            TestUiStringProvider,
         )
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             viewModel.state.collect()

@@ -7,7 +7,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.ui.LenswakeUiState
 import dev.po4yka.lenswake.ui.ProfileInstallUiState
 import dev.po4yka.lenswake.ui.RehearsalActionUiState
@@ -37,22 +39,22 @@ fun ProfilesScreen(
     ) {
         item {
             ScreenHeader(
-                title = "Profiles",
-                summary = "Set up and test the Pixel Camera controls used for scheduled recordings.",
+                title = stringResource(R.string.nav_profiles),
+                summary = stringResource(R.string.screen_profiles_summary),
             )
         }
         item {
             ActionSection(
-                title = "Camera profile",
+                title = stringResource(R.string.profiles_camera_profile_title),
                 detail = if (state.profiles.isEmpty()) {
-                    "Install the profile that matches this Pixel and Pixel Camera version."
+                    stringResource(R.string.profiles_install_first_detail)
                 } else {
-                    "Check for an updated profile after Pixel Camera changes."
+                    stringResource(R.string.profiles_install_update_detail)
                 },
                 actionLabel = if (state.profileInstall is ProfileInstallUiState.Installing) {
-                    "Installing profile"
+                    stringResource(R.string.profiles_installing)
                 } else {
-                    "Install camera profile"
+                    stringResource(R.string.action_install_camera_profile)
                 },
                 actionEnabled = state.actions.canInstallCandidateProfile,
                 actionInProgress = state.profileInstall is ProfileInstallUiState.Installing,
@@ -79,32 +81,32 @@ fun ProfilesScreen(
 
             is ProfileInstallUiState.Succeeded -> item {
                 SummaryCard(
-                    title = "Camera profile installed",
+                    title = stringResource(R.string.profiles_installed_title),
                     detail = install.message,
-                    status = "Needs test",
+                    status = stringResource(R.string.status_needs_test),
                 )
             }
 
             is ProfileInstallUiState.Failed -> item {
                 SummaryCard(
-                    title = "Camera profile could not be installed",
+                    title = stringResource(R.string.profiles_install_failed_title),
                     detail = install.message,
-                    status = "Failed",
+                    status = stringResource(R.string.status_failed),
                 )
             }
         }
         item {
             ActionSection(
-                title = "Test recording",
+                title = stringResource(R.string.profiles_test_title),
                 detail = if (state.rehearsal is RehearsalActionUiState.Running) {
-                    "Pixel Camera is recording briefly. Lenswake will stop it automatically."
+                    stringResource(R.string.profiles_test_running_detail)
                 } else {
-                    "Record a 10-second 120× Time Lapse now to confirm that Lenswake can start and stop Pixel Camera on this device."
+                    stringResource(R.string.profiles_test_detail)
                 },
                 actionLabel = if (state.rehearsal is RehearsalActionUiState.Running) {
-                    "Testing camera"
+                    stringResource(R.string.profiles_testing)
                 } else {
-                    "Test recording"
+                    stringResource(R.string.action_test_recording)
                 },
                 actionEnabled = state.actions.canRunRehearsal,
                 actionInProgress = state.rehearsal is RehearsalActionUiState.Running,
@@ -117,23 +119,23 @@ fun ProfilesScreen(
             RehearsalActionUiState.Running -> Unit
             is RehearsalActionUiState.Passed -> item {
                 SummaryCard(
-                    title = "Test recording passed",
+                    title = stringResource(R.string.profiles_test_passed_title),
                     detail = rehearsal.message,
-                    status = "Passed",
+                    status = stringResource(R.string.status_passed),
                 )
             }
             is RehearsalActionUiState.Failed -> item {
                 SummaryCard(
-                    title = "Test recording failed",
+                    title = stringResource(R.string.profiles_test_failed_title),
                     detail = rehearsal.message,
-                    status = "Failed",
+                    status = stringResource(R.string.status_failed),
                 )
             }
             is RehearsalActionUiState.SafetyStopPending -> item {
                 SummaryCard(
-                    title = "Waiting for Pixel Camera to stop",
+                    title = stringResource(R.string.profiles_waiting_for_stop_title),
                     detail = rehearsal.message,
-                    status = "Safety alarm armed",
+                    status = stringResource(R.string.status_safety_alarm_armed),
                 )
             }
         }

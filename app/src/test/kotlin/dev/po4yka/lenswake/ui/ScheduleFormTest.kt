@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test
 class ScheduleFormTest {
     @Test
     fun validGuidedValuesCanBeSubmitted() {
-        val validation = validForm().validateForDisplay(listOf(verifiedProfile), now)
+        val validation = validForm().validateForDisplay(listOf(verifiedProfile), now, TestUiStringProvider)
 
         assertTrue(validation.canSubmit)
         assertNull(validation.nameError)
@@ -22,7 +22,8 @@ class ScheduleFormTest {
 
     @Test
     fun blankNameIsExplainedBeforeSubmission() {
-        val validation = validForm().copy(name = " ").validateForDisplay(listOf(verifiedProfile), now)
+        val validation = validForm().copy(name = " ")
+            .validateForDisplay(listOf(verifiedProfile), now, TestUiStringProvider)
 
         assertFalse(validation.canSubmit)
         assertEquals("Add a name so you can recognize this schedule.", validation.nameError)
@@ -32,7 +33,7 @@ class ScheduleFormTest {
     fun endBeforeStartIsExplainedBeforeSubmission() {
         val validation = validForm()
             .copy(stopLocal = LocalDateTime.of(2030, 1, 1, 5, 59))
-            .validateForDisplay(listOf(verifiedProfile), now)
+            .validateForDisplay(listOf(verifiedProfile), now, TestUiStringProvider)
 
         assertFalse(validation.canSubmit)
         assertEquals("End must be after start.", validation.timingError)
@@ -46,7 +47,7 @@ class ScheduleFormTest {
                 stopLocal = LocalDateTime.of(2030, 3, 10, 4, 0),
                 zoneId = ZoneId.of("America/New_York"),
             )
-            .validateForDisplay(listOf(verifiedProfile), now)
+            .validateForDisplay(listOf(verifiedProfile), now, TestUiStringProvider)
 
         assertFalse(validation.canSubmit)
         assertEquals(
@@ -62,7 +63,7 @@ class ScheduleFormTest {
                 startLocal = LocalDateTime.of(2029, 12, 31, 23, 0),
                 stopLocal = LocalDateTime.of(2030, 1, 1, 1, 0),
             )
-            .validateForDisplay(listOf(verifiedProfile), now)
+            .validateForDisplay(listOf(verifiedProfile), now, TestUiStringProvider)
 
         assertFalse(validation.canSubmit)
         assertEquals("Start must be in the future while the schedule is active.", validation.timingError)

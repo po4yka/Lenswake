@@ -7,7 +7,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.ui.LenswakeUiState
 import dev.po4yka.lenswake.ui.scaffoldContentViewport
 import dev.po4yka.lenswake.ui.screenContentPadding
@@ -36,11 +38,11 @@ fun DiagnosticsScreen(
     ) {
         item {
             ScreenHeader(
-                title = "Diagnostics",
-                summary = "Review device setup, recent issues, and recording activity.",
+                title = stringResource(R.string.nav_diagnostics),
+                summary = stringResource(R.string.screen_diagnostics_summary),
             )
         }
-        item { SectionHeading("Capabilities") }
+        item { SectionHeading(stringResource(R.string.section_capabilities)) }
         items(state.capabilities.size, key = { state.capabilities[it].name }) { index ->
             CapabilityRow(capability = state.capabilities[index])
             if (index < state.capabilities.lastIndex) {
@@ -48,15 +50,15 @@ fun DiagnosticsScreen(
             }
         }
         if (state.alarmTransportIncidents.isNotEmpty()) {
-            item { SectionHeading("Scheduled alarm failures") }
+            item { SectionHeading(stringResource(R.string.section_scheduled_alarm_failures)) }
             items(state.alarmTransportIncidents.size, key = { state.alarmTransportIncidents[it].id }) { index ->
                 val incident = state.alarmTransportIncidents[index]
                 SummaryCard(
                     title = incident.title,
-                    detail = "${incident.occurredAt} · ${incident.detail}",
-                    status = "Needs attention",
+                    detail = stringResource(R.string.diagnostics_timed_detail, incident.occurredAt, incident.detail),
+                    status = stringResource(R.string.status_needs_attention),
                     actionLabel = if (incident.action == dev.po4yka.lenswake.ui.AlarmTransportIncidentUiAction.OPEN_PIXEL_CAMERA) {
-                        "Open Pixel Camera"
+                        stringResource(R.string.action_open_pixel_camera)
                     } else {
                         null
                     },
@@ -68,13 +70,13 @@ fun DiagnosticsScreen(
                 )
             }
         }
-        item { SectionHeading("Activity") }
+        item { SectionHeading(stringResource(R.string.section_activity)) }
         if (state.diagnosticEvents.isEmpty()) {
             item {
                 ActionSection(
-                    title = "No activity yet",
-                    detail = "Recording activity and errors will appear here after Lenswake runs.",
-                    actionLabel = "Export diagnostics",
+                    title = stringResource(R.string.diagnostics_no_activity_title),
+                    detail = stringResource(R.string.diagnostics_no_activity_detail),
+                    actionLabel = stringResource(R.string.action_export_diagnostics),
                     actionEnabled = state.actions.canExportDiagnostics,
                     unavailableReason = state.actions.exportDiagnosticsUnavailableReason,
                     onAction = {},
@@ -85,8 +87,8 @@ fun DiagnosticsScreen(
                 val event = state.diagnosticEvents[index]
                 StatusRow(
                     title = event.title,
-                    detail = "${event.occurredAt} · ${event.detail}",
-                    status = "Recorded event",
+                    detail = stringResource(R.string.diagnostics_timed_detail, event.occurredAt, event.detail),
+                    status = stringResource(R.string.status_recorded_event),
                 )
                 if (index < state.diagnosticEvents.lastIndex) {
                     HorizontalDivider()

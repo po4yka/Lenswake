@@ -1,6 +1,7 @@
 package dev.po4yka.lenswake.ui
 
 import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -34,7 +36,7 @@ import dev.po4yka.lenswake.ui.screen.SetupScreen
 
 private data class TopLevelDestination(
     val topLevel: LenswakeTopLevel,
-    val label: String,
+    @param:StringRes val labelResource: Int,
     @param:DrawableRes val iconResource: Int,
 ) {
     val key: LenswakeRoute
@@ -42,9 +44,9 @@ private data class TopLevelDestination(
 }
 
 private val topLevelDestinations = listOf(
-    TopLevelDestination(LenswakeTopLevel.SCHEDULES, "Schedules", R.drawable.ic_schedule_24),
-    TopLevelDestination(LenswakeTopLevel.PROFILES, "Profiles", R.drawable.ic_tune_24),
-    TopLevelDestination(LenswakeTopLevel.DIAGNOSTICS, "Diagnostics", R.drawable.ic_diagnostics_24),
+    TopLevelDestination(LenswakeTopLevel.SCHEDULES, R.string.nav_schedules, R.drawable.ic_schedule_24),
+    TopLevelDestination(LenswakeTopLevel.PROFILES, R.string.nav_profiles, R.drawable.ic_tune_24),
+    TopLevelDestination(LenswakeTopLevel.DIAGNOSTICS, R.string.nav_diagnostics, R.drawable.ic_diagnostics_24),
 )
 
 @Composable
@@ -126,7 +128,7 @@ fun LenswakeApp(
                             selected = activeTopLevelDestination == destination.key,
                             onClick = { navigation.navigateToTopLevel(destination.topLevel) },
                             icon = { TopLevelIcon(destination) },
-                            label = { Text(destination.label) },
+                            label = { Text(stringResource(destination.labelResource)) },
                         )
                     }
                 }
@@ -142,7 +144,7 @@ fun LenswakeApp(
                                     selected = activeTopLevelDestination == destination.key,
                                     onClick = { navigation.navigateToTopLevel(destination.topLevel) },
                                     icon = { TopLevelIcon(destination) },
-                                    label = { Text(destination.label) },
+                                    label = { Text(stringResource(destination.labelResource)) },
                                 )
                             }
                         }

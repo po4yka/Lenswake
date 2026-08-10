@@ -7,13 +7,13 @@ import java.time.ZoneId
 
 @Immutable
 data class LenswakeUiState(
-    val readiness: ReadinessUiState = ReadinessUiState.Blocked(
-        title = "Setup required",
-        summary = "Finish device setup and test Pixel Camera before creating a schedule.",
+    val readiness: ReadinessUiState = ReadinessUiState.Checking(
+        title = "",
+        summary = "",
     ),
     val schedules: List<ScheduleSummaryUiState> = emptyList(),
     val profiles: List<ProfileSummaryUiState> = emptyList(),
-    val capabilities: List<CapabilityUiState> = defaultCapabilities,
+    val capabilities: List<CapabilityUiState> = emptyList(),
     val diagnosticEvents: List<DiagnosticEventUiState> = emptyList(),
     val alarmTransportIncidents: List<AlarmTransportIncidentUiState> = emptyList(),
     val profileInstall: ProfileInstallUiState = ProfileInstallUiState.Idle,
@@ -125,8 +125,8 @@ sealed interface ReadinessUiState {
 
     @Immutable
     data class Checking(
-        override val title: String = "Checking readiness",
-        override val summary: String = "Lenswake has not finished checking this device.",
+        override val title: String,
+        override val summary: String,
     ) : ReadinessUiState
 
     @Immutable
@@ -210,52 +210,11 @@ enum class AlarmTransportIncidentUiAction {
 @Immutable
 data class UiActionAvailability(
     val canCreateSchedule: Boolean = false,
-    val createScheduleUnavailableReason: String =
-        "Finish Setup and test the camera profile before creating a schedule.",
+    val createScheduleUnavailableReason: String = "",
     val canInstallCandidateProfile: Boolean = false,
-    val installCandidateProfileUnavailableReason: String = "Camera profile availability has not been checked.",
+    val installCandidateProfileUnavailableReason: String = "",
     val canRunRehearsal: Boolean = false,
-    val rehearsalUnavailableReason: String =
-        "Install a matching camera profile and finish the required Setup checks first.",
+    val rehearsalUnavailableReason: String = "",
     val canExportDiagnostics: Boolean = false,
-    val exportDiagnosticsUnavailableReason: String = "There are no diagnostic events to export.",
-)
-
-private val defaultCapabilities = listOf(
-    CapabilityUiState(
-        name = "Exact alarms",
-        status = CapabilityStatus.UNKNOWN,
-        detail = "Exact-alarm access has not been checked.",
-        required = true,
-    ),
-    CapabilityUiState(
-        name = "Device wake",
-        status = CapabilityStatus.BLOCKED,
-        detail = "No verified device-wake implementation is configured.",
-        required = true,
-    ),
-    CapabilityUiState(
-        name = "Lenswake Accessibility Service",
-        status = CapabilityStatus.BLOCKED,
-        detail = "The service is not enabled or has not been verified.",
-        required = true,
-    ),
-    CapabilityUiState(
-        name = "Pixel Camera profile",
-        status = CapabilityStatus.BLOCKED,
-        detail = "No verified profile is configured for this environment.",
-        required = true,
-    ),
-    CapabilityUiState(
-        name = "Camera test",
-        status = CapabilityStatus.BLOCKED,
-        detail = "Run a successful test recording on this device.",
-        required = true,
-    ),
-    CapabilityUiState(
-        name = "Privileged fallback",
-        status = CapabilityStatus.UNKNOWN,
-        detail = "Optional privileged capabilities have not been checked.",
-        required = false,
-    ),
+    val exportDiagnosticsUnavailableReason: String = "",
 )

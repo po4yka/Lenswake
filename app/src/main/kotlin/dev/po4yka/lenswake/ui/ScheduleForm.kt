@@ -32,26 +32,30 @@ internal fun defaultScheduleStart(
 internal fun ScheduleFormUiState.validateForDisplay(
     profiles: List<ProfileSummaryUiState>,
     now: Instant = Instant.now(),
+    strings: UiStringProvider,
 ): ScheduleFormValidation {
     val nameError = if (name.isBlank()) {
-        "Add a name so you can recognize this schedule."
+        strings.get(dev.po4yka.lenswake.R.string.validation_schedule_name_required)
     } else {
         null
     }
     val startInstant = startLocal?.toUnambiguousInstantOrNull(zoneId)
     val stopInstant = stopLocal?.toUnambiguousInstantOrNull(zoneId)
     val timingError = when {
-        startLocal == null || stopLocal == null -> "Choose a start and end date and time."
+        startLocal == null || stopLocal == null ->
+            strings.get(dev.po4yka.lenswake.R.string.validation_schedule_times_required)
         startInstant == null || stopInstant == null ->
-            "Choose a different time; this time is affected by a daylight-saving clock change."
-        !stopLocal.isAfter(startLocal) -> "End must be after start."
-        enabled && !startInstant.isAfter(now) -> "Start must be in the future while the schedule is active."
+            strings.get(dev.po4yka.lenswake.R.string.validation_schedule_dst_gap)
+        !stopLocal.isAfter(startLocal) ->
+            strings.get(dev.po4yka.lenswake.R.string.validation_schedule_end_after_start)
+        enabled && !startInstant.isAfter(now) ->
+            strings.get(dev.po4yka.lenswake.R.string.validation_schedule_start_future)
         else -> null
     }
     val profileError = if (profiles.any { it.id == profileId && it.verifiedForScheduling }) {
         null
     } else {
-        "Choose a camera setup verified for scheduling."
+        strings.get(dev.po4yka.lenswake.R.string.validation_schedule_profile_required)
     }
     return ScheduleFormValidation(
         nameError = nameError,

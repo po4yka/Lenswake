@@ -34,6 +34,7 @@ import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -47,7 +48,10 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.po4yka.lenswake.R
+import dev.po4yka.lenswake.ui.AndroidUiStringProvider
 import dev.po4yka.lenswake.ui.LenswakeUiState
 import dev.po4yka.lenswake.ui.ProfileSummaryUiState
 import dev.po4yka.lenswake.ui.ScheduleActionUiState
@@ -108,8 +112,8 @@ fun SchedulesScreen(
     ) {
         item {
             ScreenHeader(
-                title = "Schedules",
-                summary = "Plan unattended Time Lapse sessions in the native Pixel Camera.",
+                title = stringResource(R.string.nav_schedules),
+                summary = stringResource(R.string.screen_schedules_summary),
             )
         }
         item {
@@ -143,9 +147,9 @@ fun SchedulesScreen(
             if (editor is ScheduleEditorUiState.Closed) {
                 item {
                     ActionSection(
-                        title = "No schedules",
-                        detail = "Add a schedule to choose when Pixel Camera should start and stop recording.",
-                        actionLabel = "Create schedule",
+                        title = stringResource(R.string.schedules_empty_title),
+                        detail = stringResource(R.string.schedules_empty_detail),
+                        actionLabel = stringResource(R.string.action_create_schedule),
                         actionEnabled = state.actions.canCreateSchedule,
                         unavailableReason = state.actions.createScheduleUnavailableReason,
                         onAction = onBeginCreate,
@@ -163,7 +167,7 @@ fun SchedulesScreen(
                             enabled = state.actions.canCreateSchedule,
                             onClick = onBeginCreate,
                         ) {
-                            Text("Create schedule")
+                            Text(stringResource(R.string.action_create_schedule))
                         }
                         if (!state.actions.canCreateSchedule) {
                             Text(
@@ -212,7 +216,9 @@ private fun ScheduleEditor(
 ) {
     val busy = busyMessage != null
     val form = editor.form
-    val validation = form.validateForDisplay(profiles)
+    val context = LocalContext.current
+    val strings = remember(context) { AndroidUiStringProvider(context) }
+    val validation = form.validateForDisplay(profiles, strings = strings)
     val locale = LocalConfiguration.current.locales[0]
     var pickerTarget by rememberSaveable { mutableStateOf<SchedulePickerTarget?>(null) }
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -223,13 +229,13 @@ private fun ScheduleEditor(
             Text(
                 modifier = Modifier.semantics { heading() },
                 text = when (editor.mode) {
-                    ScheduleEditorMode.Create -> "Create schedule"
-                    is ScheduleEditorMode.Edit -> "Edit schedule"
+                    ScheduleEditorMode.Create -> stringResource(R.string.schedule_editor_create_title)
+                    is ScheduleEditorMode.Edit -> stringResource(R.string.schedule_editor_edit_title)
                 },
                 style = MaterialTheme.typography.titleLarge,
             )
             Text(
-                text = "Records a 120× Time Lapse in Pixel Camera using the main rear lens.",
+                text = stringResource(R.string.schedule_editor_summary),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -238,30 +244,30 @@ private fun ScheduleEditor(
                 value = form.name,
                 onValueChange = { onUpdateForm(form.copy(name = it)) },
                 enabled = !busy,
-                label = { Text("Schedule name") },
+                label = { Text(stringResource(R.string.schedule_name_label)) },
                 supportingText = {
-                    Text(validation.nameError ?: "Shown in your schedule list.")
+                    Text(validation.nameError ?: stringResource(R.string.schedule_name_supporting_text))
                 },
                 isError = validation.nameError != null,
                 singleLine = true,
             )
             ScheduleDateTimeField(
-                title = "Starts",
+                title = stringResource(R.string.schedule_starts_label),
                 value = form.startLocal,
                 locale = locale,
                 enabled = !busy,
-                dateActionDescription = "Choose start date",
-                timeActionDescription = "Choose start time",
+                dateActionDescription = stringResource(R.string.schedule_choose_start_date),
+                timeActionDescription = stringResource(R.string.schedule_choose_start_time),
                 onChooseDate = { pickerTarget = SchedulePickerTarget.START_DATE },
                 onChooseTime = { pickerTarget = SchedulePickerTarget.START_TIME },
             )
             ScheduleDateTimeField(
-                title = "Ends",
+                title = stringResource(R.string.schedule_ends_label),
                 value = form.stopLocal,
                 locale = locale,
                 enabled = !busy,
-                dateActionDescription = "Choose end date",
-                timeActionDescription = "Choose end time",
+                dateActionDescription = stringResource(R.string.schedule_choose_end_date),
+                timeActionDescription = stringResource(R.string.schedule_choose_end_time),
                 onChooseDate = { pickerTarget = SchedulePickerTarget.STOP_DATE },
                 onChooseTime = { pickerTarget = SchedulePickerTarget.STOP_TIME },
             )
@@ -273,19 +279,19 @@ private fun ScheduleEditor(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
-            Text("Time zone", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.schedule_time_zone_label), style = MaterialTheme.typography.titleSmall)
             Text(
                 text = form.zoneId.getDisplayName(TextStyle.FULL, locale),
                 style = MaterialTheme.typography.bodyLarge,
             )
             Text(
-                text = "Dates and times stay tied to this time zone.",
+                text = stringResource(R.string.schedule_time_zone_detail),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
                 modifier = Modifier.semantics { heading() },
-                text = "Camera setup",
+                text = stringResource(R.string.schedule_camera_setup_label),
                 style = MaterialTheme.typography.titleMedium,
             )
             Column(modifier = Modifier.selectableGroup()) {
@@ -314,12 +320,12 @@ private fun ScheduleEditor(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Activate schedule", style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.schedule_activate_label), style = MaterialTheme.typography.titleSmall)
                     Text(
                         text = if (form.enabled) {
-                            "Start and stop alarms will be set when you save."
+                            stringResource(R.string.schedule_activate_detail)
                         } else {
-                            "Save as a draft without setting alarms."
+                            stringResource(R.string.schedule_draft_detail)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -355,7 +361,15 @@ private fun ScheduleEditor(
                 if (busyMessage != null) {
                     BusyButtonLabel(busyMessage)
                 } else {
-                    Text(if (editor.mode is ScheduleEditorMode.Create) "Save schedule" else "Save changes")
+                    Text(
+                        stringResource(
+                            if (editor.mode is ScheduleEditorMode.Create) {
+                                R.string.action_save_schedule
+                            } else {
+                                R.string.action_save_changes
+                            },
+                        ),
+                    )
                 }
             }
             OutlinedButton(
@@ -365,7 +379,7 @@ private fun ScheduleEditor(
                 enabled = !busy,
                 onClick = onCancel,
             ) {
-                Text("Cancel")
+                Text(stringResource(R.string.action_cancel))
             }
         }
     }
@@ -374,7 +388,13 @@ private fun ScheduleEditor(
         SchedulePickerTarget.START_DATE,
         SchedulePickerTarget.STOP_DATE,
         -> ScheduleDatePickerDialog(
-            title = if (target == SchedulePickerTarget.START_DATE) "Start date" else "End date",
+            title = stringResource(
+                if (target == SchedulePickerTarget.START_DATE) {
+                    R.string.schedule_start_date_title
+                } else {
+                    R.string.schedule_end_date_title
+                },
+            ),
             initialDate = if (target == SchedulePickerTarget.START_DATE) {
                 form.startLocal?.toLocalDate()
             } else {
@@ -395,7 +415,13 @@ private fun ScheduleEditor(
         SchedulePickerTarget.START_TIME,
         SchedulePickerTarget.STOP_TIME,
         -> ScheduleTimePickerDialog(
-            title = if (target == SchedulePickerTarget.START_TIME) "Start time" else "End time",
+            title = stringResource(
+                if (target == SchedulePickerTarget.START_TIME) {
+                    R.string.schedule_start_time_title
+                } else {
+                    R.string.schedule_end_time_title
+                },
+            ),
             initialTime = if (target == SchedulePickerTarget.START_TIME) {
                 form.startLocal?.toLocalTime()
             } else {
@@ -463,9 +489,9 @@ private fun ProfileRadioOption(
             )
             Text(
                 text = if (profile.verifiedForScheduling) {
-                    "Verified for scheduling"
+                    stringResource(R.string.schedule_profile_verified)
                 } else {
-                    "Test this camera setup before using it"
+                    stringResource(R.string.schedule_profile_needs_test)
                 },
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -485,8 +511,20 @@ private fun ScheduleDateTimeField(
     onChooseDate: () -> Unit,
     onChooseTime: () -> Unit,
 ) {
-    val dateLabel = value?.toLocalDate()?.toFormDateLabel(locale) ?: "Choose date"
-    val timeLabel = value?.toLocalTime()?.toFormTimeLabel(locale) ?: "Choose time"
+    val dateLabel = value?.toLocalDate()?.toFormDateLabel(locale)
+        ?: stringResource(R.string.schedule_choose_date)
+    val timeLabel = value?.toLocalTime()?.toFormTimeLabel(locale)
+        ?: stringResource(R.string.schedule_choose_time)
+    val dateContentDescription = stringResource(
+        R.string.schedule_picker_content_description,
+        dateActionDescription,
+        dateLabel,
+    )
+    val timeContentDescription = stringResource(
+        R.string.schedule_picker_content_description,
+        timeActionDescription,
+        timeLabel,
+    )
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium)
         Row(
@@ -497,7 +535,7 @@ private fun ScheduleDateTimeField(
                 modifier = Modifier
                     .weight(1f)
                     .sizeIn(minHeight = 48.dp)
-                    .semantics { contentDescription = "$dateActionDescription, $dateLabel" },
+                    .semantics { contentDescription = dateContentDescription },
                 enabled = enabled,
                 onClick = onChooseDate,
             ) {
@@ -507,7 +545,7 @@ private fun ScheduleDateTimeField(
                 modifier = Modifier
                     .weight(1f)
                     .sizeIn(minHeight = 48.dp)
-                    .semantics { contentDescription = "$timeActionDescription, $timeLabel" },
+                    .semantics { contentDescription = timeContentDescription },
                 enabled = enabled,
                 onClick = onChooseTime,
             ) {
@@ -539,12 +577,12 @@ private fun ScheduleDatePickerDialog(
                     }
                 },
             ) {
-                Text("Use date")
+                Text(stringResource(R.string.action_use_date))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.action_cancel))
             }
         },
     ) {
@@ -577,12 +615,12 @@ private fun ScheduleTimePickerDialog(
             TextButton(
                 onClick = { onConfirm(LocalTime.of(pickerState.hour, pickerState.minute)) },
             ) {
-                Text("Use time")
+                Text(stringResource(R.string.action_use_time))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.action_cancel))
             }
         },
     )
@@ -636,21 +674,25 @@ private fun ScheduleCard(
                 enabled = !busy,
                 onClick = onEdit,
             ) {
-                Text("Edit")
+                Text(stringResource(R.string.action_edit))
             }
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !busy,
                 onClick = onSetEnabled,
             ) {
-                Text(if (schedule.enabled) "Disable" else "Enable")
+                Text(
+                    stringResource(
+                        if (schedule.enabled) R.string.action_disable else R.string.action_enable,
+                    ),
+                )
             }
             TextButton(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !busy,
                 onClick = onRequestDelete,
             ) {
-                Text("Delete schedule")
+                Text(stringResource(R.string.action_delete_schedule))
             }
         }
     }
@@ -664,9 +706,9 @@ private fun DeleteScheduleDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Delete $scheduleName?") },
+        title = { Text(stringResource(R.string.schedule_delete_title, scheduleName)) },
         text = {
-            Text("This schedule and its future recording times will be deleted. This can’t be undone.")
+            Text(stringResource(R.string.schedule_delete_message))
         },
         confirmButton = {
             TextButton(
@@ -674,7 +716,7 @@ private fun DeleteScheduleDialog(
                 onClick = onConfirm,
             ) {
                 Text(
-                    text = "Delete",
+                    text = stringResource(R.string.action_delete),
                     color = MaterialTheme.colorScheme.error,
                 )
             }
@@ -684,7 +726,7 @@ private fun DeleteScheduleDialog(
                 modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                 onClick = onDismiss,
             ) {
-                Text("Cancel")
+                Text(stringResource(R.string.action_cancel))
             }
         },
     )
@@ -696,10 +738,10 @@ private fun ScheduleOutcome(
     onDismiss: () -> Unit,
 ) {
     val statusLabel = when (action) {
-        ScheduleActionUiState.Idle -> "Unknown"
-        is ScheduleActionUiState.Working -> "Working"
-        is ScheduleActionUiState.Succeeded -> "Completed"
-        is ScheduleActionUiState.Failed -> "Failed"
+        ScheduleActionUiState.Idle -> stringResource(R.string.status_unknown)
+        is ScheduleActionUiState.Working -> stringResource(R.string.status_working)
+        is ScheduleActionUiState.Succeeded -> stringResource(R.string.status_completed)
+        is ScheduleActionUiState.Failed -> stringResource(R.string.status_failed)
     }
     val container = when (action) {
         ScheduleActionUiState.Idle -> MaterialTheme.colorScheme.surfaceContainerLow
@@ -744,13 +786,16 @@ private fun ScheduleOutcome(
                 )
                 if (action is ScheduleActionUiState.Failed && action.rollbackFailures.isNotEmpty()) {
                     Text(
-                        text = "Some changes could not be undone:\n${action.rollbackFailures.joinToString("\n")}",
+                        text = stringResource(
+                            R.string.schedule_rollback_failures,
+                            action.rollbackFailures.joinToString("\n"),
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
                 if (action !is ScheduleActionUiState.Working) {
                     TextButton(onClick = onDismiss) {
-                        Text("Dismiss")
+                        Text(stringResource(R.string.action_dismiss))
                     }
                 }
             }
