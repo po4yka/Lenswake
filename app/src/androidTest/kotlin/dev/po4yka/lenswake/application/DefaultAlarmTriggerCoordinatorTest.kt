@@ -99,6 +99,37 @@ class DefaultAlarmTriggerCoordinatorTest {
     }
 
     @Test
+    fun runtimeReadinessFailureReleasesOwnershipAndMakesLaterStopAuditOnly() = runBlocking {
+        val executions = FakeExecutionRepository()
+        val engine = FakeAutomationEngine(executions)
+        val collector = FakeEnvironmentSnapshotCollector()
+        val blocked = coordinator(
+            executions = executions,
+            engine = engine,
+            collector = collector,
+            startReadiness = { Result.failure(IllegalStateException("Accessibility disconnected")) },
+        ).handle(startTrigger(schedule.updatedAt))
+
+        assertTrue(blocked is AlarmHandlingResult.TerminalRejected)
+        val failed = executions.sessions.values.single()
+        assertEquals(SessionStatus.FAILED, failed.status)
+        assertEquals(AutomationFailureCode.RUNTIME_READINESS_FAILED, failed.failure?.code)
+        assertTrue(failed.cameraOwnershipReleasedAt != null)
+        assertTrue(engine.startIds.isEmpty())
+        assertEquals(0, collector.calls)
+
+        val stopped = coordinator(
+            executions = executions,
+            engine = engine,
+            now = stopAt.plusSeconds(1),
+        ).handle(stopTrigger())
+
+        assertTrue(stopped is AlarmHandlingResult.Accepted)
+        assertTrue(engine.stopSawPersistedDelivery.isEmpty())
+        assertTrue(executions.sessions.values.single().alarmStopDeliveredAt != null)
+    }
+
+    @Test
     fun hangingSnapshotCollectorTimesOutBeforeAutomation() = runBlocking {
         val executions = FakeExecutionRepository()
         val engine = FakeAutomationEngine(executions)
@@ -257,6 +288,35 @@ class DefaultAlarmTriggerCoordinatorTest {
     }
 
     @Test
+    fun rebootReleasedExecutionAuditsLaterStopWithoutLaunchingCamera() = runBlocking {
+        val interrupted = recordingSession().copy(
+            status = SessionStatus.FAILED,
+            currentAutomationState = dev.po4yka.lenswake.core.AutomationStateName.FAILED,
+            cameraOwnershipReleasedAt = stopAt.minusSeconds(1),
+            failure = AutomationFailure(
+                AutomationFailureCode.DEVICE_REBOOT_INTERRUPTED,
+                "Device reboot interrupted recording",
+            ),
+        )
+        val executions = FakeExecutionRepository().apply { seed(interrupted) }
+        val engine = FakeAutomationEngine(executions)
+        val coordinator = coordinator(
+            executions = executions,
+            engine = engine,
+            now = stopAt.plusSeconds(1),
+        )
+
+        assertTrue(coordinator.handle(stopTrigger()) is AlarmHandlingResult.Accepted)
+        assertTrue(coordinator.handle(stopTrigger()) is AlarmHandlingResult.Accepted)
+
+        assertTrue(engine.stopSawPersistedDelivery.isEmpty())
+        val audited = executions.sessions.getValue(interrupted.id)
+        assertEquals(stopAt.plusSeconds(1), audited.alarmStopDeliveredAt)
+        assertEquals(null, audited.stoppedVerifiedAt)
+        assertEquals(1, executions.events.size)
+    }
+
+    @Test
     fun stopDueAfterPreemptedStartReconcilesPersistedSessionWithoutCameraStop() = runBlocking {
         val pending = recordingSession().copy(
             status = SessionStatus.STARTING,
@@ -292,12 +352,14 @@ class DefaultAlarmTriggerCoordinatorTest {
         now: Instant = startAt.plusSeconds(1),
         collector: EnvironmentSnapshotCollector = FakeEnvironmentSnapshotCollector(),
         snapshotTimeoutMillis: Long = 5_000,
+        startReadiness: suspend (ProfileId) -> Result<Unit> = { Result.success(Unit) },
     ): DefaultAlarmTriggerCoordinator = DefaultAlarmTriggerCoordinator(
         scheduleRepository = FakeScheduleRepository(schedule),
         executionRepository = executions,
         environmentSnapshotRepository = executions,
         environmentSnapshotCollector = collector,
         automationEngine = engine,
+        startReadiness = startReadiness,
         clock = LenswakeClock { now },
         snapshotCollectionTimeoutMillis = snapshotTimeoutMillis,
     )

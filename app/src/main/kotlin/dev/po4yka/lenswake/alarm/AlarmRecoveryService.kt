@@ -26,11 +26,12 @@ class AlarmRecoveryService : Service() {
     private val serviceScope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO + CoroutineName("lenswake-alarm-recovery"),
     )
-    private val queue = Channel<Unit>(Channel.UNLIMITED)
+    private val queue = Channel<String>(Channel.UNLIMITED)
     private val lifecycleGate = AlarmServiceLifecycleGate()
     private lateinit var notificationManager: NotificationManager
     private lateinit var reconciler: AlarmJournalReconciler
     private lateinit var retryCoordinator: AlarmRecoveryRetryCoordinator
+    private lateinit var checkpointPersistence: AlarmRecoveryCheckpointPersistence
 
     override fun onCreate() {
         super.onCreate()
@@ -43,8 +44,9 @@ class AlarmRecoveryService : Service() {
             persistence = SharedPreferencesAlarmTransportFailurePersistence(this),
             notifier = AndroidAlarmTransportFailureNotifier(this),
         )
+        checkpointPersistence = SharedPreferencesAlarmRecoveryCheckpointPersistence(this)
         retryCoordinator = AlarmRecoveryRetryCoordinator(
-            persistence = SharedPreferencesAlarmRecoveryCheckpointPersistence(this),
+            persistence = checkpointPersistence,
             backend = AndroidAlarmRecoveryRetryBackend(this),
             escalator = escalator,
         )
@@ -55,14 +57,15 @@ class AlarmRecoveryService : Service() {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED,
         )
         serviceScope.launch {
-            for (ignored in queue) recover()
+            for (action in queue) recover(action)
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int =
         lifecycleGate.onStart(startId) {
             lifecycleGate.workAccepted()
-            if (queue.trySend(Unit).isFailure) {
+            val action = intent?.action ?: ACTION_ALARM_RECOVERY_RETRY
+            if (queue.trySend(action).isFailure) {
                 lifecycleGate.workRejected()
                 stopSelfResult(startId)
             }
@@ -78,9 +81,9 @@ class AlarmRecoveryService : Service() {
         super.onDestroy()
     }
 
-    private suspend fun recover() {
+    private suspend fun recover(action: String) {
         try {
-            val failure = withTimeout(RECOVERY_DEADLINE_MILLIS) { attemptRecovery() }
+            val failure = withTimeout(RECOVERY_DEADLINE_MILLIS) { attemptRecovery(action) }
             if (failure == null) {
                 retryCoordinator.resolve()
                 Log.i(TAG, "Alarm recovery completed and its durable checkpoint was cleared")
@@ -104,12 +107,18 @@ class AlarmRecoveryService : Service() {
         }
     }
 
-    private suspend fun attemptRecovery(): RecoveryFailure? {
+    private suspend fun attemptRecovery(action: String): RecoveryFailure? {
         val provider = applicationContext as? AlarmComponentProvider
             ?: error("Application does not provide AlarmComponentProvider")
         val failures = mutableListOf<String>()
         var capabilityUnavailable = false
-        provider.alarmRecoveryCoordinator.restoreFutureSchedules()
+        val reconcileInterruptedSessions = runCatching {
+            checkpointPersistence.checkpoint()?.reconcileInterruptedSessions == true
+        }.getOrElse { error ->
+            failures += "Recovery checkpoint could not be read: ${error.message.orEmpty()}"
+            false
+        }
+        provider.alarmRecoveryCoordinator.restoreFutureSchedules(reconcileInterruptedSessions)
             .onFailure { error ->
                 if (error is CancellationException) throw error
                 failures += "Future schedule restoration failed: ${error.message.orEmpty()}"
@@ -117,6 +126,7 @@ class AlarmRecoveryService : Service() {
                     error.code == SchedulingFailureCode.EXACT_ALARM_UNAVAILABLE
                 Log.e(TAG, "Future schedule restoration failed", error)
             }
+        Log.i(TAG, "Alarm recovery source action: $action")
         when (val result = reconciler.rearmAll()) {
             is JournalRearmResult.Rearmed -> Log.i(
                 TAG,

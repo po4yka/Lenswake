@@ -1,6 +1,7 @@
 package dev.po4yka.lenswake.data
 
 import dev.po4yka.lenswake.core.AutomationEvent
+import dev.po4yka.lenswake.core.AutomationFailureCode
 import dev.po4yka.lenswake.core.AutomationProfileRepository
 import dev.po4yka.lenswake.core.EnvironmentSnapshot
 import dev.po4yka.lenswake.core.EnvironmentSnapshotCaptureResult
@@ -23,6 +24,7 @@ import dev.po4yka.lenswake.data.internal.dao.ExecutionReservationEntityResult
 import dev.po4yka.lenswake.data.internal.dao.EnvironmentSnapshotInsertResult
 import dev.po4yka.lenswake.data.internal.mapping.toDomain
 import dev.po4yka.lenswake.data.internal.mapping.toEntity
+import java.time.Instant
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -158,4 +160,12 @@ class RoomExecutionRepository(
 
     override suspend fun latestSuccessfulRehearsal(profileId: ProfileId): ExecutionSession? =
         dao.findLatestSuccessfulRehearsal(profileId.value)?.toDomain()
+
+    override suspend fun reconcileInterruptedScheduledSessions(
+        recoveredAt: Instant,
+    ): List<ExecutionSession> = dao.reconcileInterruptedScheduledSessions(
+        recoveredAtEpochMs = recoveredAt.toEpochMilli(),
+        failureCode = AutomationFailureCode.DEVICE_REBOOT_INTERRUPTED.name,
+        failureMessage = "Device reboot interrupted Pixel Camera execution; STOP was not verified",
+    ).map { it.toDomain() }
 }

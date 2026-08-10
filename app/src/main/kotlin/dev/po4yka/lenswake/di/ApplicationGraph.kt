@@ -3,6 +3,9 @@ package dev.po4yka.lenswake.di
 import android.app.Application
 import dev.po4yka.lenswake.alarm.AlarmManagerRecordingScheduler
 import dev.po4yka.lenswake.alarm.AlarmManagerRehearsalStopScheduler
+import dev.po4yka.lenswake.alarm.InterruptedScheduledSessionRecovery
+import dev.po4yka.lenswake.alarm.MutexAlarmRecoveryScheduler
+import dev.po4yka.lenswake.alarm.PreflightAlarmRecoveryReadiness
 import dev.po4yka.lenswake.alarm.RehearsalStopTriggerCoordinator
 import dev.po4yka.lenswake.alarm.SchedulerAlarmRecoveryCoordinator
 import dev.po4yka.lenswake.application.DefaultAlarmTriggerCoordinator
@@ -36,6 +39,7 @@ import dev.po4yka.lenswake.platform.SecurePixelCameraLauncher
 import dev.po4yka.lenswake.platform.AndroidDeviceWakeController
 import dev.po4yka.lenswake.privileged.UnavailablePrivilegedBridge
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.flow.first
 
 /** Small explicit process-wide composition root; no dependency reports synthetic availability. */
 class ApplicationGraph(application: Application) {
@@ -136,10 +140,31 @@ class ApplicationGraph(application: Application) {
         environmentSnapshotRepository = environmentSnapshotRepository,
         environmentSnapshotCollector = environmentSnapshotCollector,
         automationEngine = automationEngine,
+        startReadiness = { profileId ->
+            val profile = profileRepository.get(profileId)
+            if (profile == null) {
+                Result.failure(IllegalStateException("Selected Pixel Camera profile is missing"))
+            } else {
+                PreflightAlarmRecoveryReadiness {
+                    runtimePreflightProbe.inspect(listOf(profile))
+                }.check()
+            }
+        },
         clock = clock,
     )
     val alarmRecoveryCoordinator = SchedulerAlarmRecoveryCoordinator(
         scheduler = recordingScheduler,
-        additionalSchedulers = listOf(rehearsalStopBackstop),
+        additionalSchedulers = listOf(
+            MutexAlarmRecoveryScheduler(rehearsalStopBackstop, rehearsalMutex),
+        ),
+        interruptedSessionRecovery = InterruptedScheduledSessionRecovery {
+            runCatching {
+                executionRepository.reconcileInterruptedScheduledSessions(clock.now())
+                Unit
+            }
+        },
+        readiness = PreflightAlarmRecoveryReadiness {
+            runtimePreflightProbe.inspect(profileRepository.observeProfiles().first())
+        },
     )
 }

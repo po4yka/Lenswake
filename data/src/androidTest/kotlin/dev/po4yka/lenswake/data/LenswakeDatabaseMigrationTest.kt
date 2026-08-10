@@ -54,6 +54,46 @@ class LenswakeDatabaseMigrationTest {
         migrated.close()
     }
 
+    @Test
+    fun migratesVersionTwoToThreeWithExistingExecutionOwnershipUnreleased() {
+        migrationHelper.createDatabase(DATABASE_NAME, 2).apply {
+            execSQL(
+                """
+                INSERT INTO execution_sessions (
+                    id, execution_key, kind, profile_id, capture_type,
+                    time_lapse_speed, lens_selection,
+                    expected_start_at_epoch_ms, expected_stop_at_epoch_ms,
+                    status, revision, created_at_epoch_ms, updated_at_epoch_ms
+                ) VALUES (
+                    'execution-migration', 'schedule/migration/1000', 'SCHEDULED',
+                    'profile-migration', 'TIME_LAPSE', 'X120', 'REAR_MAIN',
+                    1000, 2000, 'RECORDING', 3, 500, 1500
+                )
+                """.trimIndent(),
+            )
+            close()
+        }
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            DATABASE_NAME,
+            3,
+            true,
+            LenswakeDatabase.MIGRATION_2_3,
+        )
+        migrated.query(
+            """
+            SELECT status, camera_ownership_released_at_epoch_ms
+            FROM execution_sessions
+            WHERE id = 'execution-migration'
+            """.trimIndent(),
+        ).use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals("RECORDING", cursor.getString(0))
+            assertEquals(true, cursor.isNull(1))
+        }
+        migrated.close()
+    }
+
     private companion object {
         const val DATABASE_NAME = "lenswake-migration-test"
     }

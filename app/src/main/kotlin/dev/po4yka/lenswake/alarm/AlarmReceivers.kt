@@ -56,10 +56,16 @@ internal class AlarmRecoveryBootstrapCoordinator(
         val existing = runCatching { persistence.checkpoint() }.getOrNull()
         val preserveAttempt = action == Intent.ACTION_USER_UNLOCKED ||
             action == ACTION_ALARM_RECOVERY_RETRY
+        val requiresSessionReconciliation = action in setOf(
+            Intent.ACTION_LOCKED_BOOT_COMPLETED,
+            Intent.ACTION_USER_UNLOCKED,
+            Intent.ACTION_BOOT_COMPLETED,
+        ) || existing?.reconcileInterruptedSessions == true
         return if (preserveAttempt && existing != null) {
             existing.copy(
                 lastFailure = "Recovery requested by $action. ${existing.lastFailure}",
                 updatedAtEpochMillis = nowEpochMillis(),
+                reconcileInterruptedSessions = requiresSessionReconciliation,
             )
         } else {
             AlarmRecoveryCheckpoint(
@@ -68,6 +74,7 @@ internal class AlarmRecoveryBootstrapCoordinator(
                 nextAttemptAtEpochMillis = null,
                 exhausted = false,
                 updatedAtEpochMillis = nowEpochMillis(),
+                reconcileInterruptedSessions = requiresSessionReconciliation,
             )
         }
     }

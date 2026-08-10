@@ -15,6 +15,7 @@ internal data class AlarmRecoveryCheckpoint(
     val nextAttemptAtEpochMillis: Long?,
     val exhausted: Boolean,
     val updatedAtEpochMillis: Long,
+    val reconcileInterruptedSessions: Boolean = false,
 ) {
     init {
         require(attempt >= 0) { "Recovery attempt must not be negative" }
@@ -58,6 +59,7 @@ internal class SharedPreferencesAlarmRecoveryCheckpointPersistence(
         checkpoint.nextAttemptAtEpochMillis?.toString().orEmpty(),
         checkpoint.exhausted.toString(),
         checkpoint.updatedAtEpochMillis.toString(),
+        checkpoint.reconcileInterruptedSessions.toString(),
         Base64.encodeToString(
             checkpoint.lastFailure.toByteArray(StandardCharsets.UTF_8),
             Base64.NO_WRAP or Base64.URL_SAFE,
@@ -66,14 +68,19 @@ internal class SharedPreferencesAlarmRecoveryCheckpointPersistence(
 
     private fun decode(encoded: String): AlarmRecoveryCheckpoint? = runCatching {
         val fields = encoded.split(SEPARATOR)
-        if (fields.size != FIELD_COUNT || fields[0] != FORMAT_VERSION) return@runCatching null
+        val currentFormat = when {
+            fields.size == FIELD_COUNT && fields[0] == FORMAT_VERSION -> true
+            fields.size == LEGACY_FIELD_COUNT && fields[0] == LEGACY_FORMAT_VERSION -> false
+            else -> return@runCatching null
+        }
         AlarmRecoveryCheckpoint(
             attempt = fields[1].toInt(),
             nextAttemptAtEpochMillis = fields[2].takeIf(String::isNotBlank)?.toLong(),
             exhausted = fields[3].toBooleanStrict(),
             updatedAtEpochMillis = fields[4].toLong(),
+            reconcileInterruptedSessions = if (currentFormat) fields[5].toBooleanStrict() else false,
             lastFailure = String(
-                Base64.decode(fields[5], Base64.NO_WRAP or Base64.URL_SAFE),
+                Base64.decode(fields[if (currentFormat) 6 else 5], Base64.NO_WRAP or Base64.URL_SAFE),
                 StandardCharsets.UTF_8,
             ),
         )
@@ -82,9 +89,11 @@ internal class SharedPreferencesAlarmRecoveryCheckpointPersistence(
     private companion object {
         const val PREFERENCE_NAME = "alarm_recovery_checkpoint"
         const val KEY_CHECKPOINT = "checkpoint"
-        const val FORMAT_VERSION = "1"
+        const val FORMAT_VERSION = "2"
+        const val LEGACY_FORMAT_VERSION = "1"
         const val SEPARATOR = "|"
-        const val FIELD_COUNT = 6
+        const val FIELD_COUNT = 7
+        const val LEGACY_FIELD_COUNT = 6
     }
 }
 
@@ -165,12 +174,14 @@ internal class AlarmRecoveryRetryCoordinator(
                 )
             }
         val currentAttempt = persistedCheckpoint?.attempt ?: 0
+        val reconcileInterruptedSessions =
+            persistedCheckpoint?.reconcileInterruptedSessions == true
         if (capabilityUnavailable) {
-            persistExhausted(currentAttempt, detail)
+            persistExhausted(currentAttempt, detail, reconcileInterruptedSessions)
             return escalate(AlarmTransportFailureCode.RECOVERY_CAPABILITY_UNAVAILABLE, detail)
         }
         if (currentAttempt >= maxAttempts) {
-            persistExhausted(currentAttempt, detail)
+            persistExhausted(currentAttempt, detail, reconcileInterruptedSessions)
             return escalate(AlarmTransportFailureCode.RECOVERY_ATTEMPTS_EXHAUSTED, detail)
         }
 
@@ -182,6 +193,7 @@ internal class AlarmRecoveryRetryCoordinator(
             nextAttemptAtEpochMillis = triggerAt,
             exhausted = false,
             updatedAtEpochMillis = nowEpochMillis(),
+            reconcileInterruptedSessions = reconcileInterruptedSessions,
         )
         if (!runCatching { persistence.persist(checkpoint) }.getOrDefault(false)) {
             return escalate(
@@ -195,7 +207,7 @@ internal class AlarmRecoveryRetryCoordinator(
 
         val schedulingDetail = "$detail Recovery requeue failed: " +
             scheduled.exceptionOrNull()?.message.orEmpty()
-        persistExhausted(nextAttempt, schedulingDetail.trim())
+        persistExhausted(nextAttempt, schedulingDetail.trim(), reconcileInterruptedSessions)
         return escalate(AlarmTransportFailureCode.RECOVERY_REQUEUE_FAILED, schedulingDetail.trim())
     }
 
@@ -206,7 +218,11 @@ internal class AlarmRecoveryRetryCoordinator(
         return cleared
     }
 
-    private fun persistExhausted(attempt: Int, detail: String) {
+    private fun persistExhausted(
+        attempt: Int,
+        detail: String,
+        reconcileInterruptedSessions: Boolean,
+    ) {
         runCatching {
             persistence.persist(
                 AlarmRecoveryCheckpoint(
@@ -215,6 +231,7 @@ internal class AlarmRecoveryRetryCoordinator(
                     nextAttemptAtEpochMillis = null,
                     exhausted = true,
                     updatedAtEpochMillis = nowEpochMillis(),
+                    reconcileInterruptedSessions = reconcileInterruptedSessions,
                 ),
             )
         }

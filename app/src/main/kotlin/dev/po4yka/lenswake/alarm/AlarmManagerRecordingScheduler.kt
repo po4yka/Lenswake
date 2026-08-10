@@ -7,8 +7,8 @@ import dev.po4yka.lenswake.core.RecordingSchedule
 import dev.po4yka.lenswake.core.RecordingScheduler
 import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.ScheduleRepository
-import kotlinx.coroutines.flow.first
 import java.time.Instant
+import kotlinx.coroutines.flow.first
 
 enum class SchedulingFailureCode {
     SCHEDULE_NOT_PERSISTED,
@@ -30,14 +30,27 @@ class SchedulingException(
     cause: Throwable? = null,
 ) : IllegalStateException(message, cause)
 
-class AlarmManagerRecordingScheduler(
-    context: Context,
+internal interface RecordingAlarmBackend {
+    fun canScheduleExactAlarms(): Boolean
+    fun arm(schedule: RecordingSchedule, kind: AlarmKind, triggerAt: Instant)
+    fun cancel(scheduleId: ScheduleId, kind: AlarmKind)
+}
+
+class AlarmManagerRecordingScheduler internal constructor(
     private val scheduleRepository: ScheduleRepository,
     private val clock: LenswakeClock,
-    private val exactAlarmCapability: ExactAlarmCapability? = null,
+    private val backend: RecordingAlarmBackend,
 ) : RecordingScheduler {
-    private val applicationContext = context.applicationContext
-    private val alarmManager = applicationContext.getSystemService(AlarmManager::class.java)
+    constructor(
+        context: Context,
+        scheduleRepository: ScheduleRepository,
+        clock: LenswakeClock,
+        exactAlarmCapability: ExactAlarmCapability? = null,
+    ) : this(
+        scheduleRepository = scheduleRepository,
+        clock = clock,
+        backend = AndroidRecordingAlarmBackend(context, exactAlarmCapability),
+    )
 
     override suspend fun scheduleStart(schedule: RecordingSchedule): Result<Unit> =
         schedulePersistedSnapshot(schedule, AlarmKind.START)
@@ -46,32 +59,28 @@ class AlarmManagerRecordingScheduler(
         schedulePersistedSnapshot(schedule, AlarmKind.STOP)
 
     override suspend fun cancel(scheduleId: ScheduleId): Result<Unit> = runCatching {
-        AlarmKind.entries.forEach { kind ->
-            cancelLegacyIdentity(scheduleId, kind, delivery = false)
-            cancelLegacyIdentity(scheduleId, kind, delivery = true)
-            val pendingIntent = AutomationAlarmPendingIntentFactory.find(
-                applicationContext,
-                AlarmContract.requestCode(kind),
-                AlarmContract.identityIntent(applicationContext, scheduleId, kind),
-            )
-            if (pendingIntent != null) {
-                alarmManager.cancel(pendingIntent)
-                pendingIntent.cancel()
-            }
-        }
+        AlarmKind.entries.forEach { kind -> backend.cancel(scheduleId, kind) }
     }
 
     override suspend fun restoreAll(): Result<Unit> = runCatching {
         requireExactAlarmCapability()
         val now = clock.now()
-        scheduleRepository.observeSchedules().first().forEach { schedule ->
-            cancel(schedule.id).getOrThrow()
-            if (!schedule.enabled) return@forEach
-            if (schedule.startAt.isAfter(now)) {
-                scheduleCurrent(schedule.id, AlarmKind.START).getOrThrow()
+        scheduleRepository.observeSchedules().first().forEach { observed ->
+            // Schedule mutations share a mutex in production; this comparison also prevents a
+            // stale Flow snapshot from touching identities when the scheduler is used directly.
+            val schedule = scheduleRepository.get(observed.id)
+            if (schedule != observed) return@forEach
+            if (!schedule.enabled || !schedule.stopAt.isAfter(now)) {
+                AlarmKind.entries.forEach { kind -> backend.cancel(schedule.id, kind) }
+                return@forEach
             }
-            if (schedule.stopAt.isAfter(now)) {
-                scheduleCurrent(schedule.id, AlarmKind.STOP).getOrThrow()
+
+            // STOP is the safety backstop. Replace it before START and before removing stale START.
+            register(schedule, AlarmKind.STOP, now)
+            if (schedule.startAt.isAfter(now)) {
+                register(schedule, AlarmKind.START, now)
+            } else {
+                backend.cancel(schedule.id, AlarmKind.START)
             }
         }
     }
@@ -90,61 +99,25 @@ class AlarmManagerRecordingScheduler(
                 message = "Alarm registration rejected a stale schedule revision",
             )
         }
-        register(persisted, kind)
-    }
-
-    private suspend fun scheduleCurrent(
-        scheduleId: ScheduleId,
-        kind: AlarmKind,
-    ): Result<Unit> = runCatching {
-        val persisted = scheduleRepository.get(scheduleId) ?: throw SchedulingException(
-            code = SchedulingFailureCode.SCHEDULE_NOT_PERSISTED,
-            message = "Schedule ${scheduleId.value} disappeared during alarm restoration",
-        )
-        register(persisted, kind)
+        register(persisted, kind, clock.now())
     }
 
     private fun register(
         schedule: RecordingSchedule,
         kind: AlarmKind,
+        now: Instant,
     ) {
         val triggerAt = when (kind) {
             AlarmKind.START -> schedule.startAt
             AlarmKind.STOP -> schedule.stopAt
         }
-        validate(schedule, kind, triggerAt, clock.now())
+        validate(schedule, kind, triggerAt, now)
         requireExactAlarmCapability()
-        val pendingIntent = AutomationAlarmPendingIntentFactory.createOrUpdate(
-            applicationContext,
-            AlarmContract.requestCode(kind),
-            AlarmContract.intent(applicationContext, schedule, kind),
-        )
-        try {
-            AutomationAlarmPendingIntentFactory.armReplacementThenCancelLegacyGatewayActivityIdentities(
-                context = applicationContext,
-                alarmManager = alarmManager,
-                requestCode = AlarmContract.requestCode(kind),
-                legacyIdentityIntents = legacyIdentityIntents(schedule.id, kind),
-            ) {
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerAt.toEpochMilli(),
-                    pendingIntent,
-                )
-            }
-        } catch (error: SecurityException) {
-            throw SchedulingException(
-                code = SchedulingFailureCode.ALARM_MANAGER_REJECTED,
-                message = "Android rejected the exact ${kind.name.lowercase()} alarm",
-                cause = error,
-            )
-        }
+        backend.arm(schedule, kind, triggerAt)
     }
 
     private fun requireExactAlarmCapability() {
-        val canSchedule = exactAlarmCapability?.canScheduleExactAlarms()
-            ?: alarmManager.canScheduleExactAlarms()
-        if (!canSchedule) {
+        if (!backend.canScheduleExactAlarms()) {
             throw SchedulingException(
                 code = SchedulingFailureCode.EXACT_ALARM_UNAVAILABLE,
                 message = "Exact alarm access is unavailable; Lenswake will not schedule an inexact fallback",
@@ -175,6 +148,59 @@ class AlarmManagerRecordingScheduler(
             throw SchedulingException(code, "${kind.name.lowercase()} alarm must be in the future")
         }
     }
+}
+
+internal class AndroidRecordingAlarmBackend(
+    context: Context,
+    private val exactAlarmCapability: ExactAlarmCapability? = null,
+) : RecordingAlarmBackend {
+    private val applicationContext = context.applicationContext
+    private val alarmManager = applicationContext.getSystemService(AlarmManager::class.java)
+
+    override fun canScheduleExactAlarms(): Boolean =
+        exactAlarmCapability?.canScheduleExactAlarms() ?: alarmManager.canScheduleExactAlarms()
+
+    override fun arm(schedule: RecordingSchedule, kind: AlarmKind, triggerAt: Instant) {
+        val pendingIntent = AutomationAlarmPendingIntentFactory.createOrUpdate(
+            applicationContext,
+            AlarmContract.requestCode(kind),
+            AlarmContract.intent(applicationContext, schedule, kind),
+        )
+        try {
+            AutomationAlarmPendingIntentFactory.armReplacementThenCancelLegacyGatewayActivityIdentities(
+                context = applicationContext,
+                alarmManager = alarmManager,
+                requestCode = AlarmContract.requestCode(kind),
+                legacyIdentityIntents = legacyIdentityIntents(schedule.id, kind),
+            ) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAt.toEpochMilli(),
+                    pendingIntent,
+                )
+            }
+        } catch (error: SecurityException) {
+            throw SchedulingException(
+                code = SchedulingFailureCode.ALARM_MANAGER_REJECTED,
+                message = "Android rejected the exact ${kind.name.lowercase()} alarm",
+                cause = error,
+            )
+        }
+    }
+
+    override fun cancel(scheduleId: ScheduleId, kind: AlarmKind) {
+        cancelLegacyIdentity(scheduleId, kind, delivery = false)
+        cancelLegacyIdentity(scheduleId, kind, delivery = true)
+        val pendingIntent = AutomationAlarmPendingIntentFactory.find(
+            applicationContext,
+            AlarmContract.requestCode(kind),
+            AlarmContract.identityIntent(applicationContext, scheduleId, kind),
+        )
+        if (pendingIntent != null) {
+            alarmManager.cancel(pendingIntent)
+            pendingIntent.cancel()
+        }
+    }
 
     private fun cancelLegacyIdentity(
         scheduleId: ScheduleId,
@@ -198,7 +224,6 @@ class AlarmManagerRecordingScheduler(
         AlarmContract.identityIntent(applicationContext, scheduleId, kind),
         AlarmContract.deliveryIdentityIntent(applicationContext, scheduleId, kind),
     )
-
 }
 
 fun interface ExactAlarmCapability {

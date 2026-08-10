@@ -60,7 +60,7 @@ class AlarmManagerRehearsalStopScheduler internal constructor(
             }
             val future = session.expectedStopAt.isAfter(now)
             val hasOutstandingOwnership =
-                session.recordActionAt != null && session.stoppedVerifiedAt == null
+                session.recordActionAt != null && session.ownsPixelCamera
             if (future || hasOutstandingOwnership) {
                 val triggerAt = if (future) {
                     session.expectedStopAt

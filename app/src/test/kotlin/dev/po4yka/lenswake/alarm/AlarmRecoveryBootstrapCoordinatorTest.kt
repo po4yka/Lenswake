@@ -20,6 +20,7 @@ class AlarmRecoveryBootstrapCoordinatorTest {
         assertNotNull(persistence.checkpoint())
         assertEquals(0, persistence.checkpoint()?.attempt)
         assertTrue(persistence.checkpoint()?.lastFailure?.contains("LOCKED_BOOT_COMPLETED") == true)
+        assertTrue(persistence.checkpoint()?.reconcileInterruptedSessions == true)
         assertTrue(starter.actions.isEmpty())
     }
 
@@ -36,6 +37,7 @@ class AlarmRecoveryBootstrapCoordinatorTest {
         assertEquals(AlarmRecoveryBootstrapResult.Started, result)
         assertEquals(listOf("persist", "persist", "start"), operations)
         assertEquals(listOf(Intent.ACTION_USER_UNLOCKED), starter.actions)
+        assertTrue(persistence.checkpoint()?.reconcileInterruptedSessions == true)
     }
 
     @Test
@@ -75,7 +77,22 @@ class AlarmRecoveryBootstrapCoordinatorTest {
         )
         assertNotNull(persistence.checkpoint())
         assertFalse(persistence.clearCalled)
+        assertTrue(persistence.checkpoint()?.reconcileInterruptedSessions == true)
         assertTrue(retry.details.single().contains("FGS start rejected"))
+    }
+
+    @Test
+    fun nonBootRecoveryDoesNotReconcileInterruptedSessions() {
+        val persistence = BootstrapCheckpointPersistence()
+        val starter = RecoveryServiceStarterSpy()
+
+        val result = coordinator(persistence, starter).handle(
+            Intent.ACTION_TIME_CHANGED,
+            userUnlocked = true,
+        )
+
+        assertEquals(AlarmRecoveryBootstrapResult.Started, result)
+        assertFalse(persistence.checkpoint()?.reconcileInterruptedSessions == true)
     }
 
     @Test

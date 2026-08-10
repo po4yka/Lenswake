@@ -22,6 +22,7 @@ import dev.po4yka.lenswake.core.ExecutionReservationResult
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.LenswakeClock
 import dev.po4yka.lenswake.core.RecordingSchedule
+import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.ScheduleRepository
 import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
@@ -39,6 +40,7 @@ class DefaultAlarmTriggerCoordinator(
     private val environmentSnapshotRepository: EnvironmentSnapshotRepository,
     private val environmentSnapshotCollector: EnvironmentSnapshotCollector,
     private val automationEngine: AutomationEngine,
+    private val startReadiness: suspend (ProfileId) -> Result<Unit>,
     private val clock: LenswakeClock,
     private val snapshotCollectionTimeoutMillis: Long = SNAPSHOT_COLLECTION_TIMEOUT_MILLIS,
 ) : AlarmTriggerCoordinator {
@@ -93,11 +95,66 @@ class DefaultAlarmTriggerCoordinator(
             )
         }
         validateExecution(existing, schedule, executionKey)?.let { return it }
+        if (existing.recordActionAt == null && existing.cameraOwnershipReleasedAt == null) {
+            val readinessFailure = try {
+                startReadiness(existing.profileId).exceptionOrNull()
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                error
+            }
+            if (readinessFailure != null) {
+                return failStartReadiness(existing, readinessFailure)
+            }
+        }
         val snapshottedSession = when (val snapshot = ensureEnvironmentSnapshot(existing)) {
             is SnapshotCheckpoint.Ready -> snapshot.session
             is SnapshotCheckpoint.Failed -> return snapshot.result
         }
         return runEngine(AlarmKind.START) { automationEngine.start(snapshottedSession.id) }
+    }
+
+    private suspend fun failStartReadiness(
+        session: ExecutionSession,
+        cause: Throwable,
+    ): AlarmHandlingResult {
+        if (session.revision == Long.MAX_VALUE) {
+            return terminal("START readiness failed and the execution revision cannot advance")
+        }
+        val failedAt = maxOf(clock.now(), session.updatedAt)
+        val failure = AutomationFailure(
+            code = AutomationFailureCode.RUNTIME_READINESS_FAILED,
+            message = "Scheduled START runtime readiness failed: " +
+                (cause.message?.takeIf(String::isNotBlank) ?: cause.javaClass.simpleName),
+        )
+        val failed = session.copy(
+            status = SessionStatus.FAILED,
+            currentAutomationState = AutomationStateName.FAILED,
+            cameraOwnershipReleasedAt = failedAt,
+            failure = failure,
+            revision = session.revision + 1,
+            updatedAt = failedAt,
+        )
+        val event = AutomationEvent(
+            id = EventId.new(),
+            sessionId = session.id,
+            name = "automation.start.readiness_failed",
+            sequence = failed.revision,
+            timestamp = failedAt,
+            state = AutomationStateName.FAILED,
+            outcome = AutomationOutcome.FAILED,
+            failure = failure,
+        )
+        return try {
+            when (executionRepository.apply(ExecutionChange(session.revision, failed), event)) {
+                is ExecutionApplyResult.Applied -> terminal(failure.message)
+                is ExecutionApplyResult.RevisionConflict -> retryable(
+                    "START readiness failure lost a concurrent execution transition",
+                )
+            }
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            retryable("Could not persist START readiness failure", error)
+        }
     }
 
     private suspend fun ensureEnvironmentSnapshot(session: ExecutionSession): SnapshotCheckpoint {
@@ -235,6 +292,7 @@ class DefaultAlarmTriggerCoordinator(
 
     private suspend fun reconcileStopDelivery(session: ExecutionSession): StopReconciliation {
         if (session.stoppedVerifiedAt != null) return StopReconciliation.NoCameraWork
+        if (session.cameraOwnershipReleasedAt != null) return StopReconciliation.NoCameraWork
         if (session.recordActionAt != null) return StopReconciliation.StopRequired(session)
         if (session.status in TERMINAL_STATUSES) return StopReconciliation.NoCameraWork
         if (session.status !in setOf(SessionStatus.PENDING, SessionStatus.STARTING)) {

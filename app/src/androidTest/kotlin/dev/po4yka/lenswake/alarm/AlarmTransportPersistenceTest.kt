@@ -1,6 +1,7 @@
 package dev.po4yka.lenswake.alarm
 
 import android.content.Context
+import android.util.Base64
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
@@ -43,6 +44,7 @@ class AlarmTransportPersistenceTest {
             nextAttemptAtEpochMillis = 40_000L,
             exhausted = false,
             updatedAtEpochMillis = 10_000L,
+            reconcileInterruptedSessions = true,
         )
 
         assertTrue(first.persist(checkpoint))
@@ -62,5 +64,27 @@ class AlarmTransportPersistenceTest {
         )
 
         assertTrue(persistence.isDeviceProtectedStorage)
+    }
+
+    @Test
+    fun legacyRecoveryCheckpointRemainsReadableWithoutInventingRebootReconciliation() {
+        val preferenceName = "legacy-recovery-checkpoint-${System.nanoTime()}"
+        val encodedFailure = Base64.encodeToString(
+            "legacy failure".toByteArray(),
+            Base64.NO_WRAP or Base64.URL_SAFE,
+        )
+        context.createDeviceProtectedStorageContext()
+            .getSharedPreferences(preferenceName, Context.MODE_PRIVATE)
+            .edit()
+            .putString("checkpoint", "1|1|40000|false|10000|$encodedFailure")
+            .commit()
+
+        val checkpoint = SharedPreferencesAlarmRecoveryCheckpointPersistence(
+            context,
+            preferenceName,
+        ).checkpoint()
+
+        assertEquals("legacy failure", checkpoint?.lastFailure)
+        assertEquals(false, checkpoint?.reconcileInterruptedSessions)
     }
 }

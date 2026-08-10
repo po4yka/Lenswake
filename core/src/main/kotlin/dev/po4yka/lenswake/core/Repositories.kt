@@ -2,6 +2,7 @@ package dev.po4yka.lenswake.core
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import java.time.Instant
 
 interface ScheduleRepository {
     fun observeSchedules(): Flow<List<RecordingSchedule>>
@@ -65,6 +66,14 @@ interface ExecutionRepository {
         event: AutomationEvent,
     ): ExecutionApplyResult
 
+    /**
+     * Atomically terminalizes scheduled executions that could own Pixel Camera across reboot.
+     * Implementations preserve dispatch evidence, set an explicit ownership-release timestamp,
+     * and persist one typed event per changed session in the same transaction.
+     */
+    suspend fun reconcileInterruptedScheduledSessions(recoveredAt: Instant): List<ExecutionSession> =
+        throw UnsupportedOperationException("Interrupted-session recovery is not implemented")
+
     /** Returns a bounded, stop-deadline-ordered recovery queue for durable rehearsals. */
     suspend fun findActiveRehearsals(limit: Int): List<ExecutionSession> {
         require(limit in 1..MAX_ACTIVE_REHEARSAL_LIMIT) {
@@ -73,14 +82,7 @@ interface ExecutionRepository {
         return observeExecutions().first()
             .asSequence()
             .filter { session ->
-                session.kind == SessionKind.REHEARSAL && (
-                    session.status in ACTIVE_REHEARSAL_STATUSES ||
-                        (
-                            session.status == SessionStatus.FAILED &&
-                                session.recordActionAt != null &&
-                                session.stoppedVerifiedAt == null
-                            )
-                    )
+                session.kind == SessionKind.REHEARSAL && session.ownsPixelCamera
             }
             .sortedWith(compareBy(ExecutionSession::expectedStopAt, ExecutionSession::createdAt, { it.id.value }))
             .take(limit)
@@ -109,12 +111,6 @@ interface ExecutionRepository {
     companion object {
         const val MAX_ACTIVE_REHEARSAL_LIMIT: Int = 100
 
-        private val ACTIVE_REHEARSAL_STATUSES = setOf(
-            SessionStatus.PENDING,
-            SessionStatus.STARTING,
-            SessionStatus.RECORDING,
-            SessionStatus.STOPPING,
-        )
     }
 }
 

@@ -132,6 +132,8 @@ internal data class ExecutionSessionEntity(
     val stopActionAtEpochMs: Long?,
     @ColumnInfo(name = "stopped_verified_at_epoch_ms")
     val stoppedVerifiedAtEpochMs: Long?,
+    @ColumnInfo(name = "camera_ownership_released_at_epoch_ms")
+    val cameraOwnershipReleasedAtEpochMs: Long?,
     @ColumnInfo(name = "environment_snapshot_id")
     val environmentSnapshotId: String?,
     @ColumnInfo(name = "failure_code")

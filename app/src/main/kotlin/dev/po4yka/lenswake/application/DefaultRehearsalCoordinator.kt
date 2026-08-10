@@ -498,6 +498,7 @@ class RehearsalStopWorkflow(
             return cancelSafelyStopped(session)
         }
         if (session.stoppedVerifiedAt != null) return cancelSafelyStopped(session)
+        if (session.cameraOwnershipReleasedAt != null) return cancelWithoutOwnership(session)
         if (session.recordActionAt == null) {
             return cancelWithoutOwnership(session)
         }

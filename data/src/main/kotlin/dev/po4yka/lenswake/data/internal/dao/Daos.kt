@@ -14,6 +14,8 @@ import dev.po4yka.lenswake.data.internal.entity.ExecutionEventEntity
 import dev.po4yka.lenswake.data.internal.entity.ExecutionSessionEntity
 import dev.po4yka.lenswake.data.internal.entity.ScheduleEntity
 import kotlinx.coroutines.flow.Flow
+import java.util.UUID
+import kotlin.math.max
 
 @Dao
 internal interface ScheduleDao {
@@ -81,12 +83,12 @@ internal interface ExecutionDao {
     @Query(
         """
         SELECT * FROM execution_sessions
-        WHERE status IN ('PENDING', 'STARTING', 'RECORDING', 'STOPPING')
-           OR (
-             status = 'FAILED'
-             AND record_action_at_epoch_ms IS NOT NULL
-             AND stopped_verified_at_epoch_ms IS NULL
-           )
+        WHERE stopped_verified_at_epoch_ms IS NULL
+          AND camera_ownership_released_at_epoch_ms IS NULL
+          AND (
+            status IN ('PENDING', 'STARTING', 'RECORDING', 'STOPPING')
+            OR (status = 'FAILED' AND record_action_at_epoch_ms IS NOT NULL)
+          )
         ORDER BY created_at_epoch_ms, id
         LIMIT 1
         """,
@@ -108,13 +110,11 @@ internal interface ExecutionDao {
         """
         SELECT * FROM execution_sessions
         WHERE kind = 'REHEARSAL'
+          AND stopped_verified_at_epoch_ms IS NULL
+          AND camera_ownership_released_at_epoch_ms IS NULL
           AND (
             status IN ('PENDING', 'STARTING', 'RECORDING', 'STOPPING')
-            OR (
-              status = 'FAILED'
-              AND record_action_at_epoch_ms IS NOT NULL
-              AND stopped_verified_at_epoch_ms IS NULL
-            )
+            OR (status = 'FAILED' AND record_action_at_epoch_ms IS NOT NULL)
           )
         ORDER BY expected_stop_at_epoch_ms, created_at_epoch_ms, id
         LIMIT :limit
@@ -136,6 +136,21 @@ internal interface ExecutionDao {
     )
     suspend fun findLatestSuccessfulRehearsal(profileId: String): ExecutionSessionEntity?
 
+    @Query(
+        """
+        SELECT * FROM execution_sessions
+        WHERE kind = 'SCHEDULED'
+          AND stopped_verified_at_epoch_ms IS NULL
+          AND camera_ownership_released_at_epoch_ms IS NULL
+          AND (
+            status IN ('PENDING', 'STARTING', 'RECORDING', 'STOPPING')
+            OR (status = 'FAILED' AND record_action_at_epoch_ms IS NOT NULL)
+          )
+        ORDER BY created_at_epoch_ms, id
+        """,
+    )
+    suspend fun findInterruptedScheduledOwners(): List<ExecutionSessionEntity>
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIgnoringConflict(session: ExecutionSessionEntity): Long
 
@@ -150,6 +165,51 @@ internal interface ExecutionDao {
 
     @Query("SELECT COALESCE(MAX(sequence), -1) + 1 FROM execution_events WHERE session_id = :sessionId")
     suspend fun nextEventSequence(sessionId: String): Long
+
+    @Transaction
+    suspend fun reconcileInterruptedScheduledSessions(
+        recoveredAtEpochMs: Long,
+        failureCode: String,
+        failureMessage: String,
+    ): List<ExecutionSessionEntity> = findInterruptedScheduledOwners().map { session ->
+        check(session.revision < Long.MAX_VALUE) {
+            "Interrupted execution revision cannot be incremented"
+        }
+        val updatedAt = max(recoveredAtEpochMs, session.updatedAtEpochMs)
+        val updated = session.copy(
+            status = "FAILED",
+            currentAutomationState = "FAILED",
+            cameraOwnershipReleasedAtEpochMs = updatedAt,
+            failureCode = failureCode,
+            failureMessage = failureMessage,
+            failureContextJson = "{\"recovery\":\"device_reboot\"}",
+            revision = session.revision + 1,
+            updatedAtEpochMs = updatedAt,
+        )
+        check(update(updated) == 1) {
+            "Interrupted execution disappeared during recovery"
+        }
+        insertEvent(
+            ExecutionEventEntity(
+                id = UUID.randomUUID().toString(),
+                sessionId = updated.id,
+                name = "automation.execution.reboot_interrupted",
+                sequence = nextEventSequence(updated.id),
+                timestampEpochMs = updatedAt,
+                state = "FAILED",
+                operation = null,
+                outcome = "FAILED",
+                interactionMethod = null,
+                attempt = null,
+                durationMs = null,
+                failureCode = failureCode,
+                failureMessage = failureMessage,
+                failureContextJson = "{\"recovery\":\"device_reboot\"}",
+                metadataJson = "{\"recovery\":\"device_reboot\"}",
+            ),
+        )
+        updated
+    }
 
     @Transaction
     suspend fun reservePixelCamera(

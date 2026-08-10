@@ -1,6 +1,11 @@
 package dev.po4yka.lenswake.alarm
 
 import dev.po4yka.lenswake.core.RecordingScheduler
+import dev.po4yka.lenswake.core.PreflightCheckType
+import dev.po4yka.lenswake.core.PreflightReport
+import dev.po4yka.lenswake.core.PreflightStatus
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 sealed interface AlarmHandlingResult {
     data object Accepted : AlarmHandlingResult
@@ -31,23 +36,86 @@ interface RehearsalStopComponentProvider {
     val rehearsalStopTriggerCoordinator: RehearsalStopTriggerCoordinator
 }
 
-fun interface AlarmRecoveryCoordinator {
-    suspend fun restoreFutureSchedules(): Result<Unit>
+interface AlarmRecoveryCoordinator {
+    suspend fun restoreFutureSchedules(
+        reconcileInterruptedSessions: Boolean = false,
+    ): Result<Unit>
 }
 
 fun interface AlarmRecoveryScheduler {
     suspend fun restoreAll(): Result<Unit>
 }
 
+fun interface InterruptedScheduledSessionRecovery {
+    suspend fun reconcile(): Result<Unit>
+}
+
+fun interface AlarmRecoveryReadiness {
+    suspend fun check(): Result<Unit>
+}
+
+class AlarmRecoveryReadinessException(message: String) : IllegalStateException(message)
+
+class PreflightAlarmRecoveryReadiness(
+    private val inspect: suspend () -> PreflightReport,
+) : AlarmRecoveryReadiness {
+    override suspend fun check(): Result<Unit> = runCatching {
+        val checks = inspect().checks.associateBy { it.type }
+        val blockers = REQUIRED_CHECKS.mapNotNull { type ->
+            val check = checks[type]
+            if (check?.status == PreflightStatus.PASSED) null
+            else check?.message ?: "$type readiness evidence is missing"
+        }
+        if (blockers.isNotEmpty()) {
+            throw AlarmRecoveryReadinessException(
+                "Alarm recovery runtime readiness is blocked: ${blockers.joinToString("; ")}",
+            )
+        }
+    }
+
+    private companion object {
+        val REQUIRED_CHECKS = setOf(
+            PreflightCheckType.EXACT_ALARMS,
+            PreflightCheckType.PIXEL_CAMERA_INSTALLED,
+            PreflightCheckType.SECURE_CAMERA_RESOLVES,
+            PreflightCheckType.DEVICE_WAKE,
+            PreflightCheckType.ACCESSIBILITY_ENABLED,
+            PreflightCheckType.ACCESSIBILITY_CONNECTED,
+            PreflightCheckType.PROFILE_AVAILABLE,
+            PreflightCheckType.PROFILE_COMPATIBILITY,
+            PreflightCheckType.REHEARSAL_CURRENT,
+        )
+    }
+}
+
+class MutexAlarmRecoveryScheduler(
+    private val delegate: AlarmRecoveryScheduler,
+    private val mutex: Mutex,
+) : AlarmRecoveryScheduler {
+    override suspend fun restoreAll(): Result<Unit> = mutex.withLock { delegate.restoreAll() }
+}
+
 class SchedulerAlarmRecoveryCoordinator(
     private val scheduler: RecordingScheduler,
     private val additionalSchedulers: List<AlarmRecoveryScheduler> = emptyList(),
+    private val interruptedSessionRecovery: InterruptedScheduledSessionRecovery? = null,
+    private val readiness: AlarmRecoveryReadiness? = null,
 ) : AlarmRecoveryCoordinator {
-    override suspend fun restoreFutureSchedules(): Result<Unit> {
-        val results = mutableListOf(scheduler.restoreAll())
+    override suspend fun restoreFutureSchedules(
+        reconcileInterruptedSessions: Boolean,
+    ): Result<Unit> {
+        val results = mutableListOf<Result<Unit>>()
+        if (reconcileInterruptedSessions) {
+            results += interruptedSessionRecovery?.reconcile()
+                ?: Result.failure(
+                    IllegalStateException("Interrupted scheduled-session recovery is not configured"),
+                )
+        }
+        results += scheduler.restoreAll()
         for (additionalScheduler in additionalSchedulers) {
             results += additionalScheduler.restoreAll()
         }
+        readiness?.let { results += it.check() }
         return results.firstOrNull(Result<Unit>::isFailure) ?: Result.success(Unit)
     }
 }

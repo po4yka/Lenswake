@@ -23,7 +23,7 @@ import dev.po4yka.lenswake.data.internal.entity.ScheduleEntity
         ExecutionEventEntity::class,
         EnvironmentSnapshotEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class LenswakeDatabase : RoomDatabase() {
@@ -77,12 +77,19 @@ abstract class LenswakeDatabase : RoomDatabase() {
             )
         }
 
+        val MIGRATION_2_3: Migration = Migration(2, 3) { database ->
+            database.execSQL(
+                "ALTER TABLE `execution_sessions` " +
+                    "ADD COLUMN `camera_ownership_released_at_epoch_ms` INTEGER DEFAULT NULL",
+            )
+        }
+
         fun create(context: Context): LenswakeDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
                 LenswakeDatabase::class.java,
                 DATABASE_NAME,
-            ).addMigrations(MIGRATION_1_2)
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
     }
 }

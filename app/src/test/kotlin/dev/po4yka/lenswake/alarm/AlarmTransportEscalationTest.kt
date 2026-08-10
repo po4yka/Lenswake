@@ -161,6 +161,29 @@ class AlarmRecoveryRetryCoordinatorTest {
     }
 
     @Test
+    fun rebootReconciliationRequirementSurvivesRetryCheckpointReplacement() {
+        val checkpoint = FakeRecoveryCheckpointPersistence(
+            AlarmRecoveryCheckpoint(
+                attempt = 0,
+                lastFailure = "Boot recovery requested.",
+                nextAttemptAtEpochMillis = null,
+                exhausted = false,
+                updatedAtEpochMillis = 500L,
+                reconcileInterruptedSessions = true,
+            ),
+        )
+        val coordinator = recoveryCoordinator(
+            checkpoint,
+            FakeRecoveryRetryBackend(),
+            FakeFailurePersistence(),
+        )
+
+        coordinator.retry("Room was unavailable.")
+
+        assertTrue(checkpoint.checkpoint()?.reconcileInterruptedSessions == true)
+    }
+
+    @Test
     fun repeatedRecoveryFailuresStopAfterBoundedAttemptsAndPersistMarker() {
         val checkpoint = FakeRecoveryCheckpointPersistence()
         val backend = FakeRecoveryRetryBackend()
@@ -311,8 +334,10 @@ private class FakeDeliveryRetryBackend(
     }
 }
 
-private class FakeRecoveryCheckpointPersistence : AlarmRecoveryCheckpointPersistence {
-    private var value: AlarmRecoveryCheckpoint? = null
+private class FakeRecoveryCheckpointPersistence(
+    initial: AlarmRecoveryCheckpoint? = null,
+) : AlarmRecoveryCheckpointPersistence {
+    private var value: AlarmRecoveryCheckpoint? = initial
 
     override fun checkpoint(): AlarmRecoveryCheckpoint? = value
 

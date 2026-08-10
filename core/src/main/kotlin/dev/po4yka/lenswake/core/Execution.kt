@@ -28,6 +28,8 @@ data class ExecutionSession(
     val recordingVerifiedAt: Instant? = null,
     val stopActionAt: Instant? = null,
     val stoppedVerifiedAt: Instant? = null,
+    /** Explicit ownership release when external STOP verification is impossible, such as reboot. */
+    val cameraOwnershipReleasedAt: Instant? = null,
     val environmentSnapshotId: EnvironmentSnapshotId? = null,
     val failure: AutomationFailure? = null,
     val revision: Long = 0,
@@ -44,6 +46,21 @@ data class ExecutionSession(
         }
         require(revision >= 0) { "Execution revision must not be negative" }
         require(!updatedAt.isBefore(createdAt)) { "Execution update cannot precede creation" }
+    }
+
+    val ownsPixelCamera: Boolean
+        get() = stoppedVerifiedAt == null &&
+            cameraOwnershipReleasedAt == null &&
+            (status in ACTIVE_CAMERA_OWNERSHIP_STATUSES ||
+                (status == SessionStatus.FAILED && recordActionAt != null))
+
+    private companion object {
+        val ACTIVE_CAMERA_OWNERSHIP_STATUSES = setOf(
+            SessionStatus.PENDING,
+            SessionStatus.STARTING,
+            SessionStatus.RECORDING,
+            SessionStatus.STOPPING,
+        )
     }
 }
 

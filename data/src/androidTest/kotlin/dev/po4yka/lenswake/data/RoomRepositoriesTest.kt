@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.po4yka.lenswake.core.AutomationAction
 import dev.po4yka.lenswake.core.AutomationEvent
+import dev.po4yka.lenswake.core.AutomationFailureCode
 import dev.po4yka.lenswake.core.AutomationOutcome
 import dev.po4yka.lenswake.core.AutomationStateName
 import dev.po4yka.lenswake.core.CaptureConfiguration
@@ -466,6 +467,77 @@ class RoomRepositoriesTest {
     }
 
     @Test
+    fun rebootRecoveryAtomicallyFailsAndReleasesEveryScheduledOwner() = runBlocking {
+        val pending = rehearsalSession(
+            id = "reboot-pending",
+            status = SessionStatus.PENDING,
+            expectedStopAtEpochMs = 20_000,
+            kind = SessionKind.SCHEDULED,
+        )
+        val recording = rehearsalSession(
+            id = "reboot-recording",
+            status = SessionStatus.RECORDING,
+            expectedStopAtEpochMs = 30_000,
+            recordActionAt = Instant.ofEpochMilli(5_000),
+            recordingVerifiedAt = Instant.ofEpochMilli(6_000),
+            kind = SessionKind.SCHEDULED,
+        )
+        val stopping = rehearsalSession(
+            id = "reboot-stopping",
+            status = SessionStatus.STOPPING,
+            expectedStopAtEpochMs = 40_000,
+            recordActionAt = Instant.ofEpochMilli(5_000),
+            kind = SessionKind.SCHEDULED,
+        )
+        val failedUncertain = rehearsalSession(
+            id = "reboot-failed",
+            status = SessionStatus.FAILED,
+            expectedStopAtEpochMs = 50_000,
+            recordActionAt = Instant.ofEpochMilli(5_000),
+            kind = SessionKind.SCHEDULED,
+        )
+        val completed = rehearsalSession(
+            id = "already-completed",
+            status = SessionStatus.COMPLETED,
+            expectedStopAtEpochMs = 60_000,
+            kind = SessionKind.SCHEDULED,
+        )
+        listOf(pending, recording, stopping, failedUncertain, completed)
+            .forEach { insertExecutionFixture(it) }
+        val recoveredAt = Instant.ofEpochMilli(70_000)
+
+        val recovered = executions.reconcileInterruptedScheduledSessions(recoveredAt)
+
+        assertEquals(
+            setOf(pending.id, recording.id, stopping.id, failedUncertain.id),
+            recovered.map { it.id }.toSet(),
+        )
+        recovered.forEach { session ->
+            assertEquals(SessionStatus.FAILED, session.status)
+            assertEquals(AutomationStateName.FAILED, session.currentAutomationState)
+            assertEquals(AutomationFailureCode.DEVICE_REBOOT_INTERRUPTED, session.failure?.code)
+            assertEquals(recoveredAt, session.cameraOwnershipReleasedAt)
+            assertNull(session.stoppedVerifiedAt)
+            assertEquals(
+                "automation.execution.reboot_interrupted",
+                executions.observeEvents(session.id).first().single().name,
+            )
+        }
+        assertEquals(completed, executions.get(completed.id))
+        assertTrue(executions.reconcileInterruptedScheduledSessions(recoveredAt.plusSeconds(1)).isEmpty())
+
+        val contender = rehearsalSession(
+            id = "post-reboot-owner",
+            status = SessionStatus.PENDING,
+            expectedStopAtEpochMs = 80_000,
+        )
+        assertEquals(
+            ExecutionReservationResult.Reserved(contender, newlyCreated = true),
+            executions.reservePixelCamera(contender),
+        )
+    }
+
+    @Test
     fun concurrentReservationsCreateExactlyOneGlobalOwner() = runBlocking {
         val contenders = (1..12).map { index ->
             rehearsalSession(
@@ -649,6 +721,7 @@ class RoomRepositoriesTest {
         recordActionAt: Instant? = null,
         recordingVerifiedAt: Instant? = null,
         stoppedVerifiedAt: Instant? = null,
+        cameraOwnershipReleasedAt: Instant? = null,
         kind: SessionKind = SessionKind.REHEARSAL,
     ): ExecutionSession = ExecutionSession(
         id = SessionId(id),
@@ -664,6 +737,7 @@ class RoomRepositoriesTest {
         recordActionAt = recordActionAt,
         recordingVerifiedAt = recordingVerifiedAt,
         stoppedVerifiedAt = stoppedVerifiedAt,
+        cameraOwnershipReleasedAt = cameraOwnershipReleasedAt,
         createdAt = Instant.ofEpochMilli(1_000),
         updatedAt = stoppedVerifiedAt ?: Instant.ofEpochMilli(2_000),
     )
