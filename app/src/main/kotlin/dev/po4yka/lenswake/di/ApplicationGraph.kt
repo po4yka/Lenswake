@@ -12,6 +12,8 @@ import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfile
 import dev.po4yka.lenswake.application.RehearsalCoordinator
 import dev.po4yka.lenswake.application.RehearsalStopWorkflow
 import dev.po4yka.lenswake.application.RuntimePreflightProbe
+import dev.po4yka.lenswake.application.ScheduleWorkflow
+import dev.po4yka.lenswake.application.MutexRecordingScheduler
 import dev.po4yka.lenswake.automation.DefaultAutomationEngine
 import dev.po4yka.lenswake.automation.SelectorMatcher
 import dev.po4yka.lenswake.core.AutomationProfileRepository
@@ -44,12 +46,16 @@ class ApplicationGraph(application: Application) {
     val executionRepository: ExecutionRepository = roomExecutionRepository
     val environmentSnapshotRepository: EnvironmentSnapshotRepository = roomExecutionRepository
     val clock: LenswakeClock = SystemLenswakeClock()
-    val recordingScheduler: RecordingScheduler = AlarmManagerRecordingScheduler(
+    private val scheduleMutationMutex = Mutex()
+    private val alarmManagerRecordingScheduler: RecordingScheduler = AlarmManagerRecordingScheduler(
         context = application,
         scheduleRepository = scheduleRepository,
         clock = clock,
     )
-
+    val recordingScheduler: RecordingScheduler = MutexRecordingScheduler(
+        delegate = alarmManagerRecordingScheduler,
+        mutex = scheduleMutationMutex,
+    )
     private val unavailablePrivilegedBridge = UnavailablePrivilegedBridge()
     private val cameraEnvironmentProbe = AndroidPixelCameraEnvironmentProbe(application)
     private val deviceWakeController = AndroidDeviceWakeController(application)
@@ -62,6 +68,14 @@ class ApplicationGraph(application: Application) {
         cameraEnvironmentProbe = cameraEnvironmentProbe,
         executionRepository = executionRepository,
         deviceWakeController = deviceWakeController,
+    )
+    val scheduleWorkflow = ScheduleWorkflow(
+        scheduleRepository = scheduleRepository,
+        profileRepository = profileRepository,
+        scheduler = alarmManagerRecordingScheduler,
+        clock = clock,
+        preflightProbe = runtimePreflightProbe,
+        mutationMutex = scheduleMutationMutex,
     )
     private val deviceControl = AndroidDeviceControlPort(
         context = application,

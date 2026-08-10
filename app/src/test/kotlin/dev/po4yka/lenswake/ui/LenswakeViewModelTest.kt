@@ -11,6 +11,7 @@ import dev.po4yka.lenswake.core.EventId
 import dev.po4yka.lenswake.core.ExecutionApplyResult
 import dev.po4yka.lenswake.core.ExecutionChange
 import dev.po4yka.lenswake.core.ExecutionRepository
+import dev.po4yka.lenswake.core.ExecutionReservationResult
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
@@ -22,6 +23,8 @@ import dev.po4yka.lenswake.core.PreflightStatus
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.RecordingSchedule
+import dev.po4yka.lenswake.core.RecordingScheduler
+import dev.po4yka.lenswake.core.LenswakeClock
 import dev.po4yka.lenswake.core.RehearsalRequest
 import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.ScheduleRepository
@@ -35,6 +38,7 @@ import dev.po4yka.lenswake.application.KnownPixelCameraProfileCatalog
 import dev.po4yka.lenswake.application.RehearsalCoordinator
 import dev.po4yka.lenswake.application.RehearsalResult
 import dev.po4yka.lenswake.application.RehearsalResultCode
+import dev.po4yka.lenswake.application.ScheduleWorkflow
 import dev.po4yka.lenswake.automation.PortResult
 import java.time.Instant
 import java.time.Duration
@@ -85,7 +89,7 @@ class LenswakeViewModelTest {
 
         assertInstanceOf(ReadinessUiState.Blocked::class.java, state.readiness)
         assertEquals("Morning capture", state.schedules.single().title)
-        assertEquals("Enabled; alarm registration not verified", state.schedules.single().status)
+        assertEquals("Enabled", state.schedules.single().status)
         assertEquals(
             "Persisted as verified; see current compatibility in Setup",
             state.profiles.single().compatibility,
@@ -113,6 +117,7 @@ class LenswakeViewModelTest {
             RuntimePreflightProbe { blockedPreflight() },
             installUseCase(profiles),
             unavailableRehearsalCoordinator(),
+            scheduleWorkflow(schedules, profiles),
         )
 
         try {
@@ -124,7 +129,7 @@ class LenswakeViewModelTest {
 
             schedules.save(schedule())
             profiles.save(profile())
-            executions.create(session())
+            executions.reservePixelCamera(session())
             executions.publish(event())
 
             val state = loaded.await()
@@ -140,13 +145,16 @@ class LenswakeViewModelTest {
     @Test
     fun refreshAndProbeInvalidationRecomputeRuntimeReadiness() = runTest {
         val probe = MutablePreflightProbe(blockedPreflight())
+        val schedules = FakeScheduleRepository()
+        val profiles = FakeProfileRepository()
         val viewModel = LenswakeViewModel(
-            FakeScheduleRepository(),
-            FakeProfileRepository(),
+            schedules,
+            profiles,
             FakeExecutionRepository(),
             probe,
-            installUseCase(FakeProfileRepository()),
+            installUseCase(profiles),
             unavailableRehearsalCoordinator(),
+            scheduleWorkflow(schedules, profiles),
         )
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             viewModel.state.collect()
@@ -179,13 +187,15 @@ class LenswakeViewModelTest {
     @Test
     fun installCandidateProfilePersistsCatalogCandidateAndExposesRehearsalRequirement() = runTest {
         val profiles = FakeProfileRepository()
+        val schedules = FakeScheduleRepository()
         val viewModel = LenswakeViewModel(
-            FakeScheduleRepository(),
+            schedules,
             profiles,
             FakeExecutionRepository(),
             RuntimePreflightProbe { blockedPreflight() },
             installUseCase(profiles),
             unavailableRehearsalCoordinator(),
+            scheduleWorkflow(schedules, profiles),
         )
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             viewModel.state.collect()
@@ -210,11 +220,12 @@ class LenswakeViewModelTest {
     @Test
     fun installCandidateProfileKeepsFailureVisibleAndAllowsRetry() = runTest {
         val profiles = FakeProfileRepository()
+        val schedules = FakeScheduleRepository()
         val unsupported = KnownPixelCameraProfileCatalog.pixel8ProAndroid17Camera69481630.environment.copy(
             cameraVersionCode = Long.MAX_VALUE,
         )
         val viewModel = LenswakeViewModel(
-            FakeScheduleRepository(),
+            schedules,
             profiles,
             FakeExecutionRepository(),
             RuntimePreflightProbe { blockedPreflight() },
@@ -223,6 +234,7 @@ class LenswakeViewModelTest {
                 profileRepository = profiles,
             ),
             unavailableRehearsalCoordinator(),
+            scheduleWorkflow(schedules, profiles),
         )
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             viewModel.state.collect()
@@ -241,6 +253,7 @@ class LenswakeViewModelTest {
     @Test
     fun runRehearsalUsesBoundedProductionRequestAndSurfacesPendingSafetyStop() = runTest {
         val profiles = FakeProfileRepository().also { it.save(profile()) }
+        val schedules = FakeScheduleRepository()
         var received: RehearsalRequest? = null
         val coordinator = RehearsalCoordinator { request ->
             received = request
@@ -250,12 +263,13 @@ class LenswakeViewModelTest {
             )
         }
         val viewModel = LenswakeViewModel(
-            FakeScheduleRepository(),
+            schedules,
             profiles,
             FakeExecutionRepository(),
             RuntimePreflightProbe { rehearsalEligiblePreflight() },
             installUseCase(profiles),
             coordinator,
+            scheduleWorkflow(schedules, profiles),
         )
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             viewModel.state.collect()
@@ -274,6 +288,53 @@ class LenswakeViewModelTest {
             "STOP is not yet verified; wait for the independent safety alarm before retrying.",
             pending.actions.rehearsalUnavailableReason,
         )
+    }
+
+    @Test
+    fun createScheduleFormPersistsAndArmsBothAlarmsBeforeReportingSuccess() = runTest {
+        val schedules = FakeScheduleRepository()
+        val profiles = FakeProfileRepository().also { it.save(profile()) }
+        val scheduler = FakeRecordingScheduler()
+        val viewModel = LenswakeViewModel(
+            schedules,
+            profiles,
+            FakeExecutionRepository(),
+            RuntimePreflightProbe { scheduleEligiblePreflight() },
+            installUseCase(profiles),
+            unavailableRehearsalCoordinator(),
+            ScheduleWorkflow(
+                scheduleRepository = schedules,
+                profileRepository = profiles,
+                scheduler = scheduler,
+                clock = LenswakeClock { now.minusSeconds(60) },
+                preflightProbe = RuntimePreflightProbe { scheduleEligiblePreflight() },
+            ),
+        )
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.state.collect()
+        }
+
+        viewModel.state.first { it.actions.canCreateSchedule }
+        viewModel.beginCreateSchedule()
+        val editor = viewModel.state.first { it.scheduleEditor is ScheduleEditorUiState.Open }
+            .scheduleEditor as ScheduleEditorUiState.Open
+        viewModel.updateScheduleForm(
+            editor.form.copy(
+                name = "Dawn",
+                startLocal = "2026-08-09T10:30",
+                stopLocal = "2026-08-09T11:30",
+                zoneId = "Asia/Tbilisi",
+            ),
+        )
+        viewModel.submitSchedule()
+
+        val succeeded = viewModel.state.first {
+            it.scheduleAction is ScheduleActionUiState.Succeeded && it.schedules.size == 1
+        }
+        assertEquals(listOf("start", "stop"), scheduler.events)
+        assertEquals("Dawn", succeeded.schedules.single().title)
+        assertEquals("Enabled", succeeded.schedules.single().status)
+        assertInstanceOf(ScheduleEditorUiState.Closed::class.java, succeeded.scheduleEditor)
     }
 
     private class FakeScheduleRepository : ScheduleRepository {
@@ -319,8 +380,9 @@ class LenswakeViewModelTest {
         override suspend fun findActiveForSchedule(scheduleId: ScheduleId): ExecutionSession? =
             executions.value.firstOrNull { it.scheduleId == scheduleId }
 
-        override suspend fun create(session: ExecutionSession) {
+        override suspend fun reservePixelCamera(session: ExecutionSession): ExecutionReservationResult {
             executions.value = executions.value.filterNot { it.id == session.id } + session
+            return ExecutionReservationResult.Reserved(session, newlyCreated = true)
         }
 
         override suspend fun apply(
@@ -332,6 +394,22 @@ class LenswakeViewModelTest {
             val stream = events.getOrPut(event.sessionId) { MutableStateFlow(emptyList()) }
             stream.value = stream.value + event
         }
+    }
+
+    private class FakeRecordingScheduler : RecordingScheduler {
+        val events = mutableListOf<String>()
+
+        override suspend fun scheduleStart(schedule: RecordingSchedule): Result<Unit> {
+            events += "start"
+            return Result.success(Unit)
+        }
+
+        override suspend fun scheduleStop(schedule: RecordingSchedule): Result<Unit> {
+            events += "stop"
+            return Result.success(Unit)
+        }
+        override suspend fun cancel(scheduleId: ScheduleId): Result<Unit> = Result.success(Unit)
+        override suspend fun restoreAll(): Result<Unit> = Result.success(Unit)
     }
 
     private class MutablePreflightProbe(
@@ -473,6 +551,27 @@ class LenswakeViewModelTest {
             ),
         )
 
+        fun scheduleEligiblePreflight() = PreflightReport(
+            checks = listOf(
+                PreflightCheckType.EXACT_ALARMS,
+                PreflightCheckType.PIXEL_CAMERA_INSTALLED,
+                PreflightCheckType.SECURE_CAMERA_RESOLVES,
+                PreflightCheckType.DEVICE_WAKE,
+                PreflightCheckType.ACCESSIBILITY_ENABLED,
+                PreflightCheckType.ACCESSIBILITY_CONNECTED,
+                PreflightCheckType.PROFILE_AVAILABLE,
+                PreflightCheckType.PROFILE_COMPATIBILITY,
+                PreflightCheckType.REHEARSAL_CURRENT,
+            ).map { type ->
+                PreflightCheck(
+                    type = type,
+                    severity = PreflightSeverity.BLOCKING,
+                    status = PreflightStatus.PASSED,
+                    message = "$type passed.",
+                )
+            },
+        )
+
         fun installUseCase(repository: AutomationProfileRepository) = InstallKnownPixelCameraProfile(
             environmentProbe = {
                 PortResult.Observed(
@@ -488,6 +587,17 @@ class LenswakeViewModelTest {
                 message = "Not used by this test",
             )
         }
+
+        fun scheduleWorkflow(
+            schedules: ScheduleRepository,
+            profiles: AutomationProfileRepository,
+        ) = ScheduleWorkflow(
+            scheduleRepository = schedules,
+            profileRepository = profiles,
+            scheduler = FakeRecordingScheduler(),
+            clock = LenswakeClock { now.minusSeconds(60) },
+            preflightProbe = RuntimePreflightProbe { scheduleEligiblePreflight() },
+        )
     }
 }
 

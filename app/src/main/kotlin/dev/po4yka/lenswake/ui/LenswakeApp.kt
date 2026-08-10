@@ -63,6 +63,16 @@ fun LenswakeApp() {
         state = state,
         onInstallCandidateProfile = viewModel::installCandidateProfile,
         onRunRehearsal = viewModel::runRehearsal,
+        onBeginCreateSchedule = viewModel::beginCreateSchedule,
+        onBeginEditSchedule = viewModel::beginEditSchedule,
+        onUpdateScheduleForm = viewModel::updateScheduleForm,
+        onSubmitSchedule = viewModel::submitSchedule,
+        onCancelScheduleEditor = viewModel::cancelScheduleEditor,
+        onSetScheduleEnabled = viewModel::setScheduleEnabled,
+        onRequestDeleteSchedule = viewModel::requestDeleteSchedule,
+        onCancelDeleteSchedule = viewModel::cancelDeleteSchedule,
+        onConfirmDeleteSchedule = viewModel::confirmDeleteSchedule,
+        onClearScheduleOutcome = viewModel::clearScheduleOutcome,
     )
 }
 
@@ -72,6 +82,16 @@ fun LenswakeApp(
     state: LenswakeUiState,
     onInstallCandidateProfile: () -> Unit = {},
     onRunRehearsal: () -> Unit = {},
+    onBeginCreateSchedule: () -> Unit = {},
+    onBeginEditSchedule: (String) -> Unit = {},
+    onUpdateScheduleForm: (ScheduleFormUiState) -> Unit = {},
+    onSubmitSchedule: () -> Unit = {},
+    onCancelScheduleEditor: () -> Unit = {},
+    onSetScheduleEnabled: (String, Boolean) -> Unit = { _, _ -> },
+    onRequestDeleteSchedule: (String) -> Unit = {},
+    onCancelDeleteSchedule: () -> Unit = {},
+    onConfirmDeleteSchedule: (String) -> Unit = {},
+    onClearScheduleOutcome: () -> Unit = {},
 ) {
     val backStack = rememberNavBackStack(SchedulesRoute)
     val currentDestination = backStack.lastOrNull()
@@ -105,6 +125,16 @@ fun LenswakeApp(
                         state = state,
                         contentPadding = contentPadding,
                         onOpenSetup = { backStack.add(SetupRoute) },
+                        onBeginCreate = onBeginCreateSchedule,
+                        onBeginEdit = onBeginEditSchedule,
+                        onUpdateForm = onUpdateScheduleForm,
+                        onSubmit = onSubmitSchedule,
+                        onCancelEditor = onCancelScheduleEditor,
+                        onSetEnabled = onSetScheduleEnabled,
+                        onRequestDelete = onRequestDeleteSchedule,
+                        onCancelDelete = onCancelDeleteSchedule,
+                        onConfirmDelete = onConfirmDeleteSchedule,
+                        onClearOutcome = onClearScheduleOutcome,
                     )
                 }
                 entry<ProfilesRoute> {

@@ -19,6 +19,7 @@ class LenswakeAppTest {
         state: LenswakeUiState = LenswakeUiState(),
         onInstallCandidateProfile: () -> Unit = {},
         onRunRehearsal: () -> Unit = {},
+        onSubmitSchedule: () -> Unit = {},
     ) {
         composeRule.setContent {
             LenswakeTheme {
@@ -26,6 +27,7 @@ class LenswakeAppTest {
                     state = state,
                     onInstallCandidateProfile = onInstallCandidateProfile,
                     onRunRehearsal = onRunRehearsal,
+                    onSubmitSchedule = onSubmitSchedule,
                 )
             }
         }
@@ -97,6 +99,7 @@ class LenswakeAppTest {
                         title = "Pixel 8 Pro",
                         environment = "Android 17 - Pixel Camera 69481630 - en-US",
                         compatibility = "Needs rehearsal",
+                        verifiedForScheduling = false,
                     ),
                 ),
                 actions = UiActionAvailability(canRunRehearsal = true),
@@ -107,5 +110,39 @@ class LenswakeAppTest {
         composeRule.onNodeWithText("Profiles").performClick()
         composeRule.onNodeWithText("Run rehearsal").performClick()
         composeRule.runOnIdle { assertEquals(1, rehearsalRequests) }
+    }
+
+    @Test
+    fun schedulesRouteRendersRealVerifiedProfileFormAndDispatchesSubmit() {
+        var submitRequests = 0
+        setContent(
+            state = LenswakeUiState(
+                profiles = listOf(
+                    ProfileSummaryUiState(
+                        id = "profile-verified",
+                        title = "Pixel 8 Pro",
+                        environment = "Android 17 - Pixel Camera 69481630 - en-US",
+                        compatibility = "Persisted as verified; see current compatibility in Setup",
+                        verifiedForScheduling = true,
+                    ),
+                ),
+                scheduleEditor = ScheduleEditorUiState.Open(
+                    mode = ScheduleEditorMode.Create,
+                    form = ScheduleFormUiState(
+                        name = "Dawn",
+                        startLocal = "2030-01-01T06:00",
+                        stopLocal = "2030-01-01T08:00",
+                        zoneId = "Asia/Tbilisi",
+                        profileId = "profile-verified",
+                    ),
+                ),
+                actions = UiActionAvailability(canCreateSchedule = true),
+            ),
+            onSubmitSchedule = { submitRequests += 1 },
+        )
+
+        composeRule.onNodeWithText("Create and apply").performClick()
+        composeRule.runOnIdle { assertEquals(1, submitRequests) }
+        composeRule.onNodeWithText("120×", substring = true).assertExists()
     }
 }

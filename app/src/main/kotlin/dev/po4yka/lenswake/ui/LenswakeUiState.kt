@@ -14,8 +14,61 @@ data class LenswakeUiState(
     val diagnosticEvents: List<DiagnosticEventUiState> = emptyList(),
     val profileInstall: ProfileInstallUiState = ProfileInstallUiState.Idle,
     val rehearsal: RehearsalActionUiState = RehearsalActionUiState.Idle,
+    val scheduleEditor: ScheduleEditorUiState = ScheduleEditorUiState.Closed,
+    val scheduleAction: ScheduleActionUiState = ScheduleActionUiState.Idle,
+    val pendingDeleteScheduleId: String? = null,
     val actions: UiActionAvailability = UiActionAvailability(),
 )
+
+@Immutable
+sealed interface ScheduleEditorUiState {
+    @Immutable
+    data object Closed : ScheduleEditorUiState
+
+    @Immutable
+    data class Open(
+        val mode: ScheduleEditorMode,
+        val form: ScheduleFormUiState,
+        val error: String? = null,
+    ) : ScheduleEditorUiState
+}
+
+@Immutable
+sealed interface ScheduleEditorMode {
+    @Immutable
+    data object Create : ScheduleEditorMode
+
+    @Immutable
+    data class Edit(val scheduleId: String) : ScheduleEditorMode
+}
+
+@Immutable
+data class ScheduleFormUiState(
+    val name: String = "",
+    val startLocal: String = "",
+    val stopLocal: String = "",
+    val zoneId: String = "",
+    val profileId: String = "",
+    val enabled: Boolean = true,
+)
+
+@Immutable
+sealed interface ScheduleActionUiState {
+    @Immutable
+    data object Idle : ScheduleActionUiState
+
+    @Immutable
+    data class Working(val message: String) : ScheduleActionUiState
+
+    @Immutable
+    data class Succeeded(val message: String) : ScheduleActionUiState
+
+    @Immutable
+    data class Failed(
+        val message: String,
+        val rollbackFailures: List<String> = emptyList(),
+    ) : ScheduleActionUiState
+}
 
 @Immutable
 sealed interface ProfileInstallUiState {
@@ -111,6 +164,11 @@ data class ScheduleSummaryUiState(
     val title: String,
     val timing: String,
     val status: String,
+    val startLocal: String,
+    val stopLocal: String,
+    val zoneId: String,
+    val profileId: String,
+    val enabled: Boolean,
 )
 
 @Immutable
@@ -119,6 +177,7 @@ data class ProfileSummaryUiState(
     val title: String,
     val environment: String,
     val compatibility: String,
+    val verifiedForScheduling: Boolean,
 )
 
 @Immutable
@@ -132,7 +191,8 @@ data class DiagnosticEventUiState(
 @Immutable
 data class UiActionAvailability(
     val canCreateSchedule: Boolean = false,
-    val createScheduleUnavailableReason: String = "Schedule editing is not connected to persistence yet.",
+    val createScheduleUnavailableReason: String =
+        "Current readiness and an exact rehearsed Pixel Camera profile have not been verified.",
     val canInstallCandidateProfile: Boolean = false,
     val installCandidateProfileUnavailableReason: String = "Candidate profile availability has not been checked.",
     val canRunRehearsal: Boolean = false,

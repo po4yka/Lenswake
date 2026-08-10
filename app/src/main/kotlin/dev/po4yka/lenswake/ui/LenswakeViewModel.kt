@@ -8,6 +8,10 @@ import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfileResult
 import dev.po4yka.lenswake.application.RehearsalCoordinator
 import dev.po4yka.lenswake.application.RehearsalResult
 import dev.po4yka.lenswake.application.RuntimePreflightProbe
+import dev.po4yka.lenswake.application.ScheduleCommand
+import dev.po4yka.lenswake.application.ScheduleOperation
+import dev.po4yka.lenswake.application.ScheduleWorkflow
+import dev.po4yka.lenswake.application.ScheduleWorkflowResult
 import dev.po4yka.lenswake.core.AutomationEvent
 import dev.po4yka.lenswake.core.AutomationProfileRepository
 import dev.po4yka.lenswake.core.CaptureConfiguration
@@ -24,9 +28,12 @@ import dev.po4yka.lenswake.core.RecordingSchedule
 import dev.po4yka.lenswake.core.RehearsalRequest
 import dev.po4yka.lenswake.core.ScheduleReadiness
 import dev.po4yka.lenswake.core.ScheduleRepository
+import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.di.ApplicationGraph
 import java.time.Duration
+import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -46,16 +53,20 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LenswakeViewModel(
-    scheduleRepository: ScheduleRepository,
+    private val scheduleRepository: ScheduleRepository,
     private val profileRepository: AutomationProfileRepository,
     executionRepository: ExecutionRepository,
     private val runtimePreflightProbe: RuntimePreflightProbe,
     private val installKnownPixelCameraProfile: InstallKnownPixelCameraProfile,
     private val rehearsalCoordinator: RehearsalCoordinator,
+    private val scheduleWorkflow: ScheduleWorkflow,
 ) : ViewModel() {
     private val preflightRefresh = MutableStateFlow(0L)
     private val profileInstall = MutableStateFlow<ProfileInstallUiState>(ProfileInstallUiState.Idle)
     private val rehearsal = MutableStateFlow<RehearsalActionUiState>(RehearsalActionUiState.Idle)
+    private val scheduleEditor = MutableStateFlow<ScheduleEditorUiState>(ScheduleEditorUiState.Closed)
+    private val scheduleAction = MutableStateFlow<ScheduleActionUiState>(ScheduleActionUiState.Idle)
+    private val pendingDeleteScheduleId = MutableStateFlow<String?>(null)
     private val profiles = profileRepository.observeProfiles()
     private val preflightInvalidations = merge(
         preflightRefresh.map { Unit },
@@ -82,6 +93,15 @@ class LenswakeViewModel(
                 }
             }
         }
+    private val transientUiState = combine(
+        profileInstall,
+        rehearsal,
+        combine(scheduleEditor, scheduleAction, pendingDeleteScheduleId) { editor, action, pendingDelete ->
+            ScheduleTransientUiState(editor, action, pendingDelete)
+        },
+    ) { install, rehearsalAction, scheduleTransient ->
+        TransientUiState(install, rehearsalAction, scheduleTransient)
+    }
 
     val state: StateFlow<LenswakeUiState> = combine(
         scheduleRepository.observeSchedules(),
@@ -90,15 +110,18 @@ class LenswakeViewModel(
         combine(profiles, preflightInvalidations) { currentProfiles, _ ->
             runtimePreflightProbe.inspect(currentProfiles)
         },
-        combine(profileInstall, rehearsal) { install, action -> install to action },
+        transientUiState,
     ) { schedules, currentProfiles, events, preflight, transientState ->
         LenswakeUiStateMapper.map(
             schedules = schedules,
             profiles = currentProfiles,
             events = events,
             preflight = preflight,
-            profileInstall = transientState.first,
-            rehearsal = transientState.second,
+            profileInstall = transientState.profileInstall,
+            rehearsal = transientState.rehearsal,
+            scheduleEditor = transientState.schedule.editor,
+            scheduleAction = transientState.schedule.action,
+            pendingDeleteScheduleId = transientState.schedule.pendingDeleteScheduleId,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -154,6 +177,131 @@ class LenswakeViewModel(
         }
     }
 
+    fun beginCreateSchedule() {
+        if (!state.value.actions.canCreateSchedule) {
+            scheduleAction.value = ScheduleActionUiState.Failed(
+                state.value.actions.createScheduleUnavailableReason,
+            )
+            return
+        }
+        val profile = state.value.profiles.firstOrNull { it.verifiedForScheduling }
+        if (profile == null) {
+            scheduleAction.value = ScheduleActionUiState.Failed(
+                "Install the exact Pixel Camera profile before creating a schedule.",
+            )
+            return
+        }
+        scheduleAction.value = ScheduleActionUiState.Idle
+        scheduleEditor.value = ScheduleEditorUiState.Open(
+            mode = ScheduleEditorMode.Create,
+            form = ScheduleFormUiState(
+                profileId = profile.id,
+                zoneId = ZoneId.systemDefault().id,
+            ),
+        )
+    }
+
+    fun beginEditSchedule(scheduleId: String) {
+        val schedule = state.value.schedules.firstOrNull { it.id == scheduleId }
+        if (schedule == null) {
+            scheduleAction.value = ScheduleActionUiState.Failed("The selected schedule no longer exists.")
+            return
+        }
+        scheduleAction.value = ScheduleActionUiState.Idle
+        scheduleEditor.value = ScheduleEditorUiState.Open(
+            mode = ScheduleEditorMode.Edit(scheduleId),
+            form = ScheduleFormUiState(
+                name = schedule.title,
+                startLocal = schedule.startLocal,
+                stopLocal = schedule.stopLocal,
+                zoneId = schedule.zoneId,
+                profileId = schedule.profileId,
+                enabled = schedule.enabled,
+            ),
+        )
+    }
+
+    fun updateScheduleForm(form: ScheduleFormUiState) {
+        val editor = scheduleEditor.value as? ScheduleEditorUiState.Open ?: return
+        scheduleEditor.value = editor.copy(form = form, error = null)
+    }
+
+    fun cancelScheduleEditor() {
+        if (scheduleAction.value is ScheduleActionUiState.Working) return
+        scheduleEditor.value = ScheduleEditorUiState.Closed
+    }
+
+    fun submitSchedule() {
+        val editor = scheduleEditor.value as? ScheduleEditorUiState.Open ?: return
+        if (scheduleAction.value is ScheduleActionUiState.Working) return
+        val command = editor.form.toCommandOrNull()
+        if (command == null) {
+            scheduleEditor.value = editor.copy(
+                error = "Enter valid local timestamps as YYYY-MM-DDTHH:MM and a valid IANA time zone.",
+            )
+            return
+        }
+        launchScheduleMutation("Saving schedule…") {
+            when (val mode = editor.mode) {
+                ScheduleEditorMode.Create -> scheduleWorkflow.create(command)
+                is ScheduleEditorMode.Edit -> scheduleWorkflow.edit(ScheduleId(mode.scheduleId), command)
+            }
+        }
+    }
+
+    fun setScheduleEnabled(scheduleId: String, enabled: Boolean) {
+        launchScheduleMutation(if (enabled) "Enabling schedule…" else "Disabling schedule…") {
+            scheduleWorkflow.setEnabled(ScheduleId(scheduleId), enabled)
+        }
+    }
+
+    fun requestDeleteSchedule(scheduleId: String) {
+        if (scheduleAction.value is ScheduleActionUiState.Working) return
+        pendingDeleteScheduleId.value = scheduleId
+    }
+
+    fun cancelDeleteSchedule() {
+        pendingDeleteScheduleId.value = null
+    }
+
+    fun confirmDeleteSchedule(scheduleId: String) {
+        if (pendingDeleteScheduleId.value != scheduleId) return
+        launchScheduleMutation("Deleting schedule…") {
+            scheduleWorkflow.delete(ScheduleId(scheduleId))
+        }
+    }
+
+    fun clearScheduleOutcome() {
+        if (scheduleAction.value !is ScheduleActionUiState.Working) {
+            scheduleAction.value = ScheduleActionUiState.Idle
+        }
+    }
+
+    private fun launchScheduleMutation(
+        message: String,
+        operation: suspend () -> ScheduleWorkflowResult,
+    ) {
+        if (scheduleAction.value is ScheduleActionUiState.Working) return
+        scheduleAction.value = ScheduleActionUiState.Working(message)
+        viewModelScope.launch {
+            try {
+                val result = operation()
+                scheduleAction.value = result.toUiState()
+                if (result is ScheduleWorkflowResult.Applied || result is ScheduleWorkflowResult.Deleted) {
+                    scheduleEditor.value = ScheduleEditorUiState.Closed
+                    pendingDeleteScheduleId.value = null
+                    refreshPreflight()
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                scheduleAction.value = ScheduleActionUiState.Failed(
+                    "Schedule operation failed unexpectedly: ${failure.javaClass.simpleName}.",
+                )
+            }
+        }
+    }
+
     class Factory(
         private val scheduleRepository: ScheduleRepository,
         private val profileRepository: AutomationProfileRepository,
@@ -161,6 +309,7 @@ class LenswakeViewModel(
         private val runtimePreflightProbe: RuntimePreflightProbe,
         private val installKnownPixelCameraProfile: InstallKnownPixelCameraProfile,
         private val rehearsalCoordinator: RehearsalCoordinator,
+        private val scheduleWorkflow: ScheduleWorkflow,
     ) : ViewModelProvider.Factory {
         constructor(graph: ApplicationGraph) : this(
             scheduleRepository = graph.scheduleRepository,
@@ -169,6 +318,7 @@ class LenswakeViewModel(
             runtimePreflightProbe = graph.runtimePreflightProbe,
             installKnownPixelCameraProfile = graph.installKnownPixelCameraProfile,
             rehearsalCoordinator = graph.rehearsalCoordinator,
+            scheduleWorkflow = graph.scheduleWorkflow,
         )
 
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -183,6 +333,7 @@ class LenswakeViewModel(
                 runtimePreflightProbe = runtimePreflightProbe,
                 installKnownPixelCameraProfile = installKnownPixelCameraProfile,
                 rehearsalCoordinator = rehearsalCoordinator,
+                scheduleWorkflow = scheduleWorkflow,
             ) as T
         }
     }
@@ -193,6 +344,68 @@ class LenswakeViewModel(
         const val STOP_TIMEOUT_MILLIS = 5_000L
         const val REHEARSAL_DURATION_SECONDS = 10L
     }
+}
+
+private data class ScheduleTransientUiState(
+    val editor: ScheduleEditorUiState,
+    val action: ScheduleActionUiState,
+    val pendingDeleteScheduleId: String?,
+)
+
+private data class TransientUiState(
+    val profileInstall: ProfileInstallUiState,
+    val rehearsal: RehearsalActionUiState,
+    val schedule: ScheduleTransientUiState,
+)
+
+private fun ScheduleFormUiState.toCommandOrNull(): ScheduleCommand? = runCatching {
+    val zone = ZoneId.of(zoneId.trim())
+    ScheduleCommand(
+        name = name,
+        startAt = LocalDateTime.parse(startLocal.trim()).toUnambiguousInstant(zone),
+        stopAt = LocalDateTime.parse(stopLocal.trim()).toUnambiguousInstant(zone),
+        zoneId = zone,
+        profileId = dev.po4yka.lenswake.core.ProfileId(profileId.trim()),
+        enabled = enabled,
+    )
+}.getOrNull()
+
+private fun LocalDateTime.toUnambiguousInstant(zoneId: ZoneId): java.time.Instant {
+    val offsets = zoneId.rules.getValidOffsets(this)
+    require(offsets.size == 1) { "Local time must exist exactly once in its time zone" }
+    return toInstant(offsets.single())
+}
+
+private fun ScheduleWorkflowResult.toUiState(): ScheduleActionUiState = when (this) {
+    is ScheduleWorkflowResult.Applied -> ScheduleActionUiState.Succeeded(
+        when (operation) {
+            ScheduleOperation.CREATED -> if (schedule.enabled) {
+                "Schedule created and both exact START and STOP alarms were registered."
+            } else {
+                "Disabled schedule created; no alarms were registered."
+            }
+            ScheduleOperation.UPDATED -> if (schedule.enabled) {
+                "Schedule updated and both exact alarms were replaced."
+            } else {
+                "Schedule updated in the disabled state; its alarms were cancelled."
+            }
+            ScheduleOperation.ENABLED -> "Schedule enabled and both exact START and STOP alarms were registered."
+            ScheduleOperation.DISABLED -> "Schedule disabled and its START and STOP alarms were cancelled."
+        },
+    )
+
+    is ScheduleWorkflowResult.Deleted -> ScheduleActionUiState.Succeeded(
+        "Schedule deleted after its START and STOP alarms were cancelled.",
+    )
+
+    is ScheduleWorkflowResult.Rejected -> ScheduleActionUiState.Failed(
+        message = "${code.name}: $message",
+    )
+
+    is ScheduleWorkflowResult.Failed -> ScheduleActionUiState.Failed(
+        message = "${code.name}: $message",
+        rollbackFailures = rollbackFailures,
+    )
 }
 
 private fun RehearsalResult.toUiState(): RehearsalActionUiState = when (this) {
@@ -251,6 +464,9 @@ internal object LenswakeUiStateMapper {
         preflight: PreflightReport,
         profileInstall: ProfileInstallUiState = ProfileInstallUiState.Idle,
         rehearsal: RehearsalActionUiState = RehearsalActionUiState.Idle,
+        scheduleEditor: ScheduleEditorUiState = ScheduleEditorUiState.Closed,
+        scheduleAction: ScheduleActionUiState = ScheduleActionUiState.Idle,
+        pendingDeleteScheduleId: String? = null,
     ): LenswakeUiState = LenswakeUiState(
         readiness = readiness(preflight),
         schedules = schedules
@@ -263,7 +479,21 @@ internal object LenswakeUiStateMapper {
         diagnosticEvents = events.map(::eventSummary),
         profileInstall = profileInstall,
         rehearsal = rehearsal,
+        scheduleEditor = scheduleEditor,
+        scheduleAction = scheduleAction,
+        pendingDeleteScheduleId = pendingDeleteScheduleId,
         actions = UiActionAvailability(
+            canCreateSchedule = preflight.hasAllScheduleChecksPassed() &&
+                profiles.any { it.compatibility == ProfileCompatibility.VERIFIED && it.verifiedAt != null } &&
+                scheduleAction !is ScheduleActionUiState.Working,
+            createScheduleUnavailableReason = when {
+                !preflight.hasAllScheduleChecksPassed() ->
+                    "Resolve all required Setup checks before creating an enabled schedule."
+                profiles.none { it.compatibility == ProfileCompatibility.VERIFIED && it.verifiedAt != null } ->
+                    "Install and rehearse the exact Pixel Camera profile before creating a schedule."
+                scheduleAction is ScheduleActionUiState.Working -> "A schedule operation is already in progress."
+                else -> "Schedule creation is available."
+            },
             canInstallCandidateProfile = profileInstall !is ProfileInstallUiState.Installing &&
                 profileInstall !is ProfileInstallUiState.Succeeded,
             installCandidateProfileUnavailableReason = when {
@@ -292,6 +522,11 @@ internal object LenswakeUiStateMapper {
         rehearsal !is RehearsalActionUiState.SafetyStopPending &&
         rehearsalRequiredChecks.all { type ->
             preflight.checks.singleOrNull { it.type == type }?.status == PreflightStatus.PASSED
+        }
+
+    private fun PreflightReport.hasAllScheduleChecksPassed(): Boolean =
+        scheduleRequiredChecks.all { type ->
+            checks.singleOrNull { it.type == type }?.status == PreflightStatus.PASSED
         }
 
     private fun rehearsalUnavailableReason(
@@ -361,15 +596,18 @@ internal object LenswakeUiStateMapper {
     private fun scheduleSummary(schedule: RecordingSchedule): ScheduleSummaryUiState {
         val start = schedule.startAt.atZone(schedule.zoneId).format(scheduleTimeFormatter)
         val stop = schedule.stopAt.atZone(schedule.zoneId).format(scheduleTimeFormatter)
+        val startLocal = schedule.startAt.atZone(schedule.zoneId).toLocalDateTime().format(editorTimeFormatter)
+        val stopLocal = schedule.stopAt.atZone(schedule.zoneId).toLocalDateTime().format(editorTimeFormatter)
         return ScheduleSummaryUiState(
             id = schedule.id.value,
             title = schedule.name,
             timing = "$start - $stop",
-            status = if (schedule.enabled) {
-                "Enabled; alarm registration not verified"
-            } else {
-                "Disabled"
-            },
+            status = if (schedule.enabled) "Enabled" else "Disabled",
+            startLocal = startLocal,
+            stopLocal = stopLocal,
+            zoneId = schedule.zoneId.id,
+            profileId = schedule.profileId.value,
+            enabled = schedule.enabled,
         )
     }
 
@@ -392,6 +630,7 @@ internal object LenswakeUiStateMapper {
                 ProfileCompatibility.NEEDS_REHEARSAL -> "Needs rehearsal"
                 ProfileCompatibility.INCOMPATIBLE -> "Incompatible"
             },
+            verifiedForScheduling = profile.compatibility == ProfileCompatibility.VERIFIED && profile.verifiedAt != null,
         )
     }
 
@@ -418,4 +657,12 @@ internal object LenswakeUiStateMapper {
         PreflightCheckType.ACCESSIBILITY_CONNECTED,
         PreflightCheckType.PROFILE_AVAILABLE,
     )
+
+    private val scheduleRequiredChecks = rehearsalRequiredChecks + setOf(
+        PreflightCheckType.DEVICE_WAKE,
+        PreflightCheckType.PROFILE_COMPATIBILITY,
+        PreflightCheckType.REHEARSAL_CURRENT,
+    )
+
+    private val editorTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm", Locale.ROOT)
 }
