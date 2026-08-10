@@ -12,6 +12,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
 import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.ui.theme.LenswakeTheme
 import java.time.LocalDateTime
@@ -28,6 +31,7 @@ class LenswakeAppTest {
         state: LenswakeUiState = LenswakeUiState(),
         onInstallCandidateProfile: () -> Unit = {},
         onRunRehearsal: () -> Unit = {},
+        onUpdateScheduleForm: (ScheduleFormUiState) -> Unit = {},
         onSubmitSchedule: () -> Unit = {},
         onRequestDeleteSchedule: (String) -> Unit = {},
         onCancelDeleteSchedule: () -> Unit = {},
@@ -40,6 +44,7 @@ class LenswakeAppTest {
                     state = state,
                     onInstallCandidateProfile = onInstallCandidateProfile,
                     onRunRehearsal = onRunRehearsal,
+                    onUpdateScheduleForm = onUpdateScheduleForm,
                     onSubmitSchedule = onSubmitSchedule,
                     onRequestDeleteSchedule = onRequestDeleteSchedule,
                     onCancelDeleteSchedule = onCancelDeleteSchedule,
@@ -257,6 +262,55 @@ class LenswakeAppTest {
         composeRule.onNodeWithText("Save schedule").performScrollTo().assertIsEnabled().performClick()
         composeRule.runOnIdle { assertEquals(1, submitRequests) }
         composeRule.onNodeWithText("120×", substring = true).assertExists()
+    }
+
+    @Test
+    fun scheduleProfileSelectorUsesSingleChoiceRadioOptions() {
+        val profiles = listOf(
+            ProfileSummaryUiState(
+                id = "profile-8",
+                title = "Pixel 8 Pro",
+                environment = "Android 17 · Pixel Camera version 700000 · English",
+                compatibility = "Verified for scheduling",
+                verifiedForScheduling = true,
+            ),
+            ProfileSummaryUiState(
+                id = "profile-9",
+                title = "Pixel 9 Pro",
+                environment = "Android 17 · Pixel Camera version 710000 · English",
+                compatibility = "Verified for scheduling",
+                verifiedForScheduling = true,
+            ),
+        )
+        var updatedForm: ScheduleFormUiState? = null
+        setContent(
+            state = LenswakeUiState(
+                profiles = profiles,
+                scheduleEditor = ScheduleEditorUiState.Open(
+                    mode = ScheduleEditorMode.Create,
+                    form = ScheduleFormUiState(
+                        name = "Dawn",
+                        startLocal = LocalDateTime.of(2030, 1, 1, 6, 0),
+                        stopLocal = LocalDateTime.of(2030, 1, 1, 8, 0),
+                        zoneId = ZoneId.of("Asia/Tbilisi"),
+                        profileId = "profile-8",
+                    ),
+                ),
+            ),
+            onUpdateScheduleForm = { updatedForm = it },
+        )
+        val radioButtonRole = SemanticsMatcher.expectValue(
+            SemanticsProperties.Role,
+            Role.RadioButton,
+        )
+
+        composeRule.onNode(hasText("Pixel 8 Pro") and radioButtonRole)
+            .performScrollTo()
+            .assertIsSelected()
+        composeRule.onNodeWithText("Pixel Camera version 710000", substring = true).assertExists()
+        composeRule.onNode(hasText("Pixel 9 Pro") and radioButtonRole).performClick()
+
+        composeRule.runOnIdle { assertEquals("profile-9", updatedForm?.profileId) }
     }
 
     @Test

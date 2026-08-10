@@ -1,6 +1,8 @@
 package dev.po4yka.lenswake.ui.screen
 
 import android.text.format.DateFormat
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,10 +20,11 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -38,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
@@ -281,26 +285,18 @@ private fun ScheduleEditor(
                 text = "Camera setup",
                 style = MaterialTheme.typography.titleMedium,
             )
-            profiles.forEach { profile ->
-                FilterChip(
-                    modifier = Modifier.fillMaxWidth(),
-                    selected = form.profileId == profile.id,
-                    onClick = { onUpdateForm(form.copy(profileId = profile.id)) },
-                    enabled = !busy && profile.verifiedForScheduling,
-                    label = {
-                        Column {
-                            Text(profile.title)
-                            Text(
-                                text = if (profile.verifiedForScheduling) {
-                                    "Verified for unattended scheduling"
-                                } else {
-                                    "Test this camera setup before using it"
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                    },
-                )
+            Column(modifier = Modifier.selectableGroup()) {
+                profiles.forEachIndexed { index, profile ->
+                    ProfileRadioOption(
+                        profile = profile,
+                        selected = form.profileId == profile.id,
+                        enabled = !busy && profile.verifiedForScheduling,
+                        onSelect = { onUpdateForm(form.copy(profileId = profile.id)) },
+                    )
+                    if (index < profiles.lastIndex) {
+                        HorizontalDivider()
+                    }
+                }
             }
             validation.profileError?.let { profileError ->
                 Text(
@@ -405,6 +401,63 @@ private fun ScheduleEditor(
             },
         )
         null -> Unit
+    }
+}
+
+@Composable
+private fun ProfileRadioOption(
+    profile: ProfileSummaryUiState,
+    selected: Boolean,
+    enabled: Boolean,
+    onSelect: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectable(
+                selected = selected,
+                enabled = enabled,
+                role = Role.RadioButton,
+                onClick = onSelect,
+            )
+            .sizeIn(minHeight = 56.dp)
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(
+            selected = selected,
+            onClick = null,
+            enabled = enabled,
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = profile.title,
+                style = MaterialTheme.typography.titleSmall,
+                color = if (enabled) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+            Text(
+                text = profile.environment,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = if (profile.verifiedForScheduling) {
+                    "Verified for scheduling"
+                } else {
+                    "Test this camera setup before using it"
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
