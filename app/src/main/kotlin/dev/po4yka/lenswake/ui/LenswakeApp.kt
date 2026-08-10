@@ -12,11 +12,13 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
-import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
@@ -25,30 +27,20 @@ import dev.po4yka.lenswake.ui.screen.ProfilesScreen
 import dev.po4yka.lenswake.ui.screen.SchedulesScreen
 import dev.po4yka.lenswake.ui.screen.SetupScreen
 import dev.po4yka.lenswake.core.SetupRemediationAction
-import kotlinx.serialization.Serializable
-
-@Serializable
-private data object SchedulesRoute : NavKey
-
-@Serializable
-private data object ProfilesRoute : NavKey
-
-@Serializable
-private data object DiagnosticsRoute : NavKey
-
-@Serializable
-private data object SetupRoute : NavKey
 
 private data class TopLevelDestination(
-    val key: NavKey,
+    val topLevel: LenswakeTopLevel,
     val label: String,
     val glyph: String,
-)
+) {
+    val key: LenswakeRoute
+        get() = topLevel.route
+}
 
 private val topLevelDestinations = listOf(
-    TopLevelDestination(SchedulesRoute, "Schedules", "S"),
-    TopLevelDestination(ProfilesRoute, "Profiles", "P"),
-    TopLevelDestination(DiagnosticsRoute, "Diagnostics", "D"),
+    TopLevelDestination(LenswakeTopLevel.SCHEDULES, "Schedules", "S"),
+    TopLevelDestination(LenswakeTopLevel.PROFILES, "Profiles", "P"),
+    TopLevelDestination(LenswakeTopLevel.DIAGNOSTICS, "Diagnostics", "D"),
 )
 
 @Composable
@@ -102,8 +94,22 @@ fun LenswakeApp(
     onOpenPixelCamera: () -> Unit = {},
     onClearRemediationMessage: () -> Unit = {},
 ) {
-    val backStack = rememberNavBackStack(SchedulesRoute)
-    val currentDestination = backStack.lastOrNull()
+    val selectedTopLevel = rememberSaveable { mutableStateOf(LenswakeTopLevel.SCHEDULES) }
+    val schedulesBackStack = rememberNavBackStack(SchedulesRoute)
+    val profilesBackStack = rememberNavBackStack(ProfilesRoute)
+    val diagnosticsBackStack = rememberNavBackStack(DiagnosticsRoute)
+    val backStacks = remember(schedulesBackStack, profilesBackStack, diagnosticsBackStack) {
+        mapOf(
+            LenswakeTopLevel.SCHEDULES to schedulesBackStack,
+            LenswakeTopLevel.PROFILES to profilesBackStack,
+            LenswakeTopLevel.DIAGNOSTICS to diagnosticsBackStack,
+        )
+    }
+    val navigation = remember(selectedTopLevel, backStacks) {
+        LenswakeNavigationState(selectedTopLevel, backStacks)
+    }
+    val backStack = navigation.activeBackStack
+    val activeTopLevelDestination = navigation.activeTopLevelDestination
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val useNavigationRail = maxWidth >= NavigationRailMinWidth
@@ -113,12 +119,8 @@ fun LenswakeApp(
                 NavigationRail {
                     topLevelDestinations.forEach { destination ->
                         NavigationRailItem(
-                            selected = currentDestination == destination.key,
-                            onClick = {
-                                if (currentDestination != destination.key) {
-                                    backStack.add(destination.key)
-                                }
-                            },
+                            selected = activeTopLevelDestination == destination.key,
+                            onClick = { navigation.navigateToTopLevel(destination.topLevel) },
                             icon = { Text(destination.glyph) },
                             label = { Text(destination.label) },
                         )
@@ -133,12 +135,8 @@ fun LenswakeApp(
                         NavigationBar {
                             topLevelDestinations.forEach { destination ->
                                 NavigationBarItem(
-                                    selected = currentDestination == destination.key,
-                                    onClick = {
-                                        if (currentDestination != destination.key) {
-                                            backStack.add(destination.key)
-                                        }
-                                    },
+                                    selected = activeTopLevelDestination == destination.key,
+                                    onClick = { navigation.navigateToTopLevel(destination.topLevel) },
                                     icon = { Text(destination.glyph) },
                                     label = { Text(destination.label) },
                                 )
@@ -150,13 +148,13 @@ fun LenswakeApp(
                 NavDisplay(
                     modifier = Modifier.fillMaxSize(),
                     backStack = backStack,
-                    onBack = { backStack.removeLastOrNull() },
+                    onBack = navigation::navigateBack,
                     entryProvider = entryProvider {
                         entry<SchedulesRoute> {
                             SchedulesScreen(
                                 state = state,
                                 contentPadding = contentPadding,
-                                onOpenSetup = { backStack.add(SetupRoute) },
+                                onOpenSetup = navigation::navigateToSetup,
                                 onBeginCreate = onBeginCreateSchedule,
                                 onBeginEdit = onBeginEditSchedule,
                                 onUpdateForm = onUpdateScheduleForm,
@@ -173,7 +171,7 @@ fun LenswakeApp(
                             ProfilesScreen(
                                 state = state,
                                 contentPadding = contentPadding,
-                                onOpenSetup = { backStack.add(SetupRoute) },
+                                onOpenSetup = navigation::navigateToSetup,
                                 onInstallCandidateProfile = onInstallCandidateProfile,
                                 onRunRehearsal = onRunRehearsal,
                             )
@@ -182,7 +180,7 @@ fun LenswakeApp(
                             DiagnosticsScreen(
                                 state = state,
                                 contentPadding = contentPadding,
-                                onOpenSetup = { backStack.add(SetupRoute) },
+                                onOpenSetup = navigation::navigateToSetup,
                                 onOpenPixelCamera = onOpenPixelCamera,
                             )
                         }
@@ -190,7 +188,7 @@ fun LenswakeApp(
                             SetupScreen(
                                 state = state,
                                 contentPadding = contentPadding,
-                                onBack = { backStack.removeLastOrNull() },
+                                onBack = navigation::navigateBack,
                                 onRemediate = onRemediate,
                                 onClearRemediationMessage = onClearRemediationMessage,
                             )

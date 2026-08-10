@@ -1,7 +1,10 @@
 package dev.po4yka.lenswake.ui
 
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -58,6 +61,29 @@ class LenswakeAppTest {
         composeRule.onNodeWithText("Schedules").performClick()
         composeRule.onNodeWithText("Review setup").performClick()
         composeRule.onNodeWithText("Readiness checks").assertExists()
+    }
+
+    @Test
+    fun nestedSetupStaysScopedToItsSelectedTopLevelBackStack() {
+        setContent()
+        val profilesNavigation = composeRule.onNode(hasText("Profiles") and hasClickAction())
+        val schedulesNavigation = composeRule.onNode(hasText("Schedules") and hasClickAction())
+        profilesNavigation.performClick()
+        composeRule.onNodeWithText("Review setup").performClick()
+
+        composeRule.onNodeWithText("Readiness checks").assertExists()
+        profilesNavigation.assertIsSelected()
+
+        schedulesNavigation.performClick()
+        composeRule.onNodeWithText("No schedules").assertExists()
+        schedulesNavigation.assertIsSelected()
+
+        profilesNavigation.performClick()
+        composeRule.onNodeWithText("Readiness checks").assertExists()
+        profilesNavigation.assertIsSelected()
+
+        composeRule.onNodeWithText("Back").performClick()
+        composeRule.onNodeWithText("No profiles").assertExists()
     }
 
     @Test
