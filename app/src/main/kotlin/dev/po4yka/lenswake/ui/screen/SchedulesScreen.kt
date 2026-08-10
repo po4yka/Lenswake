@@ -174,15 +174,23 @@ fun SchedulesScreen(
                 ScheduleCard(
                     schedule = schedule,
                     busy = busy,
-                    confirmingDelete = state.pendingDeleteScheduleId == schedule.id,
                     onEdit = { onBeginEdit(schedule.id) },
                     onSetEnabled = { onSetEnabled(schedule.id, !schedule.enabled) },
                     onRequestDelete = { onRequestDelete(schedule.id) },
-                    onCancelDelete = onCancelDelete,
-                    onConfirmDelete = { onConfirmDelete(schedule.id) },
                 )
             }
         }
+    }
+
+    val schedulePendingDelete = state.pendingDeleteScheduleId?.let { scheduleId ->
+        state.schedules.firstOrNull { it.id == scheduleId }
+    }
+    schedulePendingDelete?.let { schedule ->
+        DeleteScheduleDialog(
+            scheduleName = schedule.title,
+            onDismiss = onCancelDelete,
+            onConfirm = { onConfirmDelete(schedule.id) },
+        )
     }
 }
 
@@ -533,12 +541,9 @@ private fun LocalTime.toFormTimeLabel(locale: Locale): String = format(
 private fun ScheduleCard(
     schedule: ScheduleSummaryUiState,
     busy: Boolean,
-    confirmingDelete: Boolean,
     onEdit: () -> Unit,
     onSetEnabled: () -> Unit,
     onRequestDelete: () -> Unit,
-    onCancelDelete: () -> Unit,
-    onConfirmDelete: () -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -574,37 +579,49 @@ private fun ScheduleCard(
             ) {
                 Text(if (schedule.enabled) "Disable" else "Enable")
             }
-            if (confirmingDelete) {
-                Text(
-                    text = "Delete this schedule? Its future recording times will be cancelled.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                )
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !busy,
-                    onClick = onConfirmDelete,
-                ) {
-                    Text("Confirm delete")
-                }
-                TextButton(
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !busy,
-                    onClick = onCancelDelete,
-                ) {
-                    Text("Keep schedule")
-                }
-            } else {
-                TextButton(
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !busy,
-                    onClick = onRequestDelete,
-                ) {
-                    Text("Delete")
-                }
+            TextButton(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !busy,
+                onClick = onRequestDelete,
+            ) {
+                Text("Delete schedule")
             }
         }
     }
+}
+
+@Composable
+private fun DeleteScheduleDialog(
+    scheduleName: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete $scheduleName?") },
+        text = {
+            Text("This schedule and its future recording times will be deleted. This can’t be undone.")
+        },
+        confirmButton = {
+            TextButton(
+                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                onClick = onConfirm,
+            ) {
+                Text(
+                    text = "Delete",
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(
+                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                onClick = onDismiss,
+            ) {
+                Text("Cancel")
+            }
+        },
+    )
 }
 
 @Composable

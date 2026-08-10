@@ -293,6 +293,8 @@ class LenswakeViewModel internal constructor(
 
     fun confirmDeleteSchedule(scheduleId: String) {
         if (pendingDeleteScheduleId.value != scheduleId) return
+        if (scheduleAction.value is ScheduleActionUiState.Working) return
+        pendingDeleteScheduleId.value = null
         launchScheduleMutation("Deleting schedule…") {
             scheduleWorkflow.delete(ScheduleId(scheduleId))
         }

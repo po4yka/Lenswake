@@ -367,6 +367,38 @@ class LenswakeViewModelTest {
     }
 
     @Test
+    fun confirmedDeleteClosesConfirmationAndRemovesSchedule() = runTest {
+        val schedules = FakeScheduleRepository().also { it.save(schedule()) }
+        val profiles = FakeProfileRepository().also { it.save(profile()) }
+        val viewModel = LenswakeViewModel(
+            schedules,
+            profiles,
+            FakeExecutionRepository(),
+            RuntimePreflightProbe { scheduleEligiblePreflight() },
+            installUseCase(profiles),
+            unavailableRehearsalCoordinator(),
+            scheduleWorkflow(schedules, profiles),
+        )
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.state.collect()
+        }
+
+        viewModel.state.first { it.schedules.singleOrNull()?.id == scheduleId.value }
+        viewModel.requestDeleteSchedule(scheduleId.value)
+        assertEquals(
+            scheduleId.value,
+            viewModel.state.first { it.pendingDeleteScheduleId != null }.pendingDeleteScheduleId,
+        )
+
+        viewModel.confirmDeleteSchedule(scheduleId.value)
+
+        val deleted = viewModel.state.first {
+            it.scheduleAction is ScheduleActionUiState.Succeeded && it.schedules.isEmpty()
+        }
+        assertEquals(null, deleted.pendingDeleteScheduleId)
+    }
+
+    @Test
     fun createScheduleFormPersistsAndArmsBothAlarmsBeforeReportingSuccess() = runTest {
         val schedules = FakeScheduleRepository()
         val profiles = FakeProfileRepository().also { it.save(profile()) }

@@ -29,6 +29,9 @@ class LenswakeAppTest {
         onInstallCandidateProfile: () -> Unit = {},
         onRunRehearsal: () -> Unit = {},
         onSubmitSchedule: () -> Unit = {},
+        onRequestDeleteSchedule: (String) -> Unit = {},
+        onCancelDeleteSchedule: () -> Unit = {},
+        onConfirmDeleteSchedule: (String) -> Unit = {},
         onRemediate: (SetupRemediationAction) -> Unit = {},
     ) {
         composeRule.setContent {
@@ -38,6 +41,9 @@ class LenswakeAppTest {
                     onInstallCandidateProfile = onInstallCandidateProfile,
                     onRunRehearsal = onRunRehearsal,
                     onSubmitSchedule = onSubmitSchedule,
+                    onRequestDeleteSchedule = onRequestDeleteSchedule,
+                    onCancelDeleteSchedule = onCancelDeleteSchedule,
+                    onConfirmDeleteSchedule = onConfirmDeleteSchedule,
                     onRemediate = onRemediate,
                 )
             }
@@ -251,6 +257,56 @@ class LenswakeAppTest {
         composeRule.onNodeWithText("Save schedule").performScrollTo().assertIsEnabled().performClick()
         composeRule.runOnIdle { assertEquals(1, submitRequests) }
         composeRule.onNodeWithText("120×", substring = true).assertExists()
+    }
+
+    @Test
+    fun scheduleDeleteUsesModalConfirmation() {
+        val schedule = ScheduleSummaryUiState(
+            id = "schedule-1",
+            title = "Dawn",
+            timing = "Jan 1, 2030 06:00 - Jan 1, 2030 08:00",
+            status = "Enabled",
+            startLocal = LocalDateTime.of(2030, 1, 1, 6, 0),
+            stopLocal = LocalDateTime.of(2030, 1, 1, 8, 0),
+            zoneId = ZoneId.of("Asia/Tbilisi"),
+            profileId = "profile-verified",
+            enabled = true,
+        )
+        val state = androidx.compose.runtime.mutableStateOf(
+            LenswakeUiState(schedules = listOf(schedule)),
+        )
+        var cancelled = false
+        var confirmedScheduleId: String? = null
+        composeRule.setContent {
+            LenswakeTheme {
+                LenswakeApp(
+                    state = state.value,
+                    onRequestDeleteSchedule = { scheduleId ->
+                        state.value = state.value.copy(pendingDeleteScheduleId = scheduleId)
+                    },
+                    onCancelDeleteSchedule = {
+                        cancelled = true
+                        state.value = state.value.copy(pendingDeleteScheduleId = null)
+                    },
+                    onConfirmDeleteSchedule = { scheduleId ->
+                        confirmedScheduleId = scheduleId
+                        state.value = state.value.copy(pendingDeleteScheduleId = null)
+                    },
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Delete schedule").performScrollTo().performClick()
+        composeRule.onNodeWithText("Delete Dawn?").assertExists()
+        composeRule.onNodeWithText("This can’t be undone.", substring = true).assertExists()
+
+        composeRule.onNodeWithText("Cancel").performClick()
+        composeRule.runOnIdle { assertEquals(true, cancelled) }
+        composeRule.onNodeWithText("Delete Dawn?").assertDoesNotExist()
+
+        composeRule.onNodeWithText("Delete schedule").performScrollTo().performClick()
+        composeRule.onNodeWithText("Delete").performClick()
+        composeRule.runOnIdle { assertEquals("schedule-1", confirmedScheduleId) }
     }
 
     @Test
