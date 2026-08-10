@@ -462,7 +462,7 @@ Triggered after reboot, clock/timezone changes, package replacement, or exact-al
 Responsibilities:
 
 ```text
-start a bounded recovery foreground service
+schedule a persisted recovery job
         ↓
 load pending schedules
         ↓
@@ -476,6 +476,12 @@ invalidate runtime capabilities that no longer hold
 ```
 
 It must not launch Pixel Camera.
+
+`AlarmRecoveryService` is an expedited, persisted `JobService`, not a foreground service. Recovery
+therefore remains eligible to inspect and invalidate durable alarm state after exact-alarm access
+is lost. Only `AutomationExecutionService`, whose starts are delivered by accepted exact alarms,
+uses `systemExempted`. The recovery job has its own 30-second work deadline. If Android stops it
+before completion, the service requeues it through the persisted, two-attempt recovery coordinator.
 
 ---
 
@@ -540,8 +546,9 @@ source of truth.
 The coordinator returns explicit `Accepted`, `TerminalRejected`, or `Retryable` outcomes. Retry is
 never inferred from whether a `Throwable` happens to exist. Service start acceptance and work
 completion share one synchronized lifecycle gate, so completion of older work cannot stop a newly
-accepted trigger. `AlarmRecoveryService` restores future schedules and re-arms journal transport;
-it never invokes Pixel Camera or the automation engine.
+accepted trigger. `AlarmRecoveryService` is an independent, persisted, bounded job that restores
+future schedules and re-arms journal transport; it never invokes Pixel Camera or the automation
+engine.
 
 Delivery retry and recovery retry are both bounded and persisted before requeue. Exhaustion,
 missing exact-alarm capability, journal-update failure, or scheduling failure creates a durable

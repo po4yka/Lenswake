@@ -37,17 +37,36 @@ class AutomationExecutionServiceManifestTest {
     }
 
     @Test
-    fun recoveryServiceIsPrivateAndDeclaresSystemExemptedType() {
+    fun recoveryServiceIsPrivateJobServiceIndependentOfExactAlarmAccess() {
         val info = context.packageManager.getServiceInfo(
             ComponentName(context, AlarmRecoveryService::class.java),
             PackageManager.ComponentInfoFlags.of(0),
         )
 
         assertFalse(info.exported)
-        assertTrue(
-            info.foregroundServiceType and ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED != 0,
-        )
-        assertEquals(android.app.Service.START_REDELIVER_INTENT, ALARM_RECOVERY_RESTART_MODE)
+        assertEquals("android.permission.BIND_JOB_SERVICE", info.permission)
+        assertEquals(0, info.foregroundServiceType)
+    }
+
+    @Test
+    fun recoveryJobIsPersistedAndExpedited() {
+        val job = AndroidAlarmRecoveryJobScheduler(context)
+            .jobInfo(Intent.ACTION_MY_PACKAGE_REPLACED)
+
+        assertTrue(job.isPersisted)
+        assertTrue(job.isExpedited)
+        assertEquals(Intent.ACTION_MY_PACKAGE_REPLACED, job.extras.getString(EXTRA_RECOVERY_ACTION))
+    }
+
+    @Test
+    fun recoveryRetryIsPersistedWithoutExactAlarmTransport() {
+        val job = AndroidAlarmRecoveryJobScheduler(context)
+            .retryJobInfo(System.currentTimeMillis() + 30_000L)
+
+        assertTrue(job.isPersisted)
+        assertFalse(job.isExpedited)
+        assertTrue(job.minLatencyMillis > 0L)
+        assertEquals(ACTION_ALARM_RECOVERY_RETRY, job.extras.getString(EXTRA_RECOVERY_ACTION))
     }
 
     @Test
@@ -88,22 +107,32 @@ class AutomationExecutionServiceManifestTest {
     }
 
     @Test
-    fun recoveryServiceSurvivesMissingSystemExemptedPrerequisite() {
+    fun recoveryServiceRunsAndPersistsCapabilityFailureWithoutExactAlarmAccess() {
         val alarmManager = context.getSystemService(AlarmManager::class.java)
         assumeFalse(alarmManager.canScheduleExactAlarms())
+        val checkpointPersistence = SharedPreferencesAlarmRecoveryCheckpointPersistence(context)
+        checkpointPersistence.clear()
         val processId = Process.myPid()
 
-        context.startForegroundService(
-            Intent(context, AlarmRecoveryService::class.java)
-                .setAction(Intent.ACTION_MY_PACKAGE_REPLACED),
-        )
-        SystemClock.sleep(1_000L)
+        AndroidAlarmRecoveryJobScheduler(context)
+            .schedule(Intent.ACTION_MY_PACKAGE_REPLACED)
+            .getOrThrow()
+        val deadline = SystemClock.uptimeMillis() + 5_000L
+        while (
+            checkpointPersistence.checkpoint()?.exhausted != true &&
+            SystemClock.uptimeMillis() < deadline
+        ) {
+            SystemClock.sleep(100L)
+        }
 
         assertEquals(processId, Process.myPid())
+        val checkpoint = checkpointPersistence.checkpoint()
+        assertTrue(checkpoint?.exhausted == true)
+        assertTrue(checkpoint?.lastFailure?.contains("Exact alarm access is unavailable") == true)
     }
 
     @Test
-    fun bootRecoveryReceiverDoesNotStartIneligibleSystemExemptedService() {
+    fun bootRecoveryReceiverRemainsSafeWithoutExactAlarmAccess() {
         val alarmManager = context.getSystemService(AlarmManager::class.java)
         assumeFalse(alarmManager.canScheduleExactAlarms())
         val processId = Process.myPid()

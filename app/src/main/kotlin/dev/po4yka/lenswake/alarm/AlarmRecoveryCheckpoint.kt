@@ -1,9 +1,6 @@
 package dev.po4yka.lenswake.alarm
 
-import android.app.AlarmManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
 import android.util.Base64
 import java.nio.charset.StandardCharsets
 
@@ -103,44 +100,14 @@ internal interface AlarmRecoveryRetryBackend {
 }
 
 internal class AndroidAlarmRecoveryRetryBackend(
-    private val context: Context,
+    context: Context,
 ) : AlarmRecoveryRetryBackend {
-    private val alarmManager = context.getSystemService(AlarmManager::class.java)
+    private val scheduler = AndroidAlarmRecoveryJobScheduler(context)
 
-    override fun schedule(triggerAtEpochMillis: Long): Result<Unit> = runCatching {
-        val pendingIntent = PendingIntent.getBroadcast(
-            context,
-            RECOVERY_RETRY_REQUEST_CODE,
-            retryIntent(),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        alarmManager.setExactAndAllowWhileIdle(
-            AlarmManager.RTC_WAKEUP,
-            triggerAtEpochMillis,
-            pendingIntent,
-        )
-    }
+    override fun schedule(triggerAtEpochMillis: Long): Result<Unit> =
+        scheduler.scheduleRetry(triggerAtEpochMillis)
 
-    override fun cancel(): Boolean = runCatching {
-        val pendingIntent = PendingIntent.getBroadcast(
-            context,
-            RECOVERY_RETRY_REQUEST_CODE,
-            retryIntent(),
-            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
-        )
-        if (pendingIntent != null) {
-            alarmManager.cancel(pendingIntent)
-            pendingIntent.cancel()
-        }
-        true
-    }.getOrDefault(false)
-
-    private fun retryIntent(): Intent = Intent(context, AlarmRecoveryReceiver::class.java)
-        .setAction(ACTION_ALARM_RECOVERY_RETRY)
-
-    private companion object {
-        const val RECOVERY_RETRY_REQUEST_CODE = 1_003
-    }
+    override fun cancel(): Boolean = scheduler.cancelRetry()
 }
 
 internal sealed interface AlarmRecoveryRetryResult {
@@ -211,9 +178,9 @@ internal class AlarmRecoveryRetryCoordinator(
         return escalate(AlarmTransportFailureCode.RECOVERY_REQUEUE_FAILED, schedulingDetail.trim())
     }
 
-    fun resolve(): Boolean {
+    fun resolve(cancelScheduledRetry: Boolean = true): Boolean {
         val cleared = runCatching { persistence.clear() }.getOrDefault(false)
-        runCatching { backend.cancel() }
+        if (cancelScheduledRetry) runCatching { backend.cancel() }
         escalator.resolveRecovery()
         return cleared
     }

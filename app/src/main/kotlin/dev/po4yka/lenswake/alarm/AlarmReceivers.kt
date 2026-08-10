@@ -1,18 +1,17 @@
 package dev.po4yka.lenswake.alarm
 
-import android.app.AlarmManager
+import android.app.job.JobInfo
+import android.app.job.JobScheduler
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.PersistableBundle
 import android.os.UserManager
 import android.util.Log
 
-internal fun interface AlarmRecoveryServiceStarter {
-    fun start(action: String): Result<Unit>
-}
-
-internal fun interface AlarmRecoveryServiceAdmission {
-    fun canStart(): Boolean
+internal fun interface AlarmRecoveryJobScheduler {
+    fun schedule(action: String): Result<Unit>
 }
 
 internal fun interface AlarmRecoveryFailureHandler {
@@ -20,7 +19,7 @@ internal fun interface AlarmRecoveryFailureHandler {
 }
 
 internal sealed interface AlarmRecoveryBootstrapResult {
-    data object Started : AlarmRecoveryBootstrapResult
+    data object Scheduled : AlarmRecoveryBootstrapResult
     data object DeferredUntilUnlock : AlarmRecoveryBootstrapResult
     data class Requeued(
         val attempt: Int,
@@ -33,8 +32,7 @@ internal sealed interface AlarmRecoveryBootstrapResult {
 /** Direct-Boot-safe transport coordinator. It never opens Room or invokes Camera automation. */
 internal class AlarmRecoveryBootstrapCoordinator(
     private val persistence: AlarmRecoveryCheckpointPersistence,
-    private val serviceAdmission: AlarmRecoveryServiceAdmission,
-    private val serviceStarter: AlarmRecoveryServiceStarter,
+    private val jobScheduler: AlarmRecoveryJobScheduler,
     private val failureHandler: AlarmRecoveryFailureHandler,
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
 ) {
@@ -51,17 +49,10 @@ internal class AlarmRecoveryBootstrapCoordinator(
             return AlarmRecoveryBootstrapResult.DeferredUntilUnlock
         }
 
-        if (!serviceAdmission.canStart()) {
-            return failureHandler.retry(
-                "Alarm recovery foreground service was not started for $action because " +
-                    "exact-alarm access is unavailable.",
-                capabilityUnavailable = true,
-            ).toBootstrapResult()
-        }
-        val startFailure = serviceStarter.start(action).exceptionOrNull()
-            ?: return AlarmRecoveryBootstrapResult.Started
+        val startFailure = jobScheduler.schedule(action).exceptionOrNull()
+            ?: return AlarmRecoveryBootstrapResult.Scheduled
         return failureHandler.retry(
-            "Recovery service admission failed for $action: " +
+            "Recovery job scheduling failed for $action: " +
                 "${startFailure.javaClass.simpleName}: ${startFailure.message.orEmpty()}",
             capabilityUnavailable = false,
         ).toBootstrapResult()
@@ -117,6 +108,57 @@ internal class AlarmRecoveryBootstrapCoordinator(
     }
 }
 
+internal class AndroidAlarmRecoveryJobScheduler(
+    context: Context,
+) : AlarmRecoveryJobScheduler {
+    private val componentName = ComponentName(context, AlarmRecoveryService::class.java)
+    private val scheduler = context.getSystemService(JobScheduler::class.java)
+
+    override fun schedule(action: String): Result<Unit> = runCatching {
+        val result = scheduler.schedule(jobInfo(action))
+        check(result == JobScheduler.RESULT_SUCCESS) {
+            "JobScheduler rejected alarm recovery"
+        }
+    }
+
+    internal fun scheduleRetry(triggerAtEpochMillis: Long): Result<Unit> = runCatching {
+        val result = scheduler.schedule(retryJobInfo(triggerAtEpochMillis))
+        check(result == JobScheduler.RESULT_SUCCESS) {
+            "JobScheduler rejected alarm recovery retry"
+        }
+    }
+
+    internal fun cancelRetry(): Boolean = runCatching {
+        scheduler.cancel(ALARM_RECOVERY_RETRY_JOB_ID)
+        true
+    }.getOrDefault(false)
+
+    internal fun jobInfo(action: String): JobInfo {
+        val extras = PersistableBundle().apply { putString(EXTRA_RECOVERY_ACTION, action) }
+        return JobInfo.Builder(ALARM_RECOVERY_JOB_ID, componentName)
+            .setExtras(extras)
+            .setPersisted(true)
+            .setExpedited(true)
+            .build()
+    }
+
+    internal fun retryJobInfo(triggerAtEpochMillis: Long): JobInfo {
+        val delayMillis = (triggerAtEpochMillis - System.currentTimeMillis()).coerceAtLeast(0L)
+        val extras = PersistableBundle().apply {
+            putString(EXTRA_RECOVERY_ACTION, ACTION_ALARM_RECOVERY_RETRY)
+        }
+        return JobInfo.Builder(ALARM_RECOVERY_RETRY_JOB_ID, componentName)
+            .setExtras(extras)
+            .setPersisted(true)
+            .setMinimumLatency(delayMillis)
+            .build()
+    }
+}
+
+internal const val ALARM_RECOVERY_JOB_ID = 1_002
+internal const val ALARM_RECOVERY_RETRY_JOB_ID = 1_003
+internal const val EXTRA_RECOVERY_ACTION = "alarm_recovery_action"
+
 class AlarmRecoveryReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action ?: return
@@ -132,37 +174,27 @@ class AlarmRecoveryReceiver : BroadcastReceiver() {
             backend = AndroidAlarmRecoveryRetryBackend(context),
             escalator = escalator,
         )
-        val alarmManager = context.getSystemService(AlarmManager::class.java)
         val coordinator = AlarmRecoveryBootstrapCoordinator(
             persistence = persistence,
-            serviceAdmission = AlarmRecoveryServiceAdmission {
-                runCatching { alarmManager.canScheduleExactAlarms() }.getOrDefault(false)
-            },
-            serviceStarter = AlarmRecoveryServiceStarter { recoveryAction ->
-                runCatching {
-                    context.startForegroundService(
-                        Intent(context, AlarmRecoveryService::class.java).setAction(recoveryAction),
-                    )
-                }.map { }
-            },
+            jobScheduler = AndroidAlarmRecoveryJobScheduler(context),
             failureHandler = AlarmRecoveryFailureHandler { detail, capabilityUnavailable ->
                 retryCoordinator.retry(detail, capabilityUnavailable)
             },
         )
         val userUnlocked = context.getSystemService(UserManager::class.java).isUserUnlocked
         when (val result = coordinator.handle(action, userUnlocked)) {
-            AlarmRecoveryBootstrapResult.Started -> Unit
+            AlarmRecoveryBootstrapResult.Scheduled -> Unit
             AlarmRecoveryBootstrapResult.DeferredUntilUnlock -> Log.i(
                 TAG,
                 "Alarm recovery checkpoint retained until credential storage is unlocked",
             )
             is AlarmRecoveryBootstrapResult.Requeued -> Log.e(
                 TAG,
-                "Alarm recovery admission durably requeued as attempt ${result.attempt}",
+                "Alarm recovery scheduling durably requeued as attempt ${result.attempt}",
             )
             is AlarmRecoveryBootstrapResult.Escalated -> Log.e(
                 TAG,
-                "Alarm recovery admission escalated with ${result.code}",
+                "Alarm recovery scheduling escalated with ${result.code}",
             )
             AlarmRecoveryBootstrapResult.Ignored -> Unit
         }

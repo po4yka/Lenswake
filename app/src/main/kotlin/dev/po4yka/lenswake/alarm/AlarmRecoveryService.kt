@@ -1,43 +1,37 @@
 package dev.po4yka.lenswake.alarm
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.Service
-import android.content.Intent
-import android.content.pm.ServiceInfo
-import android.os.IBinder
+import android.app.job.JobParameters
+import android.app.job.JobService
 import android.util.Log
 import java.util.concurrent.CancellationException
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 
-internal const val ALARM_RECOVERY_RESTART_MODE: Int = Service.START_REDELIVER_INTENT
-
 /** Restores future alarms and re-arms durable delivery entries without invoking automation. */
-class AlarmRecoveryService : Service() {
+class AlarmRecoveryService : JobService() {
     private val serviceScope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO + CoroutineName("lenswake-alarm-recovery"),
     )
-    private val queue = Channel<String>(Channel.UNLIMITED)
-    private val lifecycleGate = AlarmServiceLifecycleGate()
-    private lateinit var notificationManager: NotificationManager
+    private val recoveryMutex = Mutex()
+    private val jobs = ConcurrentHashMap<Int, Job>()
     private lateinit var reconciler: AlarmJournalReconciler
     private lateinit var escalator: AlarmTransportEscalator
     private lateinit var retryCoordinator: AlarmRecoveryRetryCoordinator
     private lateinit var checkpointPersistence: AlarmRecoveryCheckpointPersistence
-    private var foregroundAdmitted = false
 
     override fun onCreate() {
         super.onCreate()
-        notificationManager = getSystemService(NotificationManager::class.java)
         reconciler = AlarmJournalReconciler(
             journal = AlarmDeliveryJournal(this),
             backend = AndroidExactAlarmRearmBackend(this),
@@ -52,36 +46,40 @@ class AlarmRecoveryService : Service() {
             backend = AndroidAlarmRecoveryRetryBackend(this),
             escalator = escalator,
         )
-        createNotificationChannel()
-        foregroundAdmitted = enterForeground()
-        if (!foregroundAdmitted) return
-        serviceScope.launch {
-            for (action in queue) recover(action)
-        }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (!foregroundAdmitted) {
-            stopSelfResult(startId)
-            return START_NOT_STICKY
-        }
-        return lifecycleGate.onStart(startId) {
-            lifecycleGate.workAccepted()
-            val action = intent?.action ?: ACTION_ALARM_RECOVERY_RETRY
-            if (queue.trySend(action).isFailure) {
-                lifecycleGate.workRejected()
-                stopSelfResult(startId)
+    override fun onStartJob(params: JobParameters): Boolean {
+        val action = params.extras.getString(EXTRA_RECOVERY_ACTION)
+            ?: ACTION_ALARM_RECOVERY_RETRY
+        lateinit var job: Job
+        job = serviceScope.launch(start = CoroutineStart.LAZY) {
+            try {
+                recoveryMutex.withLock { recover(action) }
+                jobFinished(params, false)
+            } finally {
+                jobs.remove(params.jobId, job)
             }
-            ALARM_RECOVERY_RESTART_MODE
         }
+        jobs.put(params.jobId, job)?.cancel()
+        job.start()
+        return true
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    override fun onStopJob(params: JobParameters): Boolean {
+        val job = jobs.remove(params.jobId) ?: return false
+        job.cancel()
+        handleRecoveryFailure(
+            RecoveryFailure(
+                detail = "Alarm recovery job was stopped by Android " +
+                    "(reason=${params.stopReason}).",
+                capabilityUnavailable = false,
+            ),
+        )
+        return false
+    }
 
     override fun onDestroy() {
-        queue.close()
         serviceScope.cancel()
-        stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
 
@@ -89,7 +87,9 @@ class AlarmRecoveryService : Service() {
         try {
             val failure = withTimeout(RECOVERY_DEADLINE_MILLIS) { attemptRecovery(action) }
             if (failure == null) {
-                retryCoordinator.resolve()
+                retryCoordinator.resolve(
+                    cancelScheduledRetry = action != ACTION_ALARM_RECOVERY_RETRY,
+                )
                 Log.i(TAG, "Alarm recovery completed and its durable checkpoint was cleared")
             } else {
                 handleRecoveryFailure(failure)
@@ -106,8 +106,6 @@ class AlarmRecoveryService : Service() {
             handleRecoveryFailure(
                 RecoveryFailure("Alarm recovery failed: ${error.message.orEmpty()}", false),
             )
-        } finally {
-            lifecycleGate.complete { latestStartId -> stopSelfResult(latestStartId) }
         }
     }
 
@@ -184,52 +182,6 @@ class AlarmRecoveryService : Service() {
         }
     }
 
-    private fun createNotificationChannel() {
-        notificationManager.createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_ID,
-                "Alarm recovery",
-                NotificationManager.IMPORTANCE_LOW,
-            ).apply {
-                description = "Shows briefly while Lenswake restores scheduled alarms"
-                setShowBadge(false)
-            },
-        )
-    }
-
-    private fun enterForeground(): Boolean = try {
-        startForeground(
-            NOTIFICATION_ID,
-            notification(),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED,
-        )
-        true
-    } catch (error: SecurityException) {
-        Log.e(
-            TAG,
-            "Alarm recovery foreground admission failed because exact-alarm access is unavailable",
-            error,
-        )
-        handleRecoveryFailure(
-            RecoveryFailure(
-                detail = "Alarm recovery foreground admission failed because exact-alarm access " +
-                    "is unavailable: ${error.message.orEmpty()}",
-                capabilityUnavailable = true,
-            ),
-        )
-        stopSelf()
-        false
-    }
-
-    private fun notification(): Notification = Notification.Builder(this, CHANNEL_ID)
-        .setSmallIcon(android.R.drawable.ic_popup_sync)
-        .setContentTitle("Lenswake alarm recovery")
-        .setContentText("Restoring future scheduled alarms")
-        .setCategory(Notification.CATEGORY_SERVICE)
-        .setOnlyAlertOnce(true)
-        .setOngoing(true)
-        .build()
-
     private data class RecoveryFailure(
         val detail: String,
         val capabilityUnavailable: Boolean,
@@ -237,8 +189,6 @@ class AlarmRecoveryService : Service() {
 
     private companion object {
         const val TAG = "LenswakeAlarm"
-        const val CHANNEL_ID = "alarm_recovery"
-        const val NOTIFICATION_ID = 1_002
         const val RECOVERY_DEADLINE_MILLIS = 30_000L
     }
 }

@@ -396,6 +396,20 @@ class AlarmRecoveryRetryCoordinatorTest {
         assertEquals(listOf(AlarmTransportEscalator.RECOVERY_MARKER_ID), notifier.dismissed)
     }
 
+    @Test
+    fun successfulRetryJobDoesNotCancelItsOwnSchedulerIdentity() {
+        val checkpoint = FakeRecoveryCheckpointPersistence()
+        val failures = FakeFailurePersistence()
+        val backend = FakeRecoveryRetryBackend()
+        val coordinator = recoveryCoordinator(checkpoint, backend, failures)
+        coordinator.retry("Room was unavailable.")
+
+        assertTrue(coordinator.resolve(cancelScheduledRetry = false))
+
+        assertNull(checkpoint.checkpoint())
+        assertEquals(0, backend.cancelCount)
+    }
+
     private fun recoveryCoordinator(
         checkpoint: FakeRecoveryCheckpointPersistence,
         backend: FakeRecoveryRetryBackend,

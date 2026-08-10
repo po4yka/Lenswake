@@ -9,9 +9,9 @@ import org.junit.jupiter.api.Test
 
 class AlarmRecoveryBootstrapCoordinatorTest {
     @Test
-    fun lockedBootPersistsMinimalCheckpointWithoutStartingCredentialProtectedRecovery() {
+    fun lockedBootPersistsMinimalCheckpointWithoutSchedulingCredentialProtectedRecovery() {
         val persistence = BootstrapCheckpointPersistence()
-        val starter = RecoveryServiceStarterSpy()
+        val starter = RecoveryJobSchedulerSpy()
         val coordinator = coordinator(persistence, starter)
 
         val result = coordinator.handle(Intent.ACTION_LOCKED_BOOT_COMPLETED, userUnlocked = false)
@@ -25,24 +25,24 @@ class AlarmRecoveryBootstrapCoordinatorTest {
     }
 
     @Test
-    fun unlockStartsRecoveryOnlyAfterDurableCheckpointExists() {
+    fun unlockSchedulesRecoveryOnlyAfterDurableCheckpointExists() {
         val operations = mutableListOf<String>()
         val persistence = BootstrapCheckpointPersistence(operations)
-        val starter = RecoveryServiceStarterSpy(operations = operations)
+        val starter = RecoveryJobSchedulerSpy(operations = operations)
         val coordinator = coordinator(persistence, starter)
         coordinator.handle(Intent.ACTION_LOCKED_BOOT_COMPLETED, userUnlocked = false)
 
         val result = coordinator.handle(Intent.ACTION_USER_UNLOCKED, userUnlocked = true)
 
-        assertEquals(AlarmRecoveryBootstrapResult.Started, result)
-        assertEquals(listOf("persist", "persist", "start"), operations)
+        assertEquals(AlarmRecoveryBootstrapResult.Scheduled, result)
+        assertEquals(listOf("persist", "persist", "schedule"), operations)
         assertEquals(listOf(Intent.ACTION_USER_UNLOCKED), starter.actions)
         assertTrue(persistence.checkpoint()?.reconcileInterruptedSessions == true)
     }
 
     @Test
-    fun lockedBootNeverStartsRecoveryEvenWhenUnlockStateIsMisreported() {
-        val starter = RecoveryServiceStarterSpy()
+    fun lockedBootNeverSchedulesRecoveryEvenWhenUnlockStateIsMisreported() {
+        val starter = RecoveryJobSchedulerSpy()
 
         val result = coordinator(BootstrapCheckpointPersistence(), starter).handle(
             Intent.ACTION_LOCKED_BOOT_COMPLETED,
@@ -54,18 +54,17 @@ class AlarmRecoveryBootstrapCoordinatorTest {
     }
 
     @Test
-    fun foregroundServiceAdmissionFailureRetainsCheckpointAndSchedulesBoundedReceiverRetry() {
+    fun jobSchedulingFailureRetainsCheckpointAndSchedulesBoundedReceiverRetry() {
         val persistence = BootstrapCheckpointPersistence()
-        val starter = RecoveryServiceStarterSpy(
-            result = Result.failure(IllegalStateException("FGS start rejected")),
+        val starter = RecoveryJobSchedulerSpy(
+            result = Result.failure(IllegalStateException("job rejected")),
         )
         val retry = RecoveryFailureHandlerSpy(
             AlarmRecoveryRetryResult.Scheduled(attempt = 1, triggerAtEpochMillis = 31_000L),
         )
         val coordinator = AlarmRecoveryBootstrapCoordinator(
             persistence = persistence,
-            serviceAdmission = AlarmRecoveryServiceAdmission { true },
-            serviceStarter = starter,
+            jobScheduler = starter,
             failureHandler = retry,
             nowEpochMillis = { 1_000L },
         )
@@ -79,28 +78,20 @@ class AlarmRecoveryBootstrapCoordinatorTest {
         assertNotNull(persistence.checkpoint())
         assertFalse(persistence.clearCalled)
         assertTrue(persistence.checkpoint()?.reconcileInterruptedSessions == true)
-        assertTrue(retry.details.single().contains("FGS start rejected"))
+        assertTrue(retry.details.single().contains("job rejected"))
         assertEquals(listOf(false), retry.capabilityUnavailable)
     }
 
     @Test
-    fun missingExactAlarmAccessBlocksSystemExemptedRecoveryAfterUpdateAndBoot() {
+    fun recoverySchedulingIsNotGatedByExactAlarmCapability() {
         val persistence = BootstrapCheckpointPersistence()
-        val starter = RecoveryServiceStarterSpy()
-        val retry = RecoveryFailureHandlerSpy(
-            AlarmRecoveryRetryResult.Escalated(
-                code = AlarmTransportFailureCode.RECOVERY_CAPABILITY_UNAVAILABLE,
-                result = AlarmTransportEscalationResult(
-                    markerPersisted = true,
-                    notification = FailureNotificationResult.PERMISSION_UNAVAILABLE,
-                ),
-            ),
-        )
+        val starter = RecoveryJobSchedulerSpy()
         val coordinator = AlarmRecoveryBootstrapCoordinator(
             persistence = persistence,
-            serviceAdmission = AlarmRecoveryServiceAdmission { false },
-            serviceStarter = starter,
-            failureHandler = retry,
+            jobScheduler = starter,
+            failureHandler = RecoveryFailureHandlerSpy(
+                AlarmRecoveryRetryResult.Scheduled(1, 31_000L),
+            ),
             nowEpochMillis = { 1_000L },
         )
 
@@ -110,44 +101,41 @@ class AlarmRecoveryBootstrapCoordinatorTest {
         ).map { action -> coordinator.handle(action, userUnlocked = true) }
 
         assertEquals(
-            List(2) {
-                AlarmRecoveryBootstrapResult.Escalated(
-                    AlarmTransportFailureCode.RECOVERY_CAPABILITY_UNAVAILABLE,
-                )
-            },
+            List(2) { AlarmRecoveryBootstrapResult.Scheduled },
             results,
         )
-        assertTrue(starter.actions.isEmpty())
-        assertEquals(listOf(true, true), retry.capabilityUnavailable)
-        assertTrue(retry.details.all { it.contains("exact-alarm access") })
+        assertEquals(
+            listOf(Intent.ACTION_MY_PACKAGE_REPLACED, Intent.ACTION_BOOT_COMPLETED),
+            starter.actions,
+        )
     }
 
     @Test
     fun nonBootRecoveryDoesNotReconcileInterruptedSessions() {
         val persistence = BootstrapCheckpointPersistence()
-        val starter = RecoveryServiceStarterSpy()
+        val starter = RecoveryJobSchedulerSpy()
 
         val result = coordinator(persistence, starter).handle(
             Intent.ACTION_TIME_CHANGED,
             userUnlocked = true,
         )
 
-        assertEquals(AlarmRecoveryBootstrapResult.Started, result)
+        assertEquals(AlarmRecoveryBootstrapResult.Scheduled, result)
         assertFalse(persistence.checkpoint()?.reconcileInterruptedSessions == true)
     }
 
     @Test
-    fun lockedRetryRemainsDeferredWithoutTouchingRecoveryService() {
+    fun lockedRetryRemainsDeferredWithoutSchedulingRecoveryJob() {
         val persistence = BootstrapCheckpointPersistence(
             initial = AlarmRecoveryCheckpoint(
                 attempt = 1,
-                lastFailure = "FGS admission failed",
+                lastFailure = "Recovery job scheduling failed",
                 nextAttemptAtEpochMillis = 31_000L,
                 exhausted = false,
                 updatedAtEpochMillis = 1_000L,
             ),
         )
-        val starter = RecoveryServiceStarterSpy()
+        val starter = RecoveryJobSchedulerSpy()
 
         val result = coordinator(persistence, starter).handle(
             ACTION_ALARM_RECOVERY_RETRY,
@@ -161,11 +149,10 @@ class AlarmRecoveryBootstrapCoordinatorTest {
 
     private fun coordinator(
         persistence: BootstrapCheckpointPersistence,
-        starter: RecoveryServiceStarterSpy,
+        starter: RecoveryJobSchedulerSpy,
     ) = AlarmRecoveryBootstrapCoordinator(
         persistence = persistence,
-        serviceAdmission = AlarmRecoveryServiceAdmission { true },
-        serviceStarter = starter,
+        jobScheduler = starter,
         failureHandler = RecoveryFailureHandlerSpy(
             AlarmRecoveryRetryResult.Scheduled(1, 31_000L),
         ),
@@ -195,14 +182,14 @@ private class BootstrapCheckpointPersistence(
     }
 }
 
-private class RecoveryServiceStarterSpy(
+private class RecoveryJobSchedulerSpy(
     private val result: Result<Unit> = Result.success(Unit),
     private val operations: MutableList<String> = mutableListOf(),
-) : AlarmRecoveryServiceStarter {
+) : AlarmRecoveryJobScheduler {
     val actions = mutableListOf<String>()
 
-    override fun start(action: String): Result<Unit> {
-        operations += "start"
+    override fun schedule(action: String): Result<Unit> {
+        operations += "schedule"
         actions += action
         return result
     }
