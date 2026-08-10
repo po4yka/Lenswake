@@ -2,6 +2,7 @@ package dev.po4yka.lenswake.alarm
 
 import android.app.AlarmManager
 import android.content.Context
+import dev.po4yka.lenswake.core.ExecutionRepository
 import dev.po4yka.lenswake.core.LenswakeClock
 import dev.po4yka.lenswake.core.RecordingSchedule
 import dev.po4yka.lenswake.core.RecordingScheduler
@@ -40,16 +41,21 @@ class AlarmManagerRecordingScheduler internal constructor(
     private val scheduleRepository: ScheduleRepository,
     private val clock: LenswakeClock,
     private val backend: RecordingAlarmBackend,
+    private val hasPixelCameraOwner: suspend (ScheduleId) -> Boolean,
 ) : RecordingScheduler {
     constructor(
         context: Context,
         scheduleRepository: ScheduleRepository,
+        executionRepository: ExecutionRepository,
         clock: LenswakeClock,
         exactAlarmCapability: ExactAlarmCapability? = null,
     ) : this(
         scheduleRepository = scheduleRepository,
         clock = clock,
         backend = AndroidRecordingAlarmBackend(context, exactAlarmCapability),
+        hasPixelCameraOwner = { scheduleId ->
+            executionRepository.findPixelCameraOwnerForSchedule(scheduleId) != null
+        },
     )
 
     override suspend fun scheduleStart(schedule: RecordingSchedule): Result<Unit> =
@@ -76,14 +82,32 @@ class AlarmManagerRecordingScheduler internal constructor(
             // stale Flow snapshot from touching identities when the scheduler is used directly.
             val schedule = scheduleRepository.get(observed.id)
             if (schedule != observed) return@forEach
-            if (!schedule.enabled || !schedule.stopAt.isAfter(now)) {
+            val stopIsFuture = schedule.stopAt.isAfter(now)
+            val hasOwner = if (!schedule.enabled || !stopIsFuture) {
+                hasPixelCameraOwner(schedule.id)
+            } else {
+                false
+            }
+            val stopTriggerAt = when {
+                !schedule.enabled && !hasOwner -> null
+                stopIsFuture -> schedule.stopAt
+                hasOwner -> now.plusMillis(OVERDUE_STOP_RECOVERY_DELAY_MILLIS)
+                else -> null
+            }
+            if (stopTriggerAt == null) {
                 AlarmKind.entries.forEach { kind -> backend.cancel(schedule.id, kind) }
                 return@forEach
             }
 
             // STOP is the safety backstop. Replace it before START and before removing stale START.
-            register(schedule, AlarmKind.STOP, now)
-            if (schedule.startAt.isAfter(now)) {
+            register(
+                schedule = schedule,
+                kind = AlarmKind.STOP,
+                now = now,
+                triggerAtOverride = stopTriggerAt,
+                allowDisabled = hasOwner,
+            )
+            if (schedule.enabled && schedule.startAt.isAfter(now)) {
                 register(schedule, AlarmKind.START, now)
             } else {
                 backend.cancel(schedule.id, AlarmKind.START)
@@ -137,12 +161,14 @@ class AlarmManagerRecordingScheduler internal constructor(
         schedule: RecordingSchedule,
         kind: AlarmKind,
         now: Instant,
+        triggerAtOverride: Instant? = null,
+        allowDisabled: Boolean = false,
     ) {
-        val triggerAt = when (kind) {
+        val triggerAt = triggerAtOverride ?: when (kind) {
             AlarmKind.START -> schedule.startAt
             AlarmKind.STOP -> schedule.stopAt
         }
-        validate(schedule, kind, triggerAt, now)
+        validate(schedule, kind, triggerAt, now, allowDisabled)
         requireExactAlarmCapability()
         backend.arm(schedule, kind, triggerAt)
     }
@@ -161,8 +187,9 @@ class AlarmManagerRecordingScheduler internal constructor(
         kind: AlarmKind,
         triggerAt: Instant,
         now: Instant,
+        allowDisabled: Boolean,
     ) {
-        if (!schedule.enabled) {
+        if (!schedule.enabled && !allowDisabled) {
             throw SchedulingException(SchedulingFailureCode.SCHEDULE_DISABLED, "Schedule is disabled")
         }
         if (!schedule.stopAt.isAfter(schedule.startAt)) {
@@ -178,6 +205,10 @@ class AlarmManagerRecordingScheduler internal constructor(
             }
             throw SchedulingException(code, "${kind.name.lowercase()} alarm must be in the future")
         }
+    }
+
+    private companion object {
+        const val OVERDUE_STOP_RECOVERY_DELAY_MILLIS = 1_000L
     }
 }
 

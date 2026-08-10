@@ -72,6 +72,68 @@ class AlarmManagerRecordingRecoveryTest {
     }
 
     @Test
+    fun overdueStopForActiveOwnerIsRearmedImmediatelyBeforeStartCancellation() = runBlocking {
+        val overdue = schedule(
+            id = "overdue-owner",
+            start = now.minusSeconds(120),
+            stop = now.minusSeconds(60),
+        )
+        val backend = RecordingAlarmBackendSpy()
+
+        assertTrue(
+            scheduler(
+                schedules = listOf(overdue),
+                backend = backend,
+                ownerScheduleIds = setOf(overdue.id),
+            ).restoreAll().isSuccess,
+        )
+
+        assertEquals(listOf("arm:STOP", "cancel:START"), backend.operations)
+        assertEquals(now.plusMillis(1_000), backend.armed.single().third)
+    }
+
+    @Test
+    fun disabledScheduleWithActiveOwnerRetainsItsAuthoritativeStop() = runBlocking {
+        val disabled = schedule(
+            id = "disabled-owner",
+            start = now.minusSeconds(120),
+            stop = now.minusSeconds(60),
+            enabled = false,
+        )
+        val backend = RecordingAlarmBackendSpy()
+
+        assertTrue(
+            scheduler(
+                schedules = listOf(disabled),
+                backend = backend,
+                ownerScheduleIds = setOf(disabled.id),
+            ).restoreAll().isSuccess,
+        )
+
+        assertEquals(listOf("arm:STOP", "cancel:START"), backend.operations)
+        assertEquals(now.plusMillis(1_000), backend.armed.single().third)
+    }
+
+    @Test
+    fun ownerLookupFailureLeavesExistingAlarmIdentitiesUntouched() = runBlocking {
+        val overdue = schedule(
+            id = "lookup-failure",
+            start = now.minusSeconds(120),
+            stop = now.minusSeconds(60),
+        )
+        val backend = RecordingAlarmBackendSpy()
+
+        val result = scheduler(
+            schedules = listOf(overdue),
+            backend = backend,
+            ownerLookupFailure = IllegalStateException("database unavailable"),
+        ).restoreAll()
+
+        assertTrue(result.isFailure)
+        assertTrue(backend.operations.isEmpty())
+    }
+
+    @Test
     fun partialReplacementFailureDoesNotCancelPreviouslyInstalledIdentities() = runBlocking {
         val schedule = schedule(start = now.plusSeconds(60), stop = now.plusSeconds(120))
         val backend = RecordingAlarmBackendSpy(failArmKind = AlarmKind.START)
@@ -91,6 +153,7 @@ class AlarmManagerRecordingRecoveryTest {
             scheduleRepository = RecoveryScheduleRepository(listOf(observed), current),
             clock = { now },
             backend = backend,
+            hasPixelCameraOwner = { false },
         )
 
         assertTrue(scheduler.restoreAll().isSuccess)
@@ -101,10 +164,16 @@ class AlarmManagerRecordingRecoveryTest {
     private fun scheduler(
         schedules: List<RecordingSchedule>,
         backend: RecordingAlarmBackend,
+        ownerScheduleIds: Set<ScheduleId> = emptySet(),
+        ownerLookupFailure: Throwable? = null,
     ) = AlarmManagerRecordingScheduler(
         scheduleRepository = RecoveryScheduleRepository(schedules),
         clock = { now },
         backend = backend,
+        hasPixelCameraOwner = { scheduleId ->
+            ownerLookupFailure?.let { throw it }
+            scheduleId in ownerScheduleIds
+        },
     )
 
     private fun schedule(
@@ -133,11 +202,13 @@ private class RecordingAlarmBackendSpy(
     private val failArmKind: AlarmKind? = null,
 ) : RecordingAlarmBackend {
     val operations = mutableListOf<String>()
+    val armed = mutableListOf<Triple<ScheduleId, AlarmKind, Instant>>()
 
     override fun canScheduleExactAlarms(): Boolean = true
 
     override fun arm(schedule: RecordingSchedule, kind: AlarmKind, triggerAt: Instant) {
         operations += "arm:${kind.name}"
+        armed += Triple(schedule.id, kind, triggerAt)
         if (kind == failArmKind) error("arm ${kind.name} failed")
     }
 

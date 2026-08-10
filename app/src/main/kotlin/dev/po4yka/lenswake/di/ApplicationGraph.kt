@@ -58,6 +58,7 @@ class ApplicationGraph(application: Application) {
     private val alarmManagerRecordingScheduler: RecordingScheduler = AlarmManagerRecordingScheduler(
         context = application,
         scheduleRepository = scheduleRepository,
+        executionRepository = executionRepository,
         clock = clock,
     )
     val recordingScheduler: RecordingScheduler = MutexRecordingScheduler(

@@ -128,10 +128,10 @@ class AlarmManagerRecordingSchedulerTest {
         persisted: RecordingSchedule?,
         capability: ExactAlarmCapability,
     ): AlarmManagerRecordingScheduler = AlarmManagerRecordingScheduler(
-        context = context,
         scheduleRepository = SingleScheduleRepository(persisted),
         clock = LenswakeClock { now },
-        exactAlarmCapability = capability,
+        backend = AndroidRecordingAlarmBackend(context, capability),
+        hasPixelCameraOwner = { false },
     )
 }
 
