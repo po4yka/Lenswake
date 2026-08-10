@@ -213,6 +213,7 @@ class ScheduleWorkflow(
     }
 
     private suspend fun deletePersisted(previous: RecordingSchedule): ScheduleWorkflowResult {
+        persistFailClosedBeforeAlarmMutation(previous)?.let { return it }
         val cancelFailure = scheduler.cancel(previous.id).exceptionOrNull()
         if (cancelFailure != null) {
             val rollbackFailures = restore(previous)
@@ -243,6 +244,7 @@ class ScheduleWorkflow(
         operation: ScheduleOperation,
     ): ScheduleWorkflowResult {
         if (previous != null) {
+            persistFailClosedBeforeAlarmMutation(previous)?.let { return it }
             val cancelFailure = scheduler.cancel(previous.id).exceptionOrNull()
             if (cancelFailure != null) {
                 return ScheduleWorkflowResult.Failed(
@@ -253,8 +255,9 @@ class ScheduleWorkflow(
             }
         }
 
+        val persistedCandidate = if (candidate.enabled) candidate.copy(enabled = false) else candidate
         try {
-            scheduleRepository.save(candidate)
+            scheduleRepository.save(persistedCandidate)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
@@ -286,7 +289,39 @@ class ScheduleWorkflow(
             )
         }
 
+        try {
+            scheduleRepository.save(candidate)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            return failedRegistration(
+                previous = previous,
+                candidate = candidate,
+                code = ScheduleWorkflowFailureCode.PERSIST_FAILED,
+                message = "The schedule alarms were registered, but activation could not be persisted: " +
+                    "${failure.safeMessage()}.",
+            )
+        }
+
         return ScheduleWorkflowResult.Applied(operation, candidate)
+    }
+
+    private suspend fun persistFailClosedBeforeAlarmMutation(
+        schedule: RecordingSchedule,
+    ): ScheduleWorkflowResult.Failed? {
+        if (!schedule.enabled) return null
+        return try {
+            scheduleRepository.save(schedule.copy(enabled = false))
+            null
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            ScheduleWorkflowResult.Failed(
+                code = ScheduleWorkflowFailureCode.PERSIST_FAILED,
+                message = "Could not persist a fail-closed schedule state before changing alarms: " +
+                    "${failure.safeMessage()}.",
+            )
+        }
     }
 
     private suspend fun failedRegistration(
@@ -323,8 +358,9 @@ class ScheduleWorkflow(
                 add("Could not clear alarm state during rollback: ${it.safeMessage()}.")
             }
         }
+        val failClosedSchedule = if (schedule.enabled) schedule.copy(enabled = false) else schedule
         val persisted = try {
-            scheduleRepository.save(schedule)
+            scheduleRepository.save(failClosedSchedule)
             true
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -342,21 +378,19 @@ class ScheduleWorkflow(
                 startFailure?.let {
                     add("Could not restore the previous START alarm: ${it.safeMessage()}.")
                 }
-                if (startFailure == null) return@buildList
+                if (startFailure == null) {
+                    try {
+                        scheduleRepository.save(schedule)
+                        return@buildList
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        add("Could not reactivate the previous schedule after restoring its alarms: ${failure.safeMessage()}.")
+                    }
+                }
             }
             scheduler.cancel(schedule.id).exceptionOrNull()?.let {
                 add("Could not cancel alarms after incomplete rollback restoration: ${it.safeMessage()}.")
-            }
-            val disabled = schedule.copy(
-                enabled = false,
-                updatedAt = maxOf(schedule.updatedAt, clock.now()),
-            )
-            try {
-                scheduleRepository.save(disabled)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                add("Could not persist the schedule as disabled after incomplete alarm restoration: ${failure.safeMessage()}.")
             }
         }
     }

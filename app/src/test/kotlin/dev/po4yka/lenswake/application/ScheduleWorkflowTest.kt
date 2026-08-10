@@ -51,7 +51,7 @@ class ScheduleWorkflowTest {
         val applied = assertInstanceOf(ScheduleWorkflowResult.Applied::class.java, result)
         val capture = applied.schedule.capture as CaptureConfiguration.TimeLapse
         assertEquals(ScheduleOperation.CREATED, applied.operation)
-        assertEquals(listOf("save", "stop", "start"), fixture.events)
+        assertEquals(listOf("save", "stop", "start", "save"), fixture.events)
         assertEquals(TimeLapseSpeed.X120, capture.speed)
         assertEquals(LensSelection.REAR_MAIN, capture.lens)
         assertEquals(profileId, applied.schedule.profileId)
@@ -85,6 +85,18 @@ class ScheduleWorkflowTest {
     }
 
     @Test
+    fun failedNewScheduleCleanupLeavesPersistedCandidateDisabledWhenDeleteFails() = runTest {
+        val fixture = fixture(stopFailures = 1, deleteFailures = 1)
+
+        val result = fixture.workflow.create(command())
+
+        val failed = assertInstanceOf(ScheduleWorkflowResult.Failed::class.java, result)
+        assertEquals(ScheduleWorkflowFailureCode.STOP_ALARM_FAILED, failed.code)
+        assertTrue(failed.rollbackFailures.any { it.contains("rolled-back schedule") })
+        assertFalse(fixture.schedules.current().single().enabled)
+    }
+
+    @Test
     fun failedEditRestoresPreviousPersistenceAndBothPreviousAlarms() = runTest {
         val previous = schedule()
         val fixture = fixture(stopFailures = 1, schedules = listOf(previous))
@@ -97,7 +109,7 @@ class ScheduleWorkflowTest {
         val failed = assertInstanceOf(ScheduleWorkflowResult.Failed::class.java, result)
         assertEquals(ScheduleWorkflowFailureCode.STOP_ALARM_FAILED, failed.code)
         assertEquals(
-            listOf("cancel", "save", "stop", "cancel", "save", "stop", "start"),
+            listOf("save", "cancel", "save", "stop", "cancel", "save", "stop", "start", "save"),
             fixture.events,
         )
         assertEquals(previous, fixture.schedules.get(previous.id))
@@ -118,10 +130,48 @@ class ScheduleWorkflowTest {
         assertEquals(ScheduleWorkflowFailureCode.STOP_ALARM_FAILED, failed.code)
         assertTrue(failed.rollbackFailures.any { it.contains("previous STOP alarm") })
         assertEquals(
-            listOf("cancel", "save", "stop", "cancel", "save", "stop", "cancel", "save"),
+            listOf("save", "cancel", "save", "stop", "cancel", "save", "stop", "cancel"),
             fixture.events,
         )
         assertFalse(fixture.schedules.get(previous.id)!!.enabled)
+    }
+
+    @Test
+    fun failedRollbackReactivationLeavesPreviousScheduleDurablyDisabled() = runTest {
+        val previous = schedule()
+        val fixture = fixture(
+            stopFailures = 1,
+            saveFailureCalls = setOf(4),
+            schedules = listOf(previous),
+        )
+
+        val result = fixture.workflow.edit(
+            previous.id,
+            command(name = "Updated", startAt = now.plusSeconds(7_200), stopAt = now.plusSeconds(14_400)),
+        )
+
+        val failed = assertInstanceOf(ScheduleWorkflowResult.Failed::class.java, result)
+        assertTrue(failed.rollbackFailures.any { it.contains("reactivate the previous schedule") })
+        assertFalse(fixture.schedules.get(previous.id)!!.enabled)
+    }
+
+    @Test
+    fun mutationDoesNotTouchAlarmsWhenFailClosedPersistenceFails() = runTest {
+        val previous = schedule()
+        val fixture = fixture(
+            saveFailureCalls = setOf(1),
+            schedules = listOf(previous),
+        )
+
+        val result = fixture.workflow.edit(
+            previous.id,
+            command(name = "Updated", startAt = now.plusSeconds(7_200), stopAt = now.plusSeconds(14_400)),
+        )
+
+        val failed = assertInstanceOf(ScheduleWorkflowResult.Failed::class.java, result)
+        assertEquals(ScheduleWorkflowFailureCode.PERSIST_FAILED, failed.code)
+        assertEquals(listOf("save"), fixture.events)
+        assertEquals(previous, fixture.schedules.get(previous.id))
     }
 
     @Test
@@ -133,7 +183,7 @@ class ScheduleWorkflowTest {
 
         val applied = assertInstanceOf(ScheduleWorkflowResult.Applied::class.java, result)
         assertEquals(ScheduleOperation.DISABLED, applied.operation)
-        assertEquals(listOf("cancel", "save"), fixture.events)
+        assertEquals(listOf("save", "cancel", "save"), fixture.events)
         assertFalse(fixture.schedules.get(previous.id)!!.enabled)
     }
 
@@ -146,7 +196,7 @@ class ScheduleWorkflowTest {
 
         val applied = assertInstanceOf(ScheduleWorkflowResult.Applied::class.java, result)
         assertEquals(ScheduleOperation.ENABLED, applied.operation)
-        assertEquals(listOf("cancel", "save", "stop", "start"), fixture.events)
+        assertEquals(listOf("cancel", "save", "stop", "start", "save"), fixture.events)
         assertTrue(fixture.schedules.get(previous.id)!!.enabled)
     }
 
@@ -164,14 +214,14 @@ class ScheduleWorkflowTest {
     }
 
     @Test
-    fun deleteCancelsAlarmsBeforeDeletingPersistence() = runTest {
+    fun deletePersistsDisabledThenCancelsAlarmsBeforeDeletingPersistence() = runTest {
         val previous = schedule()
         val fixture = fixture(schedules = listOf(previous))
 
         val result = fixture.workflow.delete(previous.id)
 
         assertInstanceOf(ScheduleWorkflowResult.Deleted::class.java, result)
-        assertEquals(listOf("cancel", "delete"), fixture.events)
+        assertEquals(listOf("save", "cancel", "delete"), fixture.events)
         assertNull(fixture.schedules.get(previous.id))
     }
 
@@ -183,7 +233,7 @@ class ScheduleWorkflowTest {
         val result = fixture.workflow.delete(previous.id)
 
         assertInstanceOf(ScheduleWorkflowResult.Deleted::class.java, result)
-        assertEquals(listOf("cancel", "delete"), fixture.events)
+        assertEquals(listOf("save", "cancel", "delete"), fixture.events)
     }
 
     @Test
@@ -208,7 +258,7 @@ class ScheduleWorkflowTest {
         listOf(terminal, released).forEach { execution ->
             val fixture = fixture(schedules = listOf(previous), owner = execution)
             assertInstanceOf(ScheduleWorkflowResult.Deleted::class.java, fixture.workflow.delete(previous.id))
-            assertEquals(listOf("cancel", "delete"), fixture.events)
+            assertEquals(listOf("save", "cancel", "delete"), fixture.events)
         }
     }
 
@@ -341,7 +391,10 @@ class ScheduleWorkflowTest {
         assertInstanceOf(ScheduleWorkflowResult.Applied::class.java, first.await())
         assertInstanceOf(ScheduleWorkflowResult.Applied::class.java, second.await())
         assertEquals(
-            listOf("save", "stop:First", "start:First", "save", "stop:Second", "start:Second"),
+            listOf(
+                "save", "stop:First", "start:First", "save",
+                "save", "stop:Second", "start:Second", "save",
+            ),
             events,
         )
     }
@@ -394,19 +447,26 @@ class ScheduleWorkflowTest {
         releaseStart.complete(Unit)
         assertInstanceOf(ScheduleWorkflowResult.Applied::class.java, mutation.await())
         assertTrue(recovery.await().isSuccess)
-        assertEquals(listOf("save", "stop", "start", "restore"), events)
+        assertEquals(listOf("save", "stop", "start", "save", "restore"), events)
     }
 
     private fun fixture(
         startFailures: Int = 0,
         stopFailures: Int = 0,
+        saveFailureCalls: Set<Int> = emptySet(),
+        deleteFailures: Int = 0,
         schedules: List<RecordingSchedule> = emptyList(),
         profileInstalled: Boolean = true,
         owner: ExecutionSession? = null,
         ownerQueryFailure: Exception? = null,
     ): Fixture {
         val events = mutableListOf<String>()
-        val scheduleRepository = FakeScheduleRepository(schedules, events)
+        val scheduleRepository = FakeScheduleRepository(
+            initial = schedules,
+            events = events,
+            saveFailureCalls = saveFailureCalls,
+            deleteFailures = deleteFailures,
+        )
         val scheduler = FakeRecordingScheduler(events, startFailures, stopFailures)
         val profiles = FakeProfileRepository(if (profileInstalled) listOf(profile()) else emptyList())
         return Fixture(
@@ -432,8 +492,12 @@ class ScheduleWorkflowTest {
     private class FakeScheduleRepository(
         initial: List<RecordingSchedule>,
         private val events: MutableList<String>,
+        private val saveFailureCalls: Set<Int> = emptySet(),
+        deleteFailures: Int = 0,
     ) : ScheduleRepository {
         private val schedules = MutableStateFlow(initial)
+        private var saveCalls = 0
+        private var remainingDeleteFailures = deleteFailures
 
         override fun observeSchedules(): Flow<List<RecordingSchedule>> = schedules
 
@@ -442,11 +506,14 @@ class ScheduleWorkflowTest {
 
         override suspend fun save(schedule: RecordingSchedule) {
             events += "save"
+            saveCalls += 1
+            if (saveCalls in saveFailureCalls) throw IllegalStateException("save rejected")
             schedules.value = schedules.value.filterNot { it.id == schedule.id } + schedule
         }
 
         override suspend fun delete(id: ScheduleId) {
             events += "delete"
+            if (remainingDeleteFailures-- > 0) throw IllegalStateException("delete rejected")
             schedules.value = schedules.value.filterNot { it.id == id }
         }
 
