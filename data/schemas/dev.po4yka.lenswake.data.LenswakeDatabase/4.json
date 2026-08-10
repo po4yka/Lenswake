@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
   "database": {
-    "version": 1,
-    "identityHash": "6b0e279af6a778c652faf02c844717d7",
+    "version": 4,
+    "identityHash": "cd7db3cc1687028a18ac033df13a8646",
     "entities": [
       {
         "tableName": "schedules",
@@ -119,7 +119,7 @@
       },
       {
         "tableName": "automation_profiles",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `device_manufacturer` TEXT NOT NULL, `device_model` TEXT NOT NULL, `android_sdk` INTEGER NOT NULL, `android_build_fingerprint` TEXT, `camera_package` TEXT NOT NULL, `camera_version_code` INTEGER NOT NULL, `locale_tag` TEXT NOT NULL, `display_width_px` INTEGER NOT NULL, `display_height_px` INTEGER NOT NULL, `density_dpi` INTEGER NOT NULL, `selector_schema_version` INTEGER NOT NULL, `targets_json` TEXT NOT NULL, `fallback_gestures_json` TEXT NOT NULL, `compatibility` TEXT NOT NULL, `verified_at_epoch_ms` INTEGER, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `device_manufacturer` TEXT NOT NULL, `device_model` TEXT NOT NULL, `android_sdk` INTEGER NOT NULL, `android_build_fingerprint` TEXT, `camera_package` TEXT NOT NULL, `camera_version_code` INTEGER NOT NULL, `locale_tag` TEXT NOT NULL, `display_width_px` INTEGER NOT NULL, `display_height_px` INTEGER NOT NULL, `density_dpi` INTEGER NOT NULL, `selector_schema_version` INTEGER NOT NULL, `targets_json` TEXT NOT NULL, `speed_targets_json` TEXT NOT NULL, `state_signals_json` TEXT NOT NULL, `fallback_gestures_json` TEXT NOT NULL, `compatibility` TEXT NOT NULL, `verified_at_epoch_ms` INTEGER, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -199,6 +199,18 @@
             "notNull": true
           },
           {
+            "fieldPath": "speedTargetsJson",
+            "columnName": "speed_targets_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stateSignalsJson",
+            "columnName": "state_signals_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
             "fieldPath": "fallbackGesturesJson",
             "columnName": "fallback_gestures_json",
             "affinity": "TEXT",
@@ -225,7 +237,7 @@
       },
       {
         "tableName": "execution_sessions",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `execution_key` TEXT NOT NULL, `kind` TEXT NOT NULL, `schedule_id` TEXT, `schedule_name` TEXT, `profile_id` TEXT NOT NULL, `capture_type` TEXT NOT NULL, `time_lapse_speed` TEXT NOT NULL, `lens_selection` TEXT NOT NULL, `zoom_factor` REAL, `expected_start_at_epoch_ms` INTEGER NOT NULL, `expected_stop_at_epoch_ms` INTEGER NOT NULL, `alarm_start_delivered_at_epoch_ms` INTEGER, `alarm_stop_delivered_at_epoch_ms` INTEGER, `status` TEXT NOT NULL, `current_automation_state` TEXT, `record_action_at_epoch_ms` INTEGER, `recording_verified_at_epoch_ms` INTEGER, `stop_action_at_epoch_ms` INTEGER, `stopped_verified_at_epoch_ms` INTEGER, `environment_snapshot_id` TEXT, `failure_code` TEXT, `failure_message` TEXT, `failure_context_json` TEXT, `revision` INTEGER NOT NULL, `created_at_epoch_ms` INTEGER NOT NULL, `updated_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `execution_key` TEXT NOT NULL, `kind` TEXT NOT NULL, `schedule_id` TEXT, `schedule_name` TEXT, `profile_id` TEXT NOT NULL, `capture_type` TEXT NOT NULL, `time_lapse_speed` TEXT NOT NULL, `lens_selection` TEXT NOT NULL, `zoom_factor` REAL, `expected_start_at_epoch_ms` INTEGER NOT NULL, `expected_stop_at_epoch_ms` INTEGER NOT NULL, `alarm_start_delivered_at_epoch_ms` INTEGER, `alarm_stop_delivered_at_epoch_ms` INTEGER, `status` TEXT NOT NULL, `current_automation_state` TEXT, `record_action_at_epoch_ms` INTEGER, `recording_verified_at_epoch_ms` INTEGER, `stop_action_at_epoch_ms` INTEGER, `stopped_verified_at_epoch_ms` INTEGER, `camera_ownership_released_at_epoch_ms` INTEGER, `environment_snapshot_id` TEXT, `failure_code` TEXT, `failure_message` TEXT, `failure_context_json` TEXT, `revision` INTEGER NOT NULL, `created_at_epoch_ms` INTEGER NOT NULL, `updated_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -335,6 +347,11 @@
           {
             "fieldPath": "stoppedVerifiedAtEpochMs",
             "columnName": "stopped_verified_at_epoch_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "cameraOwnershipReleasedAtEpochMs",
+            "columnName": "camera_ownership_released_at_epoch_ms",
             "affinity": "INTEGER"
           },
           {
@@ -540,11 +557,169 @@
             ]
           }
         ]
+      },
+      {
+        "tableName": "environment_snapshots",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `session_id` TEXT NOT NULL, `captured_at_epoch_ms` INTEGER NOT NULL, `lenswake_version` TEXT NOT NULL, `device_manufacturer` TEXT NOT NULL, `device_model` TEXT NOT NULL, `android_sdk` INTEGER NOT NULL, `android_build_fingerprint` TEXT, `camera_package` TEXT NOT NULL, `camera_version_code` INTEGER NOT NULL, `locale_tag` TEXT NOT NULL, `display_width_px` INTEGER NOT NULL, `display_height_px` INTEGER NOT NULL, `density_dpi` INTEGER NOT NULL, `accessibility_status` TEXT NOT NULL, `privileged_bridge_status` TEXT NOT NULL, `screen_interactive` INTEGER NOT NULL, `keyguard_locked` INTEGER NOT NULL, `battery_percent` INTEGER, `charging` INTEGER, `available_storage_bytes` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`session_id`) REFERENCES `execution_sessions`(`id`) ON UPDATE RESTRICT ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "capturedAtEpochMs",
+            "columnName": "captured_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lenswakeVersion",
+            "columnName": "lenswake_version",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceManufacturer",
+            "columnName": "device_manufacturer",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceModel",
+            "columnName": "device_model",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "androidSdk",
+            "columnName": "android_sdk",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "androidBuildFingerprint",
+            "columnName": "android_build_fingerprint",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "cameraPackage",
+            "columnName": "camera_package",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cameraVersionCode",
+            "columnName": "camera_version_code",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localeTag",
+            "columnName": "locale_tag",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayWidthPx",
+            "columnName": "display_width_px",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayHeightPx",
+            "columnName": "display_height_px",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "densityDpi",
+            "columnName": "density_dpi",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accessibilityStatus",
+            "columnName": "accessibility_status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "privilegedBridgeStatus",
+            "columnName": "privileged_bridge_status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "screenInteractive",
+            "columnName": "screen_interactive",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keyguardLocked",
+            "columnName": "keyguard_locked",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "batteryPercent",
+            "columnName": "battery_percent",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "charging",
+            "columnName": "charging",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "availableStorageBytes",
+            "columnName": "available_storage_bytes",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_environment_snapshots_session_id",
+            "unique": true,
+            "columnNames": [
+              "session_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_environment_snapshots_session_id` ON `${TABLE_NAME}` (`session_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "execution_sessions",
+            "onDelete": "CASCADE",
+            "onUpdate": "RESTRICT",
+            "columns": [
+              "session_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '6b0e279af6a778c652faf02c844717d7')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'cd7db3cc1687028a18ac033df13a8646')"
     ]
   }
 }

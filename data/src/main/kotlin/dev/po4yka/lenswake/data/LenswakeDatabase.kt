@@ -14,6 +14,7 @@ import dev.po4yka.lenswake.data.internal.entity.EnvironmentSnapshotEntity
 import dev.po4yka.lenswake.data.internal.entity.ExecutionEventEntity
 import dev.po4yka.lenswake.data.internal.entity.ExecutionSessionEntity
 import dev.po4yka.lenswake.data.internal.entity.ScheduleEntity
+import dev.po4yka.lenswake.data.internal.mapping.ProfileJsonMigration
 
 @Database(
     entities = [
@@ -23,7 +24,7 @@ import dev.po4yka.lenswake.data.internal.entity.ScheduleEntity
         ExecutionEventEntity::class,
         EnvironmentSnapshotEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class LenswakeDatabase : RoomDatabase() {
@@ -39,6 +40,23 @@ abstract class LenswakeDatabase : RoomDatabase() {
         const val DATABASE_NAME: String = "lenswake.db"
 
         val MIGRATION_1_2: Migration = Migration(1, 2) { database ->
+            val profileColumns = buildSet {
+                database.query("PRAGMA table_info(`automation_profiles`)").use { cursor ->
+                    while (cursor.moveToNext()) add(cursor.getString(1))
+                }
+            }
+            if ("speed_targets_json" !in profileColumns) {
+                database.execSQL(
+                    "ALTER TABLE `automation_profiles` " +
+                        "ADD COLUMN `speed_targets_json` TEXT NOT NULL DEFAULT '[]'",
+                )
+            }
+            if ("state_signals_json" !in profileColumns) {
+                database.execSQL(
+                    "ALTER TABLE `automation_profiles` " +
+                        "ADD COLUMN `state_signals_json` TEXT NOT NULL DEFAULT '[]'",
+                )
+            }
             database.execSQL(
                 """
                 CREATE TABLE IF NOT EXISTS `environment_snapshots` (
@@ -84,12 +102,37 @@ abstract class LenswakeDatabase : RoomDatabase() {
             )
         }
 
+        val MIGRATION_3_4: Migration = Migration(3, 4) { database ->
+            database.query(
+                """
+                SELECT id, targets_json, speed_targets_json, state_signals_json
+                FROM automation_profiles
+                """.trimIndent(),
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    database.execSQL(
+                        """
+                        UPDATE automation_profiles
+                        SET targets_json = ?, speed_targets_json = ?, state_signals_json = ?
+                        WHERE id = ?
+                        """.trimIndent(),
+                        arrayOf(
+                            ProfileJsonMigration.targets(cursor.getString(1)),
+                            ProfileJsonMigration.speedTargets(cursor.getString(2)),
+                            ProfileJsonMigration.stateSignals(cursor.getString(3)),
+                            cursor.getString(0),
+                        ),
+                    )
+                }
+            }
+        }
+
         fun create(context: Context): LenswakeDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
                 LenswakeDatabase::class.java,
                 DATABASE_NAME,
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
     }
 }

@@ -1,10 +1,20 @@
 package dev.po4yka.lenswake.data
 
+import android.content.Context
+import androidx.room.Room
 import androidx.room.testing.MigrationTestHelper
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import dev.po4yka.lenswake.core.AutomationAction
+import dev.po4yka.lenswake.core.PixelCameraStateSignal
+import dev.po4yka.lenswake.core.ProfileId
+import dev.po4yka.lenswake.core.ScheduleId
+import dev.po4yka.lenswake.core.TimeLapseSpeed
+import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -17,7 +27,7 @@ class LenswakeDatabaseMigrationTest {
     )
 
     @Test
-    fun migratesVersionOneToVersionTwoWithoutDataDestruction() {
+    fun migratesVersionOneToCurrentAndKeepsLegacyProfileReadable() {
         migrationHelper.createDatabase(DATABASE_NAME, 1).apply {
             execSQL(
                 """
@@ -25,14 +35,29 @@ class LenswakeDatabaseMigrationTest {
                     id, device_manufacturer, device_model, android_sdk,
                     android_build_fingerprint, camera_package, camera_version_code,
                     locale_tag, display_width_px, display_height_px, density_dpi,
-                    selector_schema_version, targets_json, speed_targets_json,
-                    state_signals_json, fallback_gestures_json, compatibility,
+                    selector_schema_version, targets_json,
+                    fallback_gestures_json, compatibility,
                     verified_at_epoch_ms
                 ) VALUES (
                     'profile-migration', 'Google', 'Pixel 8 Pro', 37,
                     'google/husky/test', 'com.google.android.GoogleCamera', 1,
                     'en-US', 1344, 2992, 480,
-                    1, '[]', '[]', '[]', '[]', 'VERIFIED', 1000
+                    1,
+                    '[{"action":"SELECT_VIDEO","minimumScore":75,"selectors":[{"packageName":"com.google.android.GoogleCamera","resourceId":"camera:id/video","role":"android.widget.Button","contentDescription":"Video","text":null,"expectedRegion":null,"requiresClickable":true,"requiresVisible":true}]}]',
+                    '[]', 'VERIFIED', 1000
+                )
+                """.trimIndent(),
+            )
+            execSQL(
+                """
+                INSERT INTO schedules (
+                    id, name, start_at_epoch_ms, stop_at_epoch_ms, zone_id,
+                    capture_type, time_lapse_speed, lens_selection, zoom_factor,
+                    profile_id, enabled, created_at_epoch_ms, updated_at_epoch_ms
+                ) VALUES (
+                    'schedule-migration', 'Migrated schedule', 1000, 2000, 'UTC',
+                    'TIME_LAPSE', 'X120', 'REAR_MAIN', NULL,
+                    'profile-migration', 1, 500, 600
                 )
                 """.trimIndent(),
             )
@@ -41,9 +66,11 @@ class LenswakeDatabaseMigrationTest {
 
         val migrated = migrationHelper.runMigrationsAndValidate(
             DATABASE_NAME,
-            2,
+            4,
             true,
             LenswakeDatabase.MIGRATION_1_2,
+            LenswakeDatabase.MIGRATION_2_3,
+            LenswakeDatabase.MIGRATION_3_4,
         )
         migrated.query(
             "SELECT id FROM automation_profiles WHERE id = 'profile-migration'",
@@ -52,6 +79,33 @@ class LenswakeDatabaseMigrationTest {
             assertEquals("profile-migration", cursor.getString(0))
         }
         migrated.close()
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.databaseBuilder(context, LenswakeDatabase::class.java, DATABASE_NAME)
+            .addMigrations(
+                LenswakeDatabase.MIGRATION_1_2,
+                LenswakeDatabase.MIGRATION_2_3,
+                LenswakeDatabase.MIGRATION_3_4,
+            )
+            .build()
+        val (rawProfile, schedule) = runBlocking {
+            RoomAutomationProfileRepository(database).get(ProfileId("profile-migration")) to
+                RoomScheduleRepository(database).get(ScheduleId("schedule-migration"))
+        }
+        database.close()
+
+        checkNotNull(rawProfile)
+        assertEquals("profile-migration", rawProfile.id.value)
+        val rawSelector = checkNotNull(rawProfile.targets[AutomationAction.SELECT_VIDEO])
+            .selectors
+            .single()
+        assertNull(rawSelector.expectedSelected)
+        assertNull(rawSelector.expectedChecked)
+        assertEquals(emptyMap<Any, Any>(), rawProfile.speedTargets)
+        assertEquals(emptyMap<Any, Any>(), rawProfile.stateSignals)
+        checkNotNull(schedule)
+        assertEquals("schedule-migration", schedule.id.value)
+        assertEquals(rawProfile.id, schedule.profileId)
     }
 
     @Test
@@ -92,6 +146,97 @@ class LenswakeDatabaseMigrationTest {
             assertEquals(true, cursor.isNull(1))
         }
         migrated.close()
+    }
+
+    @Test
+    fun migratesVersionThreeProfileJsonWithoutContentLoss() {
+        migrationHelper.createDatabase(DATABASE_NAME, 3).apply {
+            execSQL(
+                """
+                INSERT INTO automation_profiles (
+                    id, device_manufacturer, device_model, android_sdk,
+                    android_build_fingerprint, camera_package, camera_version_code,
+                    locale_tag, display_width_px, display_height_px, density_dpi,
+                    selector_schema_version, targets_json, speed_targets_json,
+                    state_signals_json, fallback_gestures_json, compatibility,
+                    verified_at_epoch_ms
+                ) VALUES (
+                    'profile-current-json', 'Google', 'Pixel 8 Pro', 37,
+                    'google/husky/test', 'com.google.android.GoogleCamera', 1,
+                    'en-US', 1344, 2992, 480,
+                    3,
+                    '{"schemaVersion":2,"targets":[{"action":"SELECT_VIDEO","minimumScore":90,"selectors":[{"packageName":"com.google.android.GoogleCamera","resourceId":"camera:id/video","role":"android.widget.Button","contentDescription":"Video","text":null,"expectedSelected":true,"expectedChecked":true,"expectedRegion":null,"requiresClickable":true,"requiresVisible":true}]}]}',
+                    '{"schemaVersion":2,"targets":[]}',
+                    '{"schemaVersion":2,"signals":[]}',
+                    '[]', 'NEEDS_REHEARSAL', NULL
+                )
+                """.trimIndent(),
+            )
+            execSQL(
+                """
+                INSERT INTO automation_profiles (
+                    id, device_manufacturer, device_model, android_sdk,
+                    android_build_fingerprint, camera_package, camera_version_code,
+                    locale_tag, display_width_px, display_height_px, density_dpi,
+                    selector_schema_version, targets_json, speed_targets_json,
+                    state_signals_json, fallback_gestures_json, compatibility,
+                    verified_at_epoch_ms
+                ) VALUES (
+                    'profile-schema-one', 'Google', 'Pixel 8 Pro', 37,
+                    'google/husky/test', 'com.google.android.GoogleCamera', 1,
+                    'en-US', 1344, 2992, 480,
+                    1,
+                    '{"schemaVersion":1,"targets":[{"action":"SELECT_VIDEO","minimumScore":80,"selectors":[{"packageName":"com.google.android.GoogleCamera","resourceId":"camera:id/video","role":"android.widget.Button","contentDescription":"Video","text":null,"expectedSelected":false,"expectedRegion":null,"requiresClickable":true,"requiresVisible":true}]}]}',
+                    '{"schemaVersion":1,"targets":[{"speed":"X120","minimumScore":81,"selectors":[{"packageName":"com.google.android.GoogleCamera","resourceId":"camera:id/x120","role":"android.widget.Button","contentDescription":"120x","text":null,"expectedSelected":true,"expectedRegion":null,"requiresClickable":true,"requiresVisible":true}]}]}',
+                    '{"schemaVersion":1,"signals":[{"signal":"VIDEO_MODE_ACTIVE","minimumScore":82,"selectors":[{"packageName":"com.google.android.GoogleCamera","resourceId":"camera:id/video","role":"android.widget.Button","contentDescription":"Video","text":null,"expectedSelected":true,"expectedRegion":null,"requiresClickable":false,"requiresVisible":true}]}]}',
+                    '[]', 'NEEDS_REHEARSAL', NULL
+                )
+                """.trimIndent(),
+            )
+            close()
+        }
+
+        migrationHelper.runMigrationsAndValidate(
+            DATABASE_NAME,
+            4,
+            true,
+            LenswakeDatabase.MIGRATION_3_4,
+        ).close()
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.databaseBuilder(context, LenswakeDatabase::class.java, DATABASE_NAME)
+            .addMigrations(LenswakeDatabase.MIGRATION_3_4)
+            .build()
+        val (profile, schemaOneProfile) = runBlocking {
+            val repository = RoomAutomationProfileRepository(database)
+            repository.get(ProfileId("profile-current-json")) to
+                repository.get(ProfileId("profile-schema-one"))
+        }
+        database.close()
+
+        val selector = checkNotNull(profile)
+            .targets
+            .getValue(AutomationAction.SELECT_VIDEO)
+            .selectors
+            .single()
+        assertEquals(true, selector.expectedSelected)
+        assertEquals(true, selector.expectedChecked)
+
+        checkNotNull(schemaOneProfile)
+        val actionTarget = schemaOneProfile.targets.getValue(AutomationAction.SELECT_VIDEO)
+        assertEquals(80, actionTarget.minimumScore)
+        assertEquals(false, actionTarget.selectors.single().expectedSelected)
+        assertNull(actionTarget.selectors.single().expectedChecked)
+        val speedTarget = schemaOneProfile.speedTargets.getValue(TimeLapseSpeed.X120)
+        assertEquals(81, speedTarget.minimumScore)
+        assertEquals(true, speedTarget.selectors.single().expectedSelected)
+        assertNull(speedTarget.selectors.single().expectedChecked)
+        val stateSignal = schemaOneProfile.stateSignals.getValue(
+            PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
+        )
+        assertEquals(82, stateSignal.minimumScore)
+        assertEquals(false, stateSignal.selectors.single().requiresClickable)
+        assertNull(stateSignal.selectors.single().expectedChecked)
     }
 
     private companion object {
