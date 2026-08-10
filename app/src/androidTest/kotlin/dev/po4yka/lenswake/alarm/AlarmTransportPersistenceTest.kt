@@ -53,4 +53,14 @@ class AlarmTransportPersistenceTest {
         assertTrue(first.clear())
         assertNull(first.checkpoint())
     }
+
+    @Test
+    fun recoveryCheckpointUsesDeviceProtectedStorage() {
+        val persistence = SharedPreferencesAlarmRecoveryCheckpointPersistence(
+            context,
+            "device-protected-recovery-${System.nanoTime()}",
+        )
+
+        assertTrue(persistence.isDeviceProtectedStorage)
+    }
 }

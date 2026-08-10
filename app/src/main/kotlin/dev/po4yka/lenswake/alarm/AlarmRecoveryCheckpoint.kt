@@ -35,7 +35,11 @@ internal class SharedPreferencesAlarmRecoveryCheckpointPersistence(
     context: Context,
     preferenceName: String = PREFERENCE_NAME,
 ) : AlarmRecoveryCheckpointPersistence {
-    private val preferences = context.getSharedPreferences(preferenceName, Context.MODE_PRIVATE)
+    private val storageContext = context.createDeviceProtectedStorageContext()
+    private val preferences = storageContext.getSharedPreferences(preferenceName, Context.MODE_PRIVATE)
+
+    internal val isDeviceProtectedStorage: Boolean
+        get() = storageContext.isDeviceProtectedStorage
 
     override fun checkpoint(): AlarmRecoveryCheckpoint? {
         val encoded = preferences.getString(KEY_CHECKPOINT, null) ?: return null
@@ -95,7 +99,7 @@ internal class AndroidAlarmRecoveryRetryBackend(
     private val alarmManager = context.getSystemService(AlarmManager::class.java)
 
     override fun schedule(triggerAtEpochMillis: Long): Result<Unit> = runCatching {
-        val pendingIntent = PendingIntent.getForegroundService(
+        val pendingIntent = PendingIntent.getBroadcast(
             context,
             RECOVERY_RETRY_REQUEST_CODE,
             retryIntent(),
@@ -109,7 +113,7 @@ internal class AndroidAlarmRecoveryRetryBackend(
     }
 
     override fun cancel(): Boolean = runCatching {
-        val pendingIntent = PendingIntent.getForegroundService(
+        val pendingIntent = PendingIntent.getBroadcast(
             context,
             RECOVERY_RETRY_REQUEST_CODE,
             retryIntent(),
@@ -122,7 +126,7 @@ internal class AndroidAlarmRecoveryRetryBackend(
         true
     }.getOrDefault(false)
 
-    private fun retryIntent(): Intent = Intent(context, AlarmRecoveryService::class.java)
+    private fun retryIntent(): Intent = Intent(context, AlarmRecoveryReceiver::class.java)
         .setAction(ACTION_ALARM_RECOVERY_RETRY)
 
     private companion object {

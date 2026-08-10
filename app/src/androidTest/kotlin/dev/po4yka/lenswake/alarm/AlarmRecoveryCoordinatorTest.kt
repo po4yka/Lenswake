@@ -56,7 +56,10 @@ class AlarmRecoveryCoordinatorTest {
 
         assertEquals(context.packageName, receiverInfo.packageName)
         assertTrue(receiverInfo.enabled)
+        assertTrue(receiverInfo.directBootAware)
         listOf(
+            Intent.ACTION_LOCKED_BOOT_COMPLETED,
+            Intent.ACTION_USER_UNLOCKED,
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_TIME_CHANGED,
             Intent.ACTION_TIMEZONE_CHANGED,
