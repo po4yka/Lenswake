@@ -268,8 +268,11 @@ class PixelCameraAccessibilityPort internal constructor(
         val recording = PixelCameraStateSignal.RECORDING_ACTIVE in recordingSignals
 
         if (PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN in active) {
+            val activeSpeeds = SPEED_SIGNALS.filterKeys(active::contains).values.toSet()
+            if (activeSpeeds.size > 1) return unavailableConflictingState("timeLapseSpeed", activeSpeeds)
             return PortResult.Observed(
                 PixelCameraState.TimeLapseSpeedPicker(
+                    speed = activeSpeeds.singleOrNull(),
                     recording = recording,
                     lens = if (PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE in active) {
                         LensSelection.REAR_MAIN

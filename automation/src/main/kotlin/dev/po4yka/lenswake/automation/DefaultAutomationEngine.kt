@@ -379,7 +379,11 @@ class DefaultAutomationEngine(
                             "Pixel Camera did not expose the Time Lapse speed picker",
                         ),
                         action = { pixelCamera.openTimeLapseSpeedControl(context.profileUse) },
-                    ) { it is PixelCameraState.TimeLapseSpeedPicker && !it.recording }
+                    ) {
+                        it is PixelCameraState.TimeLapseSpeedPicker &&
+                            !it.recording &&
+                            it.lens == LensSelection.REAR_MAIN
+                    }
 
                     else -> {
                         if (context.current.hasUncertainRecordDispatch()) {
@@ -418,6 +422,47 @@ class DefaultAutomationEngine(
                             ),
                         )
                     }
+                    if (state.lens != LensSelection.REAR_MAIN) {
+                        fail(
+                            context,
+                            failure(
+                                AutomationFailureCode.LENS_NOT_VERIFIED,
+                                "The open Time Lapse speed picker did not confirm the rear main lens",
+                            ),
+                        )
+                    }
+                    if (state.speed == capture.speed) {
+                        if (context.current.hasUncertainRecordDispatch()) {
+                            fail(
+                                context,
+                                failure(
+                                    AutomationFailureCode.RECORDING_NOT_CONFIRMED,
+                                    "An uncertain prior Record dispatch must be reconciled without redispatch",
+                                ),
+                            )
+                        }
+                        dispatchRecordingStart(context)
+                        observeCamera(
+                            context = context,
+                            operation = AutomationOperation.VERIFY_RECORDING,
+                            state = AutomationStateName.VERIFYING_RECORDING,
+                            failureCode = AutomationFailureCode.RECORDING_NOT_CONFIRMED,
+                            failureMessage = "Pixel Camera did not confirm Time Lapse recording",
+                        ) { observed ->
+                            when (observed) {
+                                is PixelCameraState.TimeLapse ->
+                                    observed.recording &&
+                                        observed.speed == capture.speed &&
+                                        observed.lens == LensSelection.REAR_MAIN
+                                is PixelCameraState.TimeLapseSpeedPicker ->
+                                    observed.recording &&
+                                        observed.speed == capture.speed &&
+                                        observed.lens == LensSelection.REAR_MAIN
+                                else -> false
+                            }
+                        }
+                        return markRecordingVerified(context)
+                    }
                     dispatchAndVerify(
                         context = context,
                         operation = AutomationOperation.SELECT_TIME_LAPSE_SPEED,
@@ -432,7 +477,16 @@ class DefaultAutomationEngine(
                             "Pixel Camera did not confirm the requested Time Lapse speed",
                         ),
                         action = { pixelCamera.selectTimeLapseSpeed(capture.speed, context.profileUse) },
-                    ) { it is PixelCameraState.TimeLapse && !it.recording && it.speed == capture.speed }
+                    ) {
+                        when (it) {
+                            is PixelCameraState.TimeLapse -> !it.recording && it.speed == capture.speed
+                            is PixelCameraState.TimeLapseSpeedPicker ->
+                                !it.recording &&
+                                    it.speed == capture.speed &&
+                                    it.lens == LensSelection.REAR_MAIN
+                            else -> false
+                        }
+                    }
                 }
 
                 PixelCameraState.RecordingUnknownMode -> fail(

@@ -358,6 +358,34 @@ class DefaultAutomationEngineTest {
     }
 
     @Test
+    fun `start records once when selected speed remains in the open picker`() = runTest {
+        val session = session(status = SessionStatus.PENDING)
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(
+            state = PixelCameraState.TimeLapse(
+                speed = TimeLapseSpeed.X30,
+                recording = false,
+                lens = LensSelection.REAR_MAIN,
+            ),
+            keepSpeedPickerOpenAfterSelection = true,
+        )
+
+        val result = engine(repository, FakeDeviceControl(interactive = true), camera).start(session.id)
+
+        assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        assertEquals(
+            listOf(
+                "launch",
+                "openTimeLapseSpeedControl",
+                "selectSpeed:X120",
+                "startRecording",
+            ),
+            camera.calls,
+        )
+        assertTrue(camera.lensWasRearMainWhenRecordStarted)
+    }
+
+    @Test
     fun `start fails when rear main lens postcondition is not observed`() = runTest {
         val session = session(status = SessionStatus.PENDING)
         val repository = FakeExecutionRepository(session)
@@ -1159,6 +1187,7 @@ class DefaultAutomationEngineTest {
         private val confirmStop: Boolean = true,
         private val confirmLens: Boolean = true,
         private val confirmSpeedPicker: Boolean = true,
+        private val keepSpeedPickerOpenAfterSelection: Boolean = false,
         private val suspendLaunch: Boolean = false,
         private val cancelLaunch: Boolean = false,
         private val suspendStart: Boolean = false,
@@ -1222,6 +1251,7 @@ class DefaultAutomationEngineTest {
             if (confirmSpeedPicker) {
                 val current = state as PixelCameraState.TimeLapse
                 state = PixelCameraState.TimeLapseSpeedPicker(
+                    speed = current.speed,
                     recording = current.recording,
                     lens = current.lens,
                 )
@@ -1236,11 +1266,15 @@ class DefaultAutomationEngineTest {
             receivedProfileUses += profileUse
             calls += "selectSpeed:$speed"
             val current = state as PixelCameraState.TimeLapseSpeedPicker
-            state = PixelCameraState.TimeLapse(
-                speed = speed,
-                recording = current.recording,
-                lens = current.lens,
-            )
+            state = if (keepSpeedPickerOpenAfterSelection) {
+                current.copy(speed = speed)
+            } else {
+                PixelCameraState.TimeLapse(
+                    speed = speed,
+                    recording = current.recording,
+                    lens = current.lens,
+                )
+            }
             return dispatched()
         }
 
@@ -1262,9 +1296,17 @@ class DefaultAutomationEngineTest {
             if (suspendStart) awaitCancellation()
             startDispatch?.let { return it }
             if (confirmStart) {
-                val current = state as PixelCameraState.TimeLapse
-                lensWasRearMainWhenRecordStarted = current.lens == LensSelection.REAR_MAIN
-                state = current.copy(recording = true)
+                when (val current = state) {
+                    is PixelCameraState.TimeLapse -> {
+                        lensWasRearMainWhenRecordStarted = current.lens == LensSelection.REAR_MAIN
+                        state = current.copy(recording = true)
+                    }
+                    is PixelCameraState.TimeLapseSpeedPicker -> {
+                        lensWasRearMainWhenRecordStarted = current.lens == LensSelection.REAR_MAIN
+                        state = current.copy(recording = true)
+                    }
+                    else -> error("Record dispatch requires Time Lapse state")
+                }
             }
             return dispatched()
         }

@@ -139,6 +139,31 @@ class PixelCameraAccessibilityPortTest {
         val observed = assertInstanceOf(PortResult.Observed::class.java, result)
         assertEquals(
             PixelCameraState.TimeLapseSpeedPicker(
+                speed = null,
+                recording = false,
+                lens = LensSelection.REAR_MAIN,
+            ),
+            observed.value,
+        )
+    }
+
+    @Test
+    fun `persistent speed picker reports the selected time lapse speed`() = runTest {
+        val gateway = FakeAccessibilityGateway(
+            activeSignals(
+                PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN,
+                PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE,
+                PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
+                PixelCameraStateSignal.NOT_RECORDING,
+            ),
+        )
+
+        val result = port(gateway = gateway).inspect(profileUse())
+
+        val observed = assertInstanceOf(PortResult.Observed::class.java, result)
+        assertEquals(
+            PixelCameraState.TimeLapseSpeedPicker(
+                speed = TimeLapseSpeed.X120,
                 recording = false,
                 lens = LensSelection.REAR_MAIN,
             ),

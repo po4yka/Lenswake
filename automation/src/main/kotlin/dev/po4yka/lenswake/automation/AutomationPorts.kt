@@ -30,6 +30,7 @@ sealed interface PixelCameraState {
     ) : PixelCameraState
 
     data class TimeLapseSpeedPicker(
+        val speed: TimeLapseSpeed? = null,
         val recording: Boolean,
         val lens: LensSelection? = null,
     ) : PixelCameraState
