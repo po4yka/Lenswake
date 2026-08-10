@@ -92,6 +92,43 @@ class AlarmRecoveryCorrectnessTest {
         assertTrue(result.exceptionOrNull()?.message?.contains("REHEARSAL_CURRENT") == true)
     }
 
+    @Test
+    fun unknownBatteryStateBlocksAlarmTimeAdmission() = runBlocking {
+        val readiness = PreflightAlarmRecoveryReadiness {
+            readyReport().replace(
+                PreflightCheckType.BATTERY,
+                PreflightStatus.UNKNOWN,
+                "Battery capacity is unavailable",
+            )
+        }
+
+        val result = readiness.check()
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()?.message?.contains("Battery capacity") == true)
+    }
+
+    @Test
+    fun knownResourceWarningDoesNotBlockAlarmTimeAdmission() = runBlocking {
+        val readiness = PreflightAlarmRecoveryReadiness {
+            readyReport().copy(
+                checks = readyReport().checks.map { check ->
+                    if (check.type == PreflightCheckType.CHARGING) {
+                        check.copy(
+                            severity = PreflightSeverity.WARNING,
+                            status = PreflightStatus.FAILED,
+                            message = "Device is not charging",
+                        )
+                    } else {
+                        check
+                    }
+                },
+            )
+        }
+
+        assertTrue(readiness.check().isSuccess)
+    }
+
     private fun readyReport() = PreflightReport(
         checks = REQUIRED_TYPES.map { type ->
             PreflightCheck(
@@ -124,6 +161,9 @@ class AlarmRecoveryCorrectnessTest {
             PreflightCheckType.PROFILE_AVAILABLE,
             PreflightCheckType.PROFILE_COMPATIBILITY,
             PreflightCheckType.REHEARSAL_CURRENT,
+            PreflightCheckType.BATTERY,
+            PreflightCheckType.CHARGING,
+            PreflightCheckType.STORAGE,
         )
     }
 }

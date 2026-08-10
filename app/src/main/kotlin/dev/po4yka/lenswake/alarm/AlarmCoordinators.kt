@@ -3,6 +3,7 @@ package dev.po4yka.lenswake.alarm
 import dev.po4yka.lenswake.core.RecordingScheduler
 import dev.po4yka.lenswake.core.PreflightCheckType
 import dev.po4yka.lenswake.core.PreflightReport
+import dev.po4yka.lenswake.core.PreflightSeverity
 import dev.po4yka.lenswake.core.PreflightStatus
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -63,8 +64,12 @@ class PreflightAlarmRecoveryReadiness(
         val checks = inspect().checks.associateBy { it.type }
         val blockers = REQUIRED_CHECKS.mapNotNull { type ->
             val check = checks[type]
-            if (check?.status == PreflightStatus.PASSED) null
-            else check?.message ?: "$type readiness evidence is missing"
+            when {
+                check == null -> "$type readiness evidence is missing"
+                check.severity != PreflightSeverity.BLOCKING -> null
+                check.status == PreflightStatus.PASSED -> null
+                else -> check.message
+            }
         }
         if (blockers.isNotEmpty()) {
             throw AlarmRecoveryReadinessException(
@@ -86,6 +91,9 @@ class PreflightAlarmRecoveryReadiness(
             PreflightCheckType.PROFILE_AVAILABLE,
             PreflightCheckType.PROFILE_COMPATIBILITY,
             PreflightCheckType.REHEARSAL_CURRENT,
+            PreflightCheckType.BATTERY,
+            PreflightCheckType.CHARGING,
+            PreflightCheckType.STORAGE,
         )
     }
 }
