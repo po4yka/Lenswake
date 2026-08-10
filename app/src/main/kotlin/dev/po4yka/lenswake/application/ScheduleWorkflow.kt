@@ -269,20 +269,20 @@ class ScheduleWorkflow(
             return ScheduleWorkflowResult.Applied(operation, candidate)
         }
 
-        scheduler.scheduleStart(candidate).exceptionOrNull()?.let { failure ->
-            return failedRegistration(
-                previous = previous,
-                candidate = candidate,
-                code = ScheduleWorkflowFailureCode.START_ALARM_FAILED,
-                message = "The exact START alarm was not registered: ${failure.safeMessage()}.",
-            )
-        }
         scheduler.scheduleStop(candidate).exceptionOrNull()?.let { failure ->
             return failedRegistration(
                 previous = previous,
                 candidate = candidate,
                 code = ScheduleWorkflowFailureCode.STOP_ALARM_FAILED,
                 message = "The exact STOP alarm was not registered: ${failure.safeMessage()}.",
+            )
+        }
+        scheduler.scheduleStart(candidate).exceptionOrNull()?.let { failure ->
+            return failedRegistration(
+                previous = previous,
+                candidate = candidate,
+                code = ScheduleWorkflowFailureCode.START_ALARM_FAILED,
+                message = "The exact START alarm was not registered: ${failure.safeMessage()}.",
             )
         }
 
@@ -333,11 +333,30 @@ class ScheduleWorkflow(
             false
         }
         if (persisted && schedule.enabled) {
-            scheduler.scheduleStart(schedule).exceptionOrNull()?.let {
-                add("Could not restore the previous START alarm: ${it.safeMessage()}.")
-            }
-            scheduler.scheduleStop(schedule).exceptionOrNull()?.let {
+            val stopFailure = scheduler.scheduleStop(schedule).exceptionOrNull()
+            stopFailure?.let {
                 add("Could not restore the previous STOP alarm: ${it.safeMessage()}.")
+            }
+            if (stopFailure == null) {
+                val startFailure = scheduler.scheduleStart(schedule).exceptionOrNull()
+                startFailure?.let {
+                    add("Could not restore the previous START alarm: ${it.safeMessage()}.")
+                }
+                if (startFailure == null) return@buildList
+            }
+            scheduler.cancel(schedule.id).exceptionOrNull()?.let {
+                add("Could not cancel alarms after incomplete rollback restoration: ${it.safeMessage()}.")
+            }
+            val disabled = schedule.copy(
+                enabled = false,
+                updatedAt = maxOf(schedule.updatedAt, clock.now()),
+            )
+            try {
+                scheduleRepository.save(disabled)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                add("Could not persist the schedule as disabled after incomplete alarm restoration: ${failure.safeMessage()}.")
             }
         }
     }
@@ -386,7 +405,13 @@ class ScheduleWorkflow(
                         code = ScheduleWorkflowFailureCode.RUNTIME_NOT_READY,
                         message = requiredPreflightChecks.mapNotNull { required ->
                             val check = preflight.checks.singleOrNull { it.type == required }
-                            if (check?.status == dev.po4yka.lenswake.core.PreflightStatus.PASSED) {
+                            if (
+                                check != null &&
+                                (
+                                    check.severity != dev.po4yka.lenswake.core.PreflightSeverity.BLOCKING ||
+                                        check.status == dev.po4yka.lenswake.core.PreflightStatus.PASSED
+                                )
+                            ) {
                                 null
                             } else {
                                 check?.message ?: "$required was not reported."
@@ -449,7 +474,10 @@ class ScheduleWorkflow(
 
     private fun dev.po4yka.lenswake.core.PreflightReport.hasAllRequiredChecksPassed(): Boolean =
         requiredPreflightChecks.all { required ->
-            checks.singleOrNull { it.type == required }?.status == dev.po4yka.lenswake.core.PreflightStatus.PASSED
+            checks.singleOrNull { it.type == required }?.let { check ->
+                check.severity != dev.po4yka.lenswake.core.PreflightSeverity.BLOCKING ||
+                    check.status == dev.po4yka.lenswake.core.PreflightStatus.PASSED
+            } == true
         }
 
     private val ScheduleValidationError.message: String
@@ -478,6 +506,9 @@ class ScheduleWorkflow(
             dev.po4yka.lenswake.core.PreflightCheckType.PROFILE_AVAILABLE,
             dev.po4yka.lenswake.core.PreflightCheckType.PROFILE_COMPATIBILITY,
             dev.po4yka.lenswake.core.PreflightCheckType.REHEARSAL_CURRENT,
+            dev.po4yka.lenswake.core.PreflightCheckType.BATTERY,
+            dev.po4yka.lenswake.core.PreflightCheckType.CHARGING,
+            dev.po4yka.lenswake.core.PreflightCheckType.STORAGE,
         )
     }
 }

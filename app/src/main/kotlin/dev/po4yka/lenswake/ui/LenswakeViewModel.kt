@@ -567,7 +567,10 @@ internal object LenswakeUiStateMapper {
 
     private fun PreflightReport.hasAllScheduleChecksPassed(): Boolean =
         scheduleRequiredChecks.all { type ->
-            checks.singleOrNull { it.type == type }?.status == PreflightStatus.PASSED
+            checks.singleOrNull { it.type == type }?.let { check ->
+                check.severity != dev.po4yka.lenswake.core.PreflightSeverity.BLOCKING ||
+                    check.status == PreflightStatus.PASSED
+            } == true
         }
 
     private fun rehearsalUnavailableReason(
@@ -722,6 +725,9 @@ internal object LenswakeUiStateMapper {
         PreflightCheckType.DEVICE_WAKE,
         PreflightCheckType.PROFILE_COMPATIBILITY,
         PreflightCheckType.REHEARSAL_CURRENT,
+        PreflightCheckType.BATTERY,
+        PreflightCheckType.CHARGING,
+        PreflightCheckType.STORAGE,
     )
 
     private val editorTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm", Locale.ROOT)

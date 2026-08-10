@@ -412,7 +412,7 @@ class LenswakeViewModelTest {
                 it.scheduleAction is ScheduleActionUiState.Succeeded && it.schedules.size == 1
             }
         }
-        assertEquals(listOf("start", "stop"), scheduler.events)
+        assertEquals(listOf("stop", "start"), scheduler.events)
         assertEquals("Dawn", succeeded.schedules.single().title)
         assertEquals("Enabled", succeeded.schedules.single().status)
         assertInstanceOf(ScheduleEditorUiState.Closed::class.java, succeeded.scheduleEditor)
@@ -647,6 +647,9 @@ class LenswakeViewModelTest {
                 PreflightCheckType.PROFILE_AVAILABLE,
                 PreflightCheckType.PROFILE_COMPATIBILITY,
                 PreflightCheckType.REHEARSAL_CURRENT,
+                PreflightCheckType.BATTERY,
+                PreflightCheckType.CHARGING,
+                PreflightCheckType.STORAGE,
             ).map { type ->
                 PreflightCheck(
                     type = type,

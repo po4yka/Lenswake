@@ -51,7 +51,7 @@ class ScheduleWorkflowTest {
         val applied = assertInstanceOf(ScheduleWorkflowResult.Applied::class.java, result)
         val capture = applied.schedule.capture as CaptureConfiguration.TimeLapse
         assertEquals(ScheduleOperation.CREATED, applied.operation)
-        assertEquals(listOf("save", "start", "stop"), fixture.events)
+        assertEquals(listOf("save", "stop", "start"), fixture.events)
         assertEquals(TimeLapseSpeed.X120, capture.speed)
         assertEquals(LensSelection.REAR_MAIN, capture.lens)
         assertEquals(profileId, applied.schedule.profileId)
@@ -66,7 +66,20 @@ class ScheduleWorkflowTest {
 
         val failed = assertInstanceOf(ScheduleWorkflowResult.Failed::class.java, result)
         assertEquals(ScheduleWorkflowFailureCode.STOP_ALARM_FAILED, failed.code)
-        assertEquals(listOf("save", "start", "stop", "cancel", "delete"), fixture.events)
+        assertEquals(listOf("save", "stop", "cancel", "delete"), fixture.events)
+        assertTrue(failed.rollbackFailures.isEmpty())
+        assertTrue(fixture.schedules.current().isEmpty())
+    }
+
+    @Test
+    fun startRegistrationFailureCancelsAlreadyArmedStopAndRemovesNewSchedule() = runTest {
+        val fixture = fixture(startFailures = 1)
+
+        val result = fixture.workflow.create(command())
+
+        val failed = assertInstanceOf(ScheduleWorkflowResult.Failed::class.java, result)
+        assertEquals(ScheduleWorkflowFailureCode.START_ALARM_FAILED, failed.code)
+        assertEquals(listOf("save", "stop", "start", "cancel", "delete"), fixture.events)
         assertTrue(failed.rollbackFailures.isEmpty())
         assertTrue(fixture.schedules.current().isEmpty())
     }
@@ -84,11 +97,31 @@ class ScheduleWorkflowTest {
         val failed = assertInstanceOf(ScheduleWorkflowResult.Failed::class.java, result)
         assertEquals(ScheduleWorkflowFailureCode.STOP_ALARM_FAILED, failed.code)
         assertEquals(
-            listOf("cancel", "save", "start", "stop", "cancel", "save", "start", "stop"),
+            listOf("cancel", "save", "stop", "cancel", "save", "stop", "start"),
             fixture.events,
         )
         assertEquals(previous, fixture.schedules.get(previous.id))
         assertTrue(failed.rollbackFailures.isEmpty())
+    }
+
+    @Test
+    fun failedRollbackPersistsPreviousScheduleDisabledWhenStopCannotBeRestored() = runTest {
+        val previous = schedule()
+        val fixture = fixture(stopFailures = 2, schedules = listOf(previous))
+
+        val result = fixture.workflow.edit(
+            previous.id,
+            command(name = "Updated", startAt = now.plusSeconds(7_200), stopAt = now.plusSeconds(14_400)),
+        )
+
+        val failed = assertInstanceOf(ScheduleWorkflowResult.Failed::class.java, result)
+        assertEquals(ScheduleWorkflowFailureCode.STOP_ALARM_FAILED, failed.code)
+        assertTrue(failed.rollbackFailures.any { it.contains("previous STOP alarm") })
+        assertEquals(
+            listOf("cancel", "save", "stop", "cancel", "save", "stop", "cancel", "save"),
+            fixture.events,
+        )
+        assertFalse(fixture.schedules.get(previous.id)!!.enabled)
     }
 
     @Test
@@ -113,7 +146,7 @@ class ScheduleWorkflowTest {
 
         val applied = assertInstanceOf(ScheduleWorkflowResult.Applied::class.java, result)
         assertEquals(ScheduleOperation.ENABLED, applied.operation)
-        assertEquals(listOf("cancel", "save", "start", "stop"), fixture.events)
+        assertEquals(listOf("cancel", "save", "stop", "start"), fixture.events)
         assertTrue(fixture.schedules.get(previous.id)!!.enabled)
     }
 
@@ -308,7 +341,7 @@ class ScheduleWorkflowTest {
         assertInstanceOf(ScheduleWorkflowResult.Applied::class.java, first.await())
         assertInstanceOf(ScheduleWorkflowResult.Applied::class.java, second.await())
         assertEquals(
-            listOf("save", "start:First", "stop:First", "save", "start:Second", "stop:Second"),
+            listOf("save", "stop:First", "start:First", "save", "stop:Second", "start:Second"),
             events,
         )
     }
@@ -361,10 +394,11 @@ class ScheduleWorkflowTest {
         releaseStart.complete(Unit)
         assertInstanceOf(ScheduleWorkflowResult.Applied::class.java, mutation.await())
         assertTrue(recovery.await().isSuccess)
-        assertEquals(listOf("save", "start", "stop", "restore"), events)
+        assertEquals(listOf("save", "stop", "start", "restore"), events)
     }
 
     private fun fixture(
+        startFailures: Int = 0,
         stopFailures: Int = 0,
         schedules: List<RecordingSchedule> = emptyList(),
         profileInstalled: Boolean = true,
@@ -373,7 +407,7 @@ class ScheduleWorkflowTest {
     ): Fixture {
         val events = mutableListOf<String>()
         val scheduleRepository = FakeScheduleRepository(schedules, events)
-        val scheduler = FakeRecordingScheduler(events, stopFailures)
+        val scheduler = FakeRecordingScheduler(events, startFailures, stopFailures)
         val profiles = FakeProfileRepository(if (profileInstalled) listOf(profile()) else emptyList())
         return Fixture(
             workflow = ScheduleWorkflow(
@@ -450,13 +484,19 @@ class ScheduleWorkflowTest {
 
     private class FakeRecordingScheduler(
         private val events: MutableList<String>,
-        stopFailures: Int,
+        startFailures: Int = 0,
+        stopFailures: Int = 0,
     ) : RecordingScheduler {
+        private var remainingStartFailures = startFailures
         private var remainingStopFailures = stopFailures
 
         override suspend fun scheduleStart(schedule: RecordingSchedule): Result<Unit> {
             events += "start"
-            return Result.success(Unit)
+            return if (remainingStartFailures-- > 0) {
+                Result.failure(IllegalStateException("start rejected"))
+            } else {
+                Result.success(Unit)
+            }
         }
 
         override suspend fun scheduleStop(schedule: RecordingSchedule): Result<Unit> {
@@ -555,6 +595,9 @@ class ScheduleWorkflowTest {
                 PreflightCheckType.PROFILE_AVAILABLE,
                 PreflightCheckType.PROFILE_COMPATIBILITY,
                 PreflightCheckType.REHEARSAL_CURRENT,
+                PreflightCheckType.BATTERY,
+                PreflightCheckType.CHARGING,
+                PreflightCheckType.STORAGE,
             ).map { type ->
                 PreflightCheck(
                     type = type,
