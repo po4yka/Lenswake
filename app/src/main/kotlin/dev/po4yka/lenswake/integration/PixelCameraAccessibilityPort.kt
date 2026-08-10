@@ -375,16 +375,11 @@ class PixelCameraAccessibilityPort internal constructor(
         }
 
         val active = linkedSetOf<PixelCameraStateSignal>()
+        val ambiguous = linkedSetOf<PixelCameraStateSignal>()
         for ((signal, selectorSet) in profile.stateSignals) {
             when (selectorMatcher.match(selectorSet, profile, nodes)) {
                 is SelectorMatchResult.Match -> active += signal
-                is SelectorMatchResult.Ambiguous -> return PortResult.Unavailable(
-                    AutomationFailure(
-                        code = AutomationFailureCode.UI_TARGET_AMBIGUOUS,
-                        message = "The Pixel Camera state signal was ambiguous",
-                        context = mapOf("signal" to signal.name),
-                    ),
-                )
+                is SelectorMatchResult.Ambiguous -> ambiguous += signal
                 is SelectorMatchResult.BelowThreshold,
                 SelectorMatchResult.NoEligibleNodes,
                 SelectorMatchResult.TargetNotConfigured,
@@ -392,15 +387,31 @@ class PixelCameraAccessibilityPort internal constructor(
             }
         }
 
+        val recordingStateSignals = setOf(
+            PixelCameraStateSignal.RECORDING_ACTIVE,
+            PixelCameraStateSignal.NOT_RECORDING,
+        )
+        val ambiguousRecordingSignals = ambiguous.intersect(recordingStateSignals)
+        if (ambiguousRecordingSignals.isNotEmpty()) {
+            return unavailableAmbiguousState(ambiguousRecordingSignals)
+        }
         val recordingSignals = active.intersect(
-            setOf(PixelCameraStateSignal.RECORDING_ACTIVE, PixelCameraStateSignal.NOT_RECORDING),
+            recordingStateSignals,
         )
         if (recordingSignals.size != 1) {
             return unavailableConflictingState("recording", recordingSignals)
         }
         val recording = PixelCameraStateSignal.RECORDING_ACTIVE in recordingSignals
+        if (ambiguous.isNotEmpty()) {
+            return if (recording && ambiguous.all(STOP_OPTIONAL_SIGNALS::contains)) {
+                PortResult.Observed(PixelCameraState.RecordingUnknownMode)
+            } else {
+                unavailableAmbiguousState(ambiguous)
+            }
+        }
 
         if (PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN in active) {
+            if (recording) return PortResult.Observed(PixelCameraState.RecordingUnknownMode)
             val activeSpeeds = SPEED_SIGNALS.filterKeys(active::contains).values.toSet()
             if (activeSpeeds.size > 1) return unavailableConflictingState("timeLapseSpeed", activeSpeeds)
             return PortResult.Observed(
@@ -451,15 +462,20 @@ class PixelCameraAccessibilityPort internal constructor(
     ): PortResult<PixelCameraState> {
         val activeSpeeds = SPEED_SIGNALS.filterKeys(active::contains).values.toSet()
         if (activeSpeeds.size > 1) return unavailableConflictingState("timeLapseSpeed", activeSpeeds)
+        val speed = activeSpeeds.singleOrNull()
+        val lens = if (PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE in active) {
+            LensSelection.REAR_MAIN
+        } else {
+            null
+        }
+        if (recording && (speed == null || lens == null)) {
+            return PortResult.Observed(PixelCameraState.RecordingUnknownMode)
+        }
         return PortResult.Observed(
             PixelCameraState.TimeLapse(
-                speed = activeSpeeds.singleOrNull(),
+                speed = speed,
                 recording = recording,
-                lens = if (PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE in active) {
-                    LensSelection.REAR_MAIN
-                } else {
-                    null
-                },
+                lens = lens,
             ),
         )
     }
@@ -472,6 +488,16 @@ class PixelCameraAccessibilityPort internal constructor(
             code = AutomationFailureCode.CAMERA_STATE_UNKNOWN,
             message = "Pixel Camera $dimension state is missing or conflicting",
             context = mapOf("matches" to values.joinToString(",")),
+        ),
+    )
+
+    private fun unavailableAmbiguousState(
+        signals: Set<PixelCameraStateSignal>,
+    ): PortResult.Unavailable = PortResult.Unavailable(
+        AutomationFailure(
+            code = AutomationFailureCode.UI_TARGET_AMBIGUOUS,
+            message = "The Pixel Camera state signal was ambiguous",
+            context = mapOf("signals" to signals.sortedBy { it.name }.joinToString(",") { it.name }),
         ),
     )
 
@@ -535,6 +561,10 @@ class PixelCameraAccessibilityPort internal constructor(
             PixelCameraStateSignal.TIME_LAPSE_SPEED_X10_ACTIVE to TimeLapseSpeed.X10,
             PixelCameraStateSignal.TIME_LAPSE_SPEED_X30_ACTIVE to TimeLapseSpeed.X30,
             PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE to TimeLapseSpeed.X120,
+        )
+        val STOP_OPTIONAL_SIGNALS = SPEED_SIGNALS.keys + setOf(
+            PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN,
+            PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
         )
     }
 }

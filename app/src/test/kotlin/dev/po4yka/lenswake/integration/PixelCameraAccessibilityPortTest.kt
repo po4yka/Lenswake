@@ -176,6 +176,126 @@ class PixelCameraAccessibilityPortTest {
     }
 
     @Test
+    fun `recording with obscured speed and lens controls is exposed as safe stop state`() = runTest {
+        val optionalControls = listOf(
+            PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE,
+            PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
+        )
+
+        for (obscured in optionalControls) {
+            val gateway = FakeAccessibilityGateway(
+                nodes = activeSignals(
+                    PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
+                    PixelCameraStateSignal.RECORDING_ACTIVE,
+                ) + optionalControls.map { signal -> node(signal.name).copy(visible = signal != obscured) },
+                dispatchResult = AccessibilityDispatchResult.SemanticActionDispatched,
+            )
+            val port = port(gateway = gateway)
+
+            val result = port.inspect(profileUse())
+
+            val observed = assertInstanceOf(PortResult.Observed::class.java, result)
+            assertEquals(PixelCameraState.RecordingUnknownMode, observed.value)
+            assertInstanceOf(ActionDispatch.Dispatched::class.java, port.stopRecording(profileUse()))
+            assertEquals(
+                "node-${PixelCameraStateSignal.RECORDING_ACTIVE.name}",
+                gateway.clickedNode?.id,
+            )
+        }
+    }
+
+    @Test
+    fun `recording keeps exact time lapse state when speed and lens are observable`() = runTest {
+        val gateway = FakeAccessibilityGateway(
+            activeSignals(
+                PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
+                PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE,
+                PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
+                PixelCameraStateSignal.RECORDING_ACTIVE,
+            ),
+        )
+
+        val result = port(gateway = gateway).inspect(profileUse())
+
+        val observed = assertInstanceOf(PortResult.Observed::class.java, result)
+        assertEquals(
+            PixelCameraState.TimeLapse(
+                speed = TimeLapseSpeed.X120,
+                recording = true,
+                lens = LensSelection.REAR_MAIN,
+            ),
+            observed.value,
+        )
+    }
+
+    @Test
+    fun `recording tolerates ambiguous exposed speed or lens controls only for safe stop`() = runTest {
+        val optionalControls = listOf(
+            PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE,
+            PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
+        )
+
+        for (ambiguousSignal in optionalControls) {
+            val duplicatedControl = node(ambiguousSignal.name)
+            val gateway = FakeAccessibilityGateway(
+                nodes = activeSignals(
+                    PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
+                    PixelCameraStateSignal.RECORDING_ACTIVE,
+                    *(optionalControls - ambiguousSignal).toTypedArray(),
+                ) + listOf(
+                    duplicatedControl.copy(id = "partially-visible-${ambiguousSignal.name}"),
+                    duplicatedControl.copy(id = "partially-obscured-${ambiguousSignal.name}"),
+                ),
+            )
+
+            val result = port(gateway = gateway).inspect(profileUse())
+
+            val observed = assertInstanceOf(PortResult.Observed::class.java, result)
+            assertEquals(PixelCameraState.RecordingUnknownMode, observed.value)
+        }
+    }
+
+    @Test
+    fun `non-recording state still rejects ambiguous speed controls`() = runTest {
+        val duplicatedSpeed = node(PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE.name)
+        val gateway = FakeAccessibilityGateway(
+            nodes = activeSignals(
+                PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
+                PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
+                PixelCameraStateSignal.NOT_RECORDING,
+            ) + listOf(
+                duplicatedSpeed.copy(id = "visible-speed-a"),
+                duplicatedSpeed.copy(id = "visible-speed-b"),
+            ),
+        )
+
+        val result = port(gateway = gateway).inspect(profileUse())
+
+        val unavailable = assertInstanceOf(PortResult.Unavailable::class.java, result)
+        assertEquals(AutomationFailureCode.UI_TARGET_AMBIGUOUS, unavailable.failure.code)
+    }
+
+    @Test
+    fun `recording state still rejects an ambiguous stop control`() = runTest {
+        val duplicatedStop = node(PixelCameraStateSignal.RECORDING_ACTIVE.name)
+        val gateway = FakeAccessibilityGateway(
+            nodes = activeSignals(
+                PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
+                PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE,
+                PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
+            ) + listOf(
+                duplicatedStop.copy(id = "stop-a"),
+                duplicatedStop.copy(id = "stop-b"),
+            ),
+        )
+
+        val result = port(gateway = gateway).inspect(profileUse())
+
+        val unavailable = assertInstanceOf(PortResult.Unavailable::class.java, result)
+        assertEquals(AutomationFailureCode.UI_TARGET_AMBIGUOUS, unavailable.failure.code)
+    }
+
+    @Test
     fun `inspection fails closed when profile lacks rear main observation signal`() = runTest {
         val withoutLensSignal = profile().copy(
             stateSignals = profile().stateSignals - PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
@@ -448,6 +568,7 @@ class PixelCameraAccessibilityPortTest {
             targets = mapOf(
                 AutomationAction.SELECT_REAR_MAIN_LENS to selectorSet(LENS_ACTION_RESOURCE),
                 AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL to selectorSet(SPEED_CONTROL_ACTION_RESOURCE),
+                AutomationAction.STOP_RECORDING to selectorSet(PixelCameraStateSignal.RECORDING_ACTIVE.name),
             ),
             speedTargets = mapOf(TimeLapseSpeed.X120 to selectorSet(SPEED_X120_ACTION_RESOURCE)),
             stateSignals = requiredSignals.associateWith { selectorSet(it.name) },
