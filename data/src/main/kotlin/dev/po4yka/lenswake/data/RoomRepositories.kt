@@ -24,6 +24,7 @@ import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.ScheduleRepository
 import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.data.internal.dao.ExecutionCasResult
+import dev.po4yka.lenswake.data.internal.dao.ExecutionDao
 import dev.po4yka.lenswake.data.internal.dao.ExecutionReservationEntityResult
 import dev.po4yka.lenswake.data.internal.dao.EnvironmentSnapshotInsertResult
 import dev.po4yka.lenswake.data.internal.entity.AutomationProfileEntity
@@ -66,7 +67,7 @@ class RoomAutomationProfileRepository(
     override suspend fun get(id: ProfileId): PixelCameraProfile? = dao.get(id.value)?.let { entity ->
         try {
             entity.toDomain()
-        } catch (error: Exception) {
+        } catch (error: IllegalArgumentException) {
             val issue = entity.persistenceIssue()
             report(issue, error)
             throw CorruptProfileEntryException(issue, error)
@@ -89,7 +90,7 @@ class RoomAutomationProfileRepository(
         for (entity in this) {
             try {
                 profiles += entity.toDomain()
-            } catch (error: Exception) {
+            } catch (error: IllegalArgumentException) {
                 val issue = entity.persistenceIssue()
                 issues += issue
                 if (reportIssues) report(issue, error)
@@ -121,11 +122,15 @@ class RoomAutomationProfileRepository(
     }
 }
 
-class RoomExecutionRepository(
-    database: LenswakeDatabase,
-) : ExecutionRepository, EnvironmentSnapshotRepository {
-    private val dao = database.executionDao()
-    private val environmentSnapshotDao = database.environmentSnapshotDao()
+class RoomExecutionRepository private constructor(
+    private val dao: ExecutionDao,
+    environmentSnapshotRepository: EnvironmentSnapshotRepository,
+) : ExecutionRepository,
+    EnvironmentSnapshotRepository by environmentSnapshotRepository {
+    constructor(database: LenswakeDatabase) : this(
+        dao = database.executionDao(),
+        environmentSnapshotRepository = RoomEnvironmentSnapshotRepository(database),
+    )
 
     override fun observeExecutions(): Flow<List<ExecutionSession>> =
         dao.observeAll().map { executions -> executions.map { it.toDomain() } }
@@ -176,35 +181,6 @@ class RoomExecutionRepository(
         }
     }
 
-    override suspend fun capture(snapshot: EnvironmentSnapshot): EnvironmentSnapshotCaptureResult =
-        when (val result = environmentSnapshotDao.insertImmutable(snapshot.toEntity())) {
-            is EnvironmentSnapshotInsertResult.Inserted ->
-                EnvironmentSnapshotCaptureResult.Captured(
-                    snapshot = snapshot,
-                    session = result.session.toDomain(),
-                )
-            is EnvironmentSnapshotInsertResult.AlreadyExists ->
-                EnvironmentSnapshotCaptureResult.AlreadyExists(
-                    existing = result.existing.toDomain(),
-                    session = result.session.toDomain(),
-                )
-        }
-
-    override suspend fun getEnvironmentSnapshot(id: EnvironmentSnapshotId): EnvironmentSnapshot? =
-        environmentSnapshotDao.get(id.value)?.toDomain()
-
-    override suspend fun getEnvironmentSnapshotForSession(sessionId: SessionId): EnvironmentSnapshot? =
-        environmentSnapshotDao.getForSession(sessionId.value)?.toDomain()
-
-    override suspend fun report(sessionId: SessionId): ExecutionReport? =
-        environmentSnapshotDao.report(sessionId.value)?.let { report ->
-            ExecutionReport(
-                session = report.session.toDomain(),
-                environmentSnapshot = report.environmentSnapshot?.toDomain(),
-                events = report.events.map { it.toDomain() },
-            )
-        }
-
     override suspend fun findActiveRehearsals(limit: Int): List<ExecutionSession> {
         require(limit in 1..ExecutionRepository.MAX_ACTIVE_REHEARSAL_LIMIT) {
             "Rehearsal query limit must be between 1 and " +
@@ -223,4 +199,39 @@ class RoomExecutionRepository(
         failureCode = AutomationFailureCode.DEVICE_REBOOT_INTERRUPTED.name,
         failureMessage = "Device reboot interrupted Pixel Camera execution; STOP was not verified",
     ).map { it.toDomain() }
+}
+
+private class RoomEnvironmentSnapshotRepository(
+    database: LenswakeDatabase,
+) : EnvironmentSnapshotRepository {
+    private val dao = database.environmentSnapshotDao()
+
+    override suspend fun capture(snapshot: EnvironmentSnapshot): EnvironmentSnapshotCaptureResult =
+        when (val result = dao.insertImmutable(snapshot.toEntity())) {
+            is EnvironmentSnapshotInsertResult.Inserted ->
+                EnvironmentSnapshotCaptureResult.Captured(
+                    snapshot = snapshot,
+                    session = result.session.toDomain(),
+                )
+            is EnvironmentSnapshotInsertResult.AlreadyExists ->
+                EnvironmentSnapshotCaptureResult.AlreadyExists(
+                    existing = result.existing.toDomain(),
+                    session = result.session.toDomain(),
+                )
+        }
+
+    override suspend fun getEnvironmentSnapshot(id: EnvironmentSnapshotId): EnvironmentSnapshot? =
+        dao.get(id.value)?.toDomain()
+
+    override suspend fun getEnvironmentSnapshotForSession(sessionId: SessionId): EnvironmentSnapshot? =
+        dao.getForSession(sessionId.value)?.toDomain()
+
+    override suspend fun report(sessionId: SessionId): ExecutionReport? =
+        dao.report(sessionId.value)?.let { report ->
+            ExecutionReport(
+                session = report.session.toDomain(),
+                environmentSnapshot = report.environmentSnapshot?.toDomain(),
+                events = report.events.map { it.toDomain() },
+            )
+        }
 }
