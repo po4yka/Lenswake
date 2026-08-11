@@ -15,6 +15,7 @@
     <application
         android:name=".LenswakeApplication"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.Lenswake">

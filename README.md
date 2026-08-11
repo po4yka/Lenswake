@@ -1865,6 +1865,11 @@ Remote control: none
 
 Schedules, automation profiles, and logs should remain on the device.
 
+Android backup and device-to-device extraction rules exclude every credential- and
+device-protected storage domain. Room history, alarm journals, recovery checkpoints, and
+SharedPreferences state must not leave the originating device through cloud backup or Android
+device-to-device migration.
+
 Accessibility data should be processed only for the Pixel Camera package and should not be persisted unless explicitly required for debugging.
 
 ---
