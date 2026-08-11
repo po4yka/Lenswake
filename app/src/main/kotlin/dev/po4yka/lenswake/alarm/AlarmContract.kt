@@ -36,6 +36,8 @@ object AlarmContract {
     private const val IDENTITY_PARAMETER = "identity"
     private const val DOMAIN_IDENTITY = "schedule"
     private const val DELIVERY_IDENTITY = "delivery"
+    private const val START_REQUEST_CODE = 1_001
+    private const val STOP_REQUEST_CODE = 1_002
 
     fun intent(
         context: Context,
@@ -100,31 +102,43 @@ object AlarmContract {
     }
 
     fun parse(intent: Intent, expectedKind: AlarmKind): AlarmTrigger? {
-        if (intent.action != action(expectedKind)) return null
-        val data = intent.data ?: return null
-        if (data.scheme != SCHEME || data.host != HOST) return null
-        val segments = data.pathSegments
-        if (segments.size != 2 || segments[1] != expectedKind.path) return null
-        if (data.getQueryParameter(IDENTITY_PARAMETER) !in setOf(DOMAIN_IDENTITY, DELIVERY_IDENTITY)) {
-            return null
+        val data = intent.data
+        val segments = data?.pathSegments.orEmpty()
+        val rawScheduleId = segments.firstOrNull().orEmpty()
+        val validEnvelope = listOf(
+            intent.action == action(expectedKind),
+            data?.scheme == SCHEME,
+            data?.host == HOST,
+            segments.size == 2,
+            segments.getOrNull(1) == expectedKind.path,
+            data?.getQueryParameter(IDENTITY_PARAMETER) in setOf(DOMAIN_IDENTITY, DELIVERY_IDENTITY),
+            rawScheduleId.isNotBlank(),
+            intent.hasExtra(EXTRA_UPDATED_AT),
+            intent.hasExtra(EXTRA_EXPECTED_AT),
+        ).all { it }
+        return if (!validEnvelope) {
+            null
+        } else {
+            val updatedAtMillis = intent.getLongExtra(EXTRA_UPDATED_AT, Long.MIN_VALUE)
+            val expectedAtMillis = intent.getLongExtra(EXTRA_EXPECTED_AT, Long.MIN_VALUE)
+            val deliveryAttempt = intent.getIntExtra(EXTRA_DELIVERY_ATTEMPT, 0)
+            val validPayload = listOf(
+                updatedAtMillis != Long.MIN_VALUE,
+                expectedAtMillis != Long.MIN_VALUE,
+                deliveryAttempt >= 0,
+            ).all { it }
+            validPayload.takeIf { it }?.let {
+                runCatching {
+                    AlarmTrigger(
+                        kind = expectedKind,
+                        scheduleId = ScheduleId(rawScheduleId),
+                        scheduleUpdatedAt = Instant.ofEpochMilli(updatedAtMillis),
+                        expectedAt = Instant.ofEpochMilli(expectedAtMillis),
+                        deliveryAttempt = deliveryAttempt,
+                    )
+                }.getOrNull()
+            }
         }
-        val rawScheduleId = segments[0]
-        if (rawScheduleId.isBlank()) return null
-        if (!intent.hasExtra(EXTRA_UPDATED_AT) || !intent.hasExtra(EXTRA_EXPECTED_AT)) return null
-        val updatedAtMillis = intent.getLongExtra(EXTRA_UPDATED_AT, Long.MIN_VALUE)
-        val expectedAtMillis = intent.getLongExtra(EXTRA_EXPECTED_AT, Long.MIN_VALUE)
-        val deliveryAttempt = intent.getIntExtra(EXTRA_DELIVERY_ATTEMPT, 0)
-        if (updatedAtMillis == Long.MIN_VALUE || expectedAtMillis == Long.MIN_VALUE) return null
-        if (deliveryAttempt < 0) return null
-        return runCatching {
-            AlarmTrigger(
-                kind = expectedKind,
-                scheduleId = ScheduleId(rawScheduleId),
-                scheduleUpdatedAt = Instant.ofEpochMilli(updatedAtMillis),
-                expectedAt = Instant.ofEpochMilli(expectedAtMillis),
-                deliveryAttempt = deliveryAttempt,
-            )
-        }.getOrNull()
     }
 
     private fun action(kind: AlarmKind): String = when (kind) {
@@ -133,8 +147,8 @@ object AlarmContract {
     }
 
     fun requestCode(kind: AlarmKind): Int = when (kind) {
-        AlarmKind.START -> 1_001
-        AlarmKind.STOP -> 1_002
+        AlarmKind.START -> START_REQUEST_CODE
+        AlarmKind.STOP -> STOP_REQUEST_CODE
     }
 
     private fun uri(

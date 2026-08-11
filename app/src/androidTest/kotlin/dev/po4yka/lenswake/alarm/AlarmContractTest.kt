@@ -207,8 +207,7 @@ class AlarmContractTest {
 
     @Test
     fun restoredFutureScheduleAndJournalRetryCoexistAfterClockRollback() {
-        val rolledBackNow = schedule.startAt.minusSeconds(3_600)
-        assertTrue(schedule.startAt.isAfter(rolledBackNow))
+        assertTrue(schedule.startAt.isAfter(schedule.startAt.minusSeconds(3_600)))
         val futureDomainIntent = AlarmContract.intent(context, schedule, AlarmKind.START)
         val journalTrigger = requireNotNull(AlarmContract.parse(futureDomainIntent)).copy(
             deliveryAttempt = 1,
