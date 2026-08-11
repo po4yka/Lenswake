@@ -197,16 +197,7 @@ class RuntimePreflightEvaluator(
         }
         val qualifying = exactVerifiedProfiles.firstNotNullOfOrNull { profile ->
             observation.successfulRehearsals[profile.id]
-                ?.takeIf { session ->
-                    session.kind == SessionKind.REHEARSAL &&
-                        session.status == SessionStatus.COMPLETED &&
-                        session.profileId == profile.id &&
-                        session.recordingVerifiedAt != null &&
-                        session.stopActionAt != null &&
-                        session.stoppedVerifiedAt != null &&
-                        session.mediaSavedVerifiedAt != null &&
-                        profile.verifiedAt == session.mediaSavedVerifiedAt
-                }
+                ?.takeIf { session -> session.qualifies(profile) }
                 ?.let { profile to it }
         }
         return PreflightCheck(
@@ -222,6 +213,16 @@ class RuntimePreflightEvaluator(
             },
         )
     }
+
+    private fun ExecutionSession.qualifies(profile: PixelCameraProfile): Boolean =
+        kind == SessionKind.REHEARSAL &&
+            status == SessionStatus.COMPLETED &&
+            profileId == profile.id &&
+            recordingVerifiedAt != null &&
+            stopActionAt != null &&
+            stoppedVerifiedAt != null &&
+            mediaSavedVerifiedAt != null &&
+            profile.verifiedAt == mediaSavedVerifiedAt
 
     private fun PixelCameraProfile.targetsCurrentDeviceFamily(
         current: PixelCameraEnvironment,
