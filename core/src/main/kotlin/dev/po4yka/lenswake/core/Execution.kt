@@ -26,6 +26,15 @@ data class ExecutionSession(
      */
     val recordActionAt: Instant? = null,
     val recordingVerifiedAt: Instant? = null,
+    /** MediaStore generation captured before Record dispatch for durable output correlation. */
+    val mediaBaselineGeneration: Long? = null,
+    /** Opaque MediaStore volume version that makes [mediaBaselineGeneration] comparable. */
+    val mediaStoreVersion: String? = null,
+    /** False only for executions already in flight when saved-media verification was introduced. */
+    val mediaVerificationRequired: Boolean = true,
+    /** Proof that a new published Pixel Camera video appeared after [mediaBaselineGeneration]. */
+    val mediaSavedVerifiedAt: Instant? = null,
+    val savedMediaGeneration: Long? = null,
     val stopActionAt: Instant? = null,
     val stoppedVerifiedAt: Instant? = null,
     /** Explicit ownership release when external STOP verification is impossible, such as reboot. */
@@ -53,6 +62,14 @@ data class ExecutionSession(
             cameraOwnershipReleasedAt == null &&
             (status in ACTIVE_CAMERA_OWNERSHIP_STATUSES ||
                 (status == SessionStatus.FAILED && recordActionAt != null))
+
+    val awaitsMediaSaveVerification: Boolean
+        get() = stoppedVerifiedAt != null &&
+            mediaSavedVerifiedAt == null &&
+            mediaBaselineGeneration != null &&
+            mediaStoreVersion != null &&
+            mediaVerificationRequired &&
+            status in setOf(SessionStatus.STOPPING, SessionStatus.FAILED)
 
     private companion object {
         val ACTIVE_CAMERA_OWNERSHIP_STATUSES = setOf(
@@ -134,6 +151,7 @@ enum class AutomationStateName {
     STARTING_RECORDING,
     VERIFYING_RECORDING,
     RECORDING,
+    CAPTURING_MEDIA_BASELINE,
     STOP_TRIGGERED,
     VALIDATING_ACTIVE_SESSION,
     INSPECTING_DEVICE,
@@ -142,6 +160,7 @@ enum class AutomationStateName {
     INSPECTING_RECORDING_STATE,
     STOPPING_RECORDING,
     VERIFYING_STOPPED,
+    VERIFYING_MEDIA_SAVED,
     COMPLETED,
     RETRYING,
     FAILED,
@@ -162,6 +181,8 @@ enum class AutomationOperation {
     STOP_RECORDING,
     VERIFY_RECORDING,
     VERIFY_STOPPED,
+    CAPTURE_MEDIA_BASELINE,
+    VERIFY_MEDIA_SAVED,
 }
 
 enum class AutomationOutcome {

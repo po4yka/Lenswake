@@ -108,6 +108,37 @@ interface PixelCameraPort {
     suspend fun stopRecording(profileUse: ProfileUse): ActionDispatch
 }
 
+data class RecordingMediaBaseline(
+    val generation: Long,
+    val version: String,
+) {
+    init {
+        require(generation >= 0) { "MediaStore generation must not be negative" }
+        require(version.isNotBlank()) { "MediaStore version must not be blank" }
+    }
+}
+
+data class SavedRecordingEvidence(
+    val generationAdded: Long,
+    val sizeBytes: Long,
+    val durationMillis: Long,
+) {
+    init {
+        require(generationAdded >= 0) { "Saved media generation must not be negative" }
+        require(sizeBytes > 0) { "Saved media size must be positive" }
+        require(durationMillis > 0) { "Saved media duration must be positive" }
+    }
+}
+
+/** System boundary for correlating a Lenswake session with Pixel Camera-owned MediaStore output. */
+interface RecordingMediaPort {
+    suspend fun captureBaseline(): PortResult<RecordingMediaBaseline>
+
+    suspend fun findSavedRecording(
+        baseline: RecordingMediaBaseline,
+    ): PortResult<SavedRecordingEvidence?>
+}
+
 fun interface AutomationSleeper {
     suspend fun sleep(duration: Duration)
 }

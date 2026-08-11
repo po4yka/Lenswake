@@ -28,6 +28,11 @@ class MainActivity : ComponentActivity() {
     ) {
         viewModel.refreshPreflight()
     }
+    private val mediaVideoPermissionRequest = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) {
+        viewModel.refreshPreflight()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,6 +52,18 @@ class MainActivity : ComponentActivity() {
         when (action) {
             SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION ->
                 notificationPermissionRequest.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+
+            SetupRemediationAction.REQUEST_MEDIA_VIDEO_PERMISSION ->
+                mediaVideoPermissionRequest.launch(
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                        arrayOf(
+                            android.Manifest.permission.READ_MEDIA_VIDEO,
+                            android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+                        )
+                    } else {
+                        arrayOf(android.Manifest.permission.READ_MEDIA_VIDEO)
+                    },
+                )
 
             else -> startRemediationActivity(action)
         }
@@ -80,7 +97,9 @@ class MainActivity : ComponentActivity() {
                 packageUri,
             )
 
-            SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION -> return
+            SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION,
+            SetupRemediationAction.REQUEST_MEDIA_VIDEO_PERMISSION,
+            -> return
         }
         try {
             startActivity(intent)

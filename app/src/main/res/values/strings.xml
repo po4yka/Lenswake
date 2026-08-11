@@ -144,6 +144,7 @@
 
     <string name="capability_exact_alarms">Exact alarms</string>
     <string name="capability_notifications">Notifications</string>
+    <string name="capability_media_video_access">Full saved-video access</string>
     <string name="capability_full_screen_intent">Full-screen intent</string>
     <string name="capability_pixel_camera_installed">Pixel Camera installed</string>
     <string name="capability_secure_camera_launch">Secure Pixel Camera launch</string>
@@ -184,6 +185,7 @@
     <string name="action_rehearsal_ready">Camera testing is ready.</string>
 
     <string name="remediation_notification_permission">the notification permission request</string>
+    <string name="remediation_media_video_permission">the full saved-video permission request</string>
     <string name="remediation_notification_settings">notification settings</string>
     <string name="remediation_exact_alarm_settings">exact-alarm settings</string>
     <string name="remediation_accessibility_settings">Accessibility settings</string>

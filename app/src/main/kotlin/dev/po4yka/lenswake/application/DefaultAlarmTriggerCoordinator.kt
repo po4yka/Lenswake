@@ -318,7 +318,21 @@ class DefaultAlarmTriggerCoordinator(
     }
 
     private suspend fun reconcileStopDelivery(session: ExecutionSession): StopReconciliation {
-        if (session.stoppedVerifiedAt != null) return StopReconciliation.NoCameraWork
+        if (session.status == SessionStatus.COMPLETED) return StopReconciliation.NoCameraWork
+        if (session.stoppedVerifiedAt != null) {
+            return if (
+                !session.mediaVerificationRequired ||
+                (
+                    session.mediaSavedVerifiedAt == null &&
+                        session.mediaBaselineGeneration != null &&
+                        session.mediaStoreVersion != null
+                    )
+            ) {
+                StopReconciliation.StopRequired(session)
+            } else {
+                StopReconciliation.NoCameraWork
+            }
+        }
         if (session.cameraOwnershipReleasedAt != null) return StopReconciliation.NoCameraWork
         if (session.recordActionAt != null) return StopReconciliation.StopRequired(session)
         if (session.status in TERMINAL_STATUSES) return StopReconciliation.NoCameraWork
@@ -507,9 +521,14 @@ class DefaultAlarmTriggerCoordinator(
         is AutomationRunResult.Rejected -> terminal(
             "$kind automation was rejected: ${result.failure.message}",
         )
-        is AutomationRunResult.Failed -> terminal(
-            "$kind automation failed: ${result.failure.message}",
-        )
+        is AutomationRunResult.Failed -> if (
+            kind == AlarmKind.STOP &&
+            result.failure.code == AutomationFailureCode.MEDIA_SAVE_NOT_CONFIRMED
+        ) {
+            retryable("STOP saved-media verification is not complete: ${result.failure.message}")
+        } else {
+            terminal("$kind automation failed: ${result.failure.message}")
+        }
         is AutomationRunResult.StartReconciliationRequired -> retryable(
             "$kind automation requires recording-state reconciliation: ${result.failure.message}",
         )

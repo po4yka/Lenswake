@@ -21,13 +21,22 @@ class ExecutionRepositoryRehearsalQueriesTest {
             recordActionAt = Instant.ofEpochMilli(5_000),
         )
         val failedUnowned = session("failed-unowned", SessionStatus.FAILED, stopAt = 5_000)
+        val awaitingMedia = session(
+            "awaiting-media",
+            SessionStatus.FAILED,
+            stopAt = 8_000,
+            recordingVerifiedAt = Instant.ofEpochMilli(4_000),
+            mediaBaselineGeneration = 41,
+            mediaStoreVersion = "version-1",
+            stoppedVerifiedAt = Instant.ofEpochMilli(7_000),
+        )
         val repository = FakeExecutionRepository(
-            listOf(pending, stopping, failedOwned, failedUnowned),
+            listOf(pending, stopping, failedOwned, failedUnowned, awaitingMedia),
         )
 
         assertEquals(
-            listOf(stopping.id, failedOwned.id),
-            repository.findActiveRehearsals(2).map(ExecutionSession::id),
+            listOf(awaitingMedia.id, stopping.id, failedOwned.id),
+            repository.findActiveRehearsals(3).map(ExecutionSession::id),
         )
         assertTrue(
             runCatching { repository.findActiveRehearsals(0) }.exceptionOrNull() is IllegalArgumentException,
@@ -38,7 +47,7 @@ class ExecutionRepositoryRehearsalQueriesTest {
     }
 
     @Test
-    fun `default latest successful rehearsal requires both verification proofs`() = runTest {
+    fun `default latest successful rehearsal requires recording stop and saved-media proofs`() = runTest {
         val profileId = ProfileId("profile")
         val older = session(
             "older",
@@ -46,6 +55,7 @@ class ExecutionRepositoryRehearsalQueriesTest {
             stopAt = 10_000,
             profileId = profileId,
             recordingVerifiedAt = Instant.ofEpochMilli(7_000),
+            mediaSavedVerifiedAt = Instant.ofEpochMilli(7_500),
             stoppedVerifiedAt = Instant.ofEpochMilli(8_000),
         )
         val latest = session(
@@ -54,6 +64,7 @@ class ExecutionRepositoryRehearsalQueriesTest {
             stopAt = 20_000,
             profileId = profileId,
             recordingVerifiedAt = Instant.ofEpochMilli(17_000),
+            mediaSavedVerifiedAt = Instant.ofEpochMilli(17_500),
             stoppedVerifiedAt = Instant.ofEpochMilli(18_000),
         )
         val missingStop = session(
@@ -63,7 +74,15 @@ class ExecutionRepositoryRehearsalQueriesTest {
             profileId = profileId,
             recordingVerifiedAt = Instant.ofEpochMilli(27_000),
         )
-        val repository = FakeExecutionRepository(listOf(older, latest, missingStop))
+        val missingMedia = session(
+            "missing-media",
+            SessionStatus.COMPLETED,
+            stopAt = 40_000,
+            profileId = profileId,
+            recordingVerifiedAt = Instant.ofEpochMilli(37_000),
+            stoppedVerifiedAt = Instant.ofEpochMilli(38_000),
+        )
+        val repository = FakeExecutionRepository(listOf(older, latest, missingStop, missingMedia))
 
         assertEquals(latest, repository.latestSuccessfulRehearsal(profileId))
         assertEquals(null, repository.latestSuccessfulRehearsal(ProfileId("absent")))
@@ -76,6 +95,9 @@ class ExecutionRepositoryRehearsalQueriesTest {
         profileId: ProfileId = ProfileId("profile"),
         recordActionAt: Instant? = null,
         recordingVerifiedAt: Instant? = null,
+        mediaBaselineGeneration: Long? = null,
+        mediaStoreVersion: String? = null,
+        mediaSavedVerifiedAt: Instant? = null,
         stoppedVerifiedAt: Instant? = null,
     ): ExecutionSession = ExecutionSession(
         id = SessionId(id),
@@ -90,6 +112,9 @@ class ExecutionRepositoryRehearsalQueriesTest {
         status = status,
         recordActionAt = recordActionAt,
         recordingVerifiedAt = recordingVerifiedAt,
+        mediaBaselineGeneration = mediaBaselineGeneration,
+        mediaStoreVersion = mediaStoreVersion,
+        mediaSavedVerifiedAt = mediaSavedVerifiedAt,
         stoppedVerifiedAt = stoppedVerifiedAt,
         createdAt = Instant.ofEpochMilli(1_000),
         updatedAt = stoppedVerifiedAt ?: Instant.ofEpochMilli(2_000),

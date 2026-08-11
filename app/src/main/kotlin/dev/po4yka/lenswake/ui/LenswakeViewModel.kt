@@ -473,6 +473,7 @@ private data class ObservedActiveSession(
 private fun SetupRemediationAction.remediationLabel(strings: UiStringProvider): String = strings.get(
     when (this) {
         SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION -> R.string.remediation_notification_permission
+        SetupRemediationAction.REQUEST_MEDIA_VIDEO_PERMISSION -> R.string.remediation_media_video_permission
         SetupRemediationAction.OPEN_NOTIFICATION_SETTINGS -> R.string.remediation_notification_settings
         SetupRemediationAction.OPEN_EXACT_ALARM_SETTINGS -> R.string.remediation_exact_alarm_settings
         SetupRemediationAction.OPEN_ACCESSIBILITY_SETTINGS -> R.string.remediation_accessibility_settings
@@ -795,6 +796,7 @@ internal object LenswakeUiStateMapper {
         when (this) {
             PreflightCheckType.EXACT_ALARMS -> R.string.capability_exact_alarms
             PreflightCheckType.NOTIFICATIONS -> R.string.capability_notifications
+            PreflightCheckType.MEDIA_VIDEO_ACCESS -> R.string.capability_media_video_access
             PreflightCheckType.FULL_SCREEN_INTENT -> R.string.capability_full_screen_intent
             PreflightCheckType.PIXEL_CAMERA_INSTALLED -> R.string.capability_pixel_camera_installed
             PreflightCheckType.SECURE_CAMERA_RESOLVES -> R.string.capability_secure_camera_launch
@@ -952,6 +954,7 @@ internal object LenswakeUiStateMapper {
 
     private val rehearsalRequiredChecks = setOf(
         PreflightCheckType.EXACT_ALARMS,
+        PreflightCheckType.MEDIA_VIDEO_ACCESS,
         PreflightCheckType.PIXEL_CAMERA_INSTALLED,
         PreflightCheckType.SECURE_CAMERA_RESOLVES,
         PreflightCheckType.ACCESSIBILITY_ENABLED,

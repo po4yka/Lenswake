@@ -57,13 +57,13 @@ class AlarmManagerRehearsalStopScheduler internal constructor(
         val now = clock.now()
         executionRepository.findActiveRehearsals(REHEARSAL_RESTORE_LIMIT).forEach { session ->
             validateRehearsal(session)
-            if (session.stoppedVerifiedAt != null) {
+            if (session.stoppedVerifiedAt != null && !session.awaitsMediaSaveVerification) {
                 backend.cancel(session.id).getOrThrow()
                 return@forEach
             }
             val future = session.expectedStopAt.isAfter(now)
-            val hasOutstandingOwnership = session.ownsPixelCamera
-            if (future || hasOutstandingOwnership) {
+            val hasOutstandingWork = session.ownsPixelCamera || session.awaitsMediaSaveVerification
+            if (future || hasOutstandingWork) {
                 val triggerAt = if (future) {
                     session.expectedStopAt
                 } else {

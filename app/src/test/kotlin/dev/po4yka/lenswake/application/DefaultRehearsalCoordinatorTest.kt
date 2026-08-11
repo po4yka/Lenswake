@@ -85,7 +85,7 @@ class DefaultRehearsalCoordinatorTest {
 
         val completed = assertInstanceOf(RehearsalResult.Completed::class.java, result)
         assertEquals(now.plusSeconds(95), completed.session.expectedStopAt)
-        assertEquals(completed.session.stoppedVerifiedAt, completed.verifiedProfile.verifiedAt)
+        assertEquals(completed.session.mediaSavedVerifiedAt, completed.verifiedProfile.verifiedAt)
         assertEquals(ProfileCompatibility.VERIFIED, fixture.profiles.saved.compatibility)
         assertEquals(listOf("schedule", "start", "delay", "stop", "cancel"), fixture.order)
     }
@@ -138,6 +138,16 @@ class DefaultRehearsalCoordinatorTest {
 
         assertEquals(1, fixture.engine.stopCalls)
         assertTrue(fixture.backstop.cancelCalls >= 1)
+        assertEquals(ProfileCompatibility.NEEDS_REHEARSAL, fixture.profiles.saved.compatibility)
+    }
+
+    @Test
+    fun missingSavedMediaProofCancelsBackstopWithoutProfilePromotion() = runBlocking {
+        val fixture = fixture(completeMediaProof = false)
+
+        val result = fixture.coordinator.run(request)
+
+        assertInstanceOf(RehearsalResult.Rejected::class.java, result)
         assertEquals(ProfileCompatibility.NEEDS_REHEARSAL, fixture.profiles.saved.compatibility)
     }
 
@@ -274,6 +284,7 @@ class DefaultRehearsalCoordinatorTest {
     private fun fixture(
         backstopScheduleFails: Boolean = false,
         completeStopProof: Boolean = true,
+        completeMediaProof: Boolean = true,
         delayFailure: Throwable? = null,
         replaceProfileDuringDelay: Boolean = false,
         clockNow: Instant = now,
@@ -282,7 +293,13 @@ class DefaultRehearsalCoordinatorTest {
         val executions = FakeRehearsalRepository()
         val profiles = FakeProfileRepository(profile)
         val backstop = FakeBackstop(order, backstopScheduleFails)
-        val engine = FakeRehearsalEngine(executions, order, clockNow, completeStopProof)
+        val engine = FakeRehearsalEngine(
+            executions,
+            order,
+            clockNow,
+            completeStopProof,
+            completeMediaProof,
+        )
         val mutex = Mutex()
         val stopWorkflow = RehearsalStopWorkflow(
             executionRepository = executions,
@@ -488,6 +505,7 @@ private class FakeRehearsalEngine(
     private val order: MutableList<String>,
     private val now: Instant,
     private val completeStopProof: Boolean,
+    private val completeMediaProof: Boolean,
 ) : AutomationEngine {
     var startCalls = 0
     var stopCalls = 0
@@ -515,6 +533,7 @@ private class FakeRehearsalEngine(
             status = SessionStatus.COMPLETED,
             stopActionAt = if (completeStopProof) now.plusSeconds(7) else null,
             stoppedVerifiedAt = now.plusSeconds(8),
+            mediaSavedVerifiedAt = if (completeMediaProof) now.plusSeconds(9) else null,
             failure = null,
             revision = current.revision + 1,
             updatedAt = now.plusSeconds(8),

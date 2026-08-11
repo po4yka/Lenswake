@@ -24,7 +24,7 @@ import dev.po4yka.lenswake.data.internal.mapping.ProfileJsonMigration
         ExecutionEventEntity::class,
         EnvironmentSnapshotEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class LenswakeDatabase : RoomDatabase() {
@@ -127,12 +127,39 @@ abstract class LenswakeDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5: Migration = Migration(4, 5) { database ->
+            database.execSQL(
+                "ALTER TABLE `execution_sessions` " +
+                    "ADD COLUMN `media_baseline_generation` INTEGER DEFAULT NULL",
+            )
+            database.execSQL(
+                "ALTER TABLE `execution_sessions` " +
+                    "ADD COLUMN `media_store_version` TEXT DEFAULT NULL",
+            )
+            database.execSQL(
+                "ALTER TABLE `execution_sessions` " +
+                    "ADD COLUMN `media_verification_required` INTEGER NOT NULL DEFAULT 1",
+            )
+            database.execSQL(
+                "UPDATE `execution_sessions` SET `media_verification_required` = 0 " +
+                    "WHERE `record_action_at_epoch_ms` IS NOT NULL",
+            )
+            database.execSQL(
+                "ALTER TABLE `execution_sessions` " +
+                    "ADD COLUMN `media_saved_verified_at_epoch_ms` INTEGER DEFAULT NULL",
+            )
+            database.execSQL(
+                "ALTER TABLE `execution_sessions` " +
+                    "ADD COLUMN `saved_media_generation` INTEGER DEFAULT NULL",
+            )
+        }
+
         fun create(context: Context): LenswakeDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
                 LenswakeDatabase::class.java,
                 DATABASE_NAME,
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
     }
 }

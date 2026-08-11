@@ -66,7 +66,9 @@ data class AutomationConfig(
                         AutomationOperation.INSPECT_CAMERA,
                         AutomationOperation.VERIFY_STOPPED,
                         -> inspection
-                        AutomationOperation.VERIFY_RECORDING -> recordingVerification
+                        AutomationOperation.VERIFY_RECORDING,
+                        AutomationOperation.VERIFY_MEDIA_SAVED,
+                        -> recordingVerification
                         else -> interaction
                     }
                 },
@@ -75,6 +77,7 @@ data class AutomationConfig(
                         AutomationOperation.LAUNCH_CAMERA -> 8.seconds
                         AutomationOperation.VERIFY_RECORDING,
                         AutomationOperation.VERIFY_STOPPED,
+                        AutomationOperation.VERIFY_MEDIA_SAVED,
                         -> 5.seconds
                         else -> 3.seconds
                     }

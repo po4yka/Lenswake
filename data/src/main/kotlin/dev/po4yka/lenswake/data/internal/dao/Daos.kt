@@ -115,11 +115,23 @@ internal interface ExecutionDao {
         """
         SELECT * FROM execution_sessions
         WHERE kind = 'REHEARSAL'
-          AND stopped_verified_at_epoch_ms IS NULL
-          AND camera_ownership_released_at_epoch_ms IS NULL
           AND (
-            status IN ('PENDING', 'STARTING', 'RECORDING', 'STOPPING')
-            OR (status = 'FAILED' AND record_action_at_epoch_ms IS NOT NULL)
+            (
+              stopped_verified_at_epoch_ms IS NULL
+              AND camera_ownership_released_at_epoch_ms IS NULL
+              AND (
+                status IN ('PENDING', 'STARTING', 'RECORDING', 'STOPPING')
+                OR (status = 'FAILED' AND record_action_at_epoch_ms IS NOT NULL)
+              )
+            )
+            OR (
+              stopped_verified_at_epoch_ms IS NOT NULL
+              AND media_saved_verified_at_epoch_ms IS NULL
+              AND media_baseline_generation IS NOT NULL
+              AND media_store_version IS NOT NULL
+              AND media_verification_required = 1
+              AND status IN ('STOPPING', 'FAILED')
+            )
           )
         ORDER BY expected_stop_at_epoch_ms, created_at_epoch_ms, id
         LIMIT :limit
@@ -135,6 +147,7 @@ internal interface ExecutionDao {
           AND status = 'COMPLETED'
           AND recording_verified_at_epoch_ms IS NOT NULL
           AND stopped_verified_at_epoch_ms IS NOT NULL
+          AND media_saved_verified_at_epoch_ms IS NOT NULL
         ORDER BY stopped_verified_at_epoch_ms DESC, updated_at_epoch_ms DESC, id DESC
         LIMIT 1
         """,

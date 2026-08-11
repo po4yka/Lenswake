@@ -240,7 +240,8 @@ class PhysicalDeviceWakeFixtureTest {
             rehearsal.kind == SessionKind.REHEARSAL &&
                 rehearsal.status == SessionStatus.COMPLETED &&
                 rehearsal.recordingVerifiedAt != null &&
-                rehearsal.stoppedVerifiedAt == profile.verifiedAt,
+                rehearsal.stoppedVerifiedAt != null &&
+                rehearsal.mediaSavedVerifiedAt == profile.verifiedAt,
         ) {
             "Current v3 Pixel Camera profile rehearsal evidence is not qualifying"
         }

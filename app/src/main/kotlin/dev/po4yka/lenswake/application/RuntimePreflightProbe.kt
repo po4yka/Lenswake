@@ -37,6 +37,7 @@ data class RuntimeCapabilityObservation(
 data class RuntimePreflightObservation(
     val exactAlarms: RuntimeCapabilityObservation,
     val notifications: RuntimeCapabilityObservation,
+    val mediaVideoAccess: RuntimeCapabilityObservation,
     val fullScreenIntent: RuntimeCapabilityObservation,
     val pixelCameraInstalled: RuntimeCapabilityObservation,
     val cameraEnvironment: PixelCameraEnvironment?,
@@ -60,6 +61,7 @@ class RuntimePreflightEvaluator {
         checks = listOf(
             observation.exactAlarms.toCheck(PreflightCheckType.EXACT_ALARMS),
             observation.notifications.toCheck(PreflightCheckType.NOTIFICATIONS),
+            observation.mediaVideoAccess.toCheck(PreflightCheckType.MEDIA_VIDEO_ACCESS),
             observation.fullScreenIntent.toCheck(PreflightCheckType.FULL_SCREEN_INTENT),
             observation.pixelCameraInstalled.toCheck(PreflightCheckType.PIXEL_CAMERA_INSTALLED),
             observation.secureCameraResolves.toCheck(PreflightCheckType.SECURE_CAMERA_RESOLVES),
@@ -191,7 +193,8 @@ class RuntimePreflightEvaluator {
                         session.recordingVerifiedAt != null &&
                         session.stopActionAt != null &&
                         session.stoppedVerifiedAt != null &&
-                        profile.verifiedAt == session.stoppedVerifiedAt
+                        session.mediaSavedVerifiedAt != null &&
+                        profile.verifiedAt == session.mediaSavedVerifiedAt
                 }
                 ?.let { profile to it }
         }
@@ -200,11 +203,11 @@ class RuntimePreflightEvaluator {
             severity = PreflightSeverity.BLOCKING,
             status = if (qualifying != null) PreflightStatus.PASSED else PreflightStatus.FAILED,
             message = if (qualifying != null) {
-                "A successful start-and-stop rehearsal verifies the current Pixel Camera profile."
+                "A successful start-and-stop rehearsal with saved media verifies the current Pixel Camera profile."
             } else if (exactVerifiedProfiles.isEmpty()) {
                 "No exactly matching verified profile exists for the current Pixel Camera environment."
             } else {
-                "The current verified profile is not linked to its latest successful start-and-stop rehearsal."
+                "The current verified profile is not linked to its latest successful rehearsal with saved media."
             },
         )
     }

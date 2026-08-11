@@ -35,6 +35,7 @@ import dev.po4yka.lenswake.data.RoomScheduleRepository
 import dev.po4yka.lenswake.integration.AndroidDeviceControlPort
 import dev.po4yka.lenswake.integration.AndroidEnvironmentSnapshotCollector
 import dev.po4yka.lenswake.integration.AndroidPixelCameraEnvironmentProbe
+import dev.po4yka.lenswake.integration.AndroidRecordingMediaPort
 import dev.po4yka.lenswake.integration.AndroidRuntimePreflightProbe
 import dev.po4yka.lenswake.integration.PixelCameraAccessibilityPort
 import dev.po4yka.lenswake.platform.SecurePixelCameraLauncher
@@ -96,6 +97,7 @@ class ApplicationGraph(application: Application) {
         selectorMatcher = SelectorMatcher(),
         environmentProbe = cameraEnvironmentProbe,
     )
+    private val recordingMedia = AndroidRecordingMediaPort(application)
     private val environmentSnapshotCollector = AndroidEnvironmentSnapshotCollector(
         context = application,
         cameraEnvironmentProbe = cameraEnvironmentProbe,
@@ -107,6 +109,7 @@ class ApplicationGraph(application: Application) {
         profileRepository = profileRepository,
         deviceControl = deviceControl,
         pixelCamera = pixelCamera,
+        recordingMedia = recordingMedia,
         clock = clock,
     )
     private val rehearsalMutex = Mutex()

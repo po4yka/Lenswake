@@ -153,6 +153,7 @@ class AlarmRecoveryCorrectnessTest {
     private companion object {
         val REQUIRED_TYPES = listOf(
             PreflightCheckType.EXACT_ALARMS,
+            PreflightCheckType.MEDIA_VIDEO_ACCESS,
             PreflightCheckType.PIXEL_CAMERA_INSTALLED,
             PreflightCheckType.SECURE_CAMERA_RESOLVES,
             PreflightCheckType.DEVICE_WAKE,

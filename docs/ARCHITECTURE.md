@@ -1824,8 +1824,23 @@ Which profile was used?
 When should it stop?
 Did START verification succeed?
 Was STOP executed?
+What MediaStore generation was captured before Record?
+Was a new published Pixel Camera video verified after STOP?
 Why did it fail?
 ```
+
+For process-death-safe saved-file correlation, persist at minimum:
+
+```text
+mediaBaselineGeneration
+mediaStoreVersion
+mediaSavedVerifiedAt
+savedMediaGeneration
+```
+
+The execution event for successful verification records the observed MediaStore generation, size,
+and duration. These fields are verification evidence, not an output URI or an assertion of
+ownership of Pixel Camera media.
 
 ---
 
@@ -2199,19 +2214,37 @@ Pixel Camera remains responsible for the capture.
 
 Lenswake does not own media output.
 
-Pixel Camera writes media using its own storage behavior.
+Pixel Camera writes its own external video. Lenswake obtains `READ_MEDIA_VIDEO` solely for
+post-STOP verification; it does not create, rename, delete, retain, or expose a Pixel Camera
+output URI.
 
-The architecture must not assume a direct output URI exists.
-
-A future feature may correlate a session with media using:
+Before dispatching `Record`, the automation engine captures the current MediaStore generation and
+opaque volume version and persists them as `mediaBaselineGeneration` and `mediaStoreVersion`.
+Generation comparison is invalidated explicitly if the volume version changes. After normal STOP
+verification, it retries a MediaStore query for a Pixel Camera-owned external video that satisfies
+all of the following:
 
 ```text
-capture time window
-MediaStore query
-Pixel Camera ownership/path metadata
+GENERATION_ADDED > mediaBaselineGeneration
+IS_PENDING = 0
+SIZE > 0
+DURATION > 0
 ```
 
-but this is outside the initial core.
+Full-library `READ_MEDIA_VIDEO` access is required; selected-video access cannot guarantee future
+unattended output visibility and remains a blocking preflight result. Exactly one candidate must
+qualify; multiple results are ambiguous and fail closed.
+
+The v4→v5 migration marks only pre-existing executions with a persisted Record dispatch as legacy
+media-unverifiable. Pre-dispatch executions still capture a normal baseline after upgrade. For a
+legacy recording, Lenswake still performs and verifies STOP, then completes it with an explicit
+`automation.record.stop_verified_media_unavailable_legacy` event and no fabricated saved-media
+timestamp. Legacy rehearsals cannot promote a profile.
+
+Only that unambiguous candidate proves the saved-file postcondition. Its generation is persisted as
+`savedMediaGeneration` with `mediaSavedVerifiedAt`, while the verification event records its size
+and duration. The application intentionally does not guess filenames, derive paths, or claim URI
+ownership; its durable contract is the generation-based correlation evidence above.
 
 ---
 

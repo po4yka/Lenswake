@@ -63,6 +63,12 @@ class AndroidRuntimePreflightProbeTest {
             },
             checks.getValue(PreflightCheckType.NOTIFICATIONS).status,
         )
+        val mediaVideoPermission = application.checkSelfPermission(android.Manifest.permission.READ_MEDIA_VIDEO) ==
+            PackageManager.PERMISSION_GRANTED
+        assertEquals(
+            if (mediaVideoPermission) PreflightStatus.PASSED else PreflightStatus.FAILED,
+            checks.getValue(PreflightCheckType.MEDIA_VIDEO_ACCESS).status,
+        )
         assertEquals(
             if (notificationManager.canUseFullScreenIntent()) PreflightStatus.PASSED else PreflightStatus.FAILED,
             checks.getValue(PreflightCheckType.FULL_SCREEN_INTENT).status,

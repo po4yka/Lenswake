@@ -128,6 +128,16 @@ internal data class ExecutionSessionEntity(
     val recordActionAtEpochMs: Long?,
     @ColumnInfo(name = "recording_verified_at_epoch_ms")
     val recordingVerifiedAtEpochMs: Long?,
+    @ColumnInfo(name = "media_baseline_generation")
+    val mediaBaselineGeneration: Long?,
+    @ColumnInfo(name = "media_store_version")
+    val mediaStoreVersion: String?,
+    @ColumnInfo(name = "media_verification_required", defaultValue = "1")
+    val mediaVerificationRequired: Boolean,
+    @ColumnInfo(name = "media_saved_verified_at_epoch_ms")
+    val mediaSavedVerifiedAtEpochMs: Long?,
+    @ColumnInfo(name = "saved_media_generation")
+    val savedMediaGeneration: Long?,
     @ColumnInfo(name = "stop_action_at_epoch_ms")
     val stopActionAtEpochMs: Long?,
     @ColumnInfo(name = "stopped_verified_at_epoch_ms")

@@ -86,14 +86,15 @@ interface ExecutionRepository {
         return observeExecutions().first()
             .asSequence()
             .filter { session ->
-                session.kind == SessionKind.REHEARSAL && session.ownsPixelCamera
+                session.kind == SessionKind.REHEARSAL &&
+                    (session.ownsPixelCamera || session.awaitsMediaSaveVerification)
             }
             .sortedWith(compareBy(ExecutionSession::expectedStopAt, ExecutionSession::createdAt, { it.id.value }))
             .take(limit)
             .toList()
     }
 
-    /** Returns the latest rehearsal with both start and stop verification for [profileId]. */
+    /** Returns the latest rehearsal with start, stop, and saved-media verification for [profileId]. */
     suspend fun latestSuccessfulRehearsal(profileId: ProfileId): ExecutionSession? =
         observeExecutions().first()
             .asSequence()
@@ -102,6 +103,7 @@ interface ExecutionRepository {
                     session.profileId == profileId &&
                     session.status == SessionStatus.COMPLETED &&
                     session.recordingVerifiedAt != null &&
+                    session.mediaSavedVerifiedAt != null &&
                     session.stoppedVerifiedAt != null
             }
             .maxWithOrNull(

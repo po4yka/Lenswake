@@ -42,6 +42,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.time.Instant
 import java.time.ZoneId
+import java.nio.charset.StandardCharsets
+import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class DefaultAlarmTriggerCoordinatorTest {
@@ -300,6 +302,35 @@ class DefaultAlarmTriggerCoordinatorTest {
     }
 
     @Test
+    fun savedMediaFailureAfterVerifiedStopRemainsRetryableWithoutCameraOwnership() = runBlocking {
+        val failure = AutomationFailure(
+            AutomationFailureCode.MEDIA_SAVE_NOT_CONFIRMED,
+            "Pixel Camera media is not published yet",
+        )
+        val stopped = recordingSession().copy(
+            status = SessionStatus.FAILED,
+            stoppedVerifiedAt = stopAt,
+            mediaBaselineGeneration = 41,
+            mediaStoreVersion = "version-1",
+            failure = failure,
+        )
+        val executions = FakeExecutionRepository().apply { seed(stopped) }
+        val engine = FakeAutomationEngine(
+            executions = executions,
+            stopResult = { session -> AutomationRunResult.Failed(session, failure) },
+        )
+
+        val result = coordinator(
+            executions = executions,
+            engine = engine,
+            now = stopAt.plusSeconds(1),
+        ).handle(stopTrigger())
+
+        assertTrue(result is AlarmHandlingResult.Retryable)
+        assertEquals(listOf(true), engine.stopSawPersistedDelivery)
+    }
+
+    @Test
     fun rebootReleasedExecutionAuditsLaterStopWithoutLaunchingCamera() = runBlocking {
         val interrupted = recordingSession().copy(
             status = SessionStatus.FAILED,
@@ -391,7 +422,12 @@ class DefaultAlarmTriggerCoordinatorTest {
     )
 
     private fun recordingSession() = ExecutionSession(
-        id = SessionId("scheduled-session"),
+        id = SessionId(
+            UUID.nameUUIDFromBytes(
+                "schedule/${schedule.id.value}/${schedule.startAt.toEpochMilli()}"
+                    .toByteArray(StandardCharsets.UTF_8),
+            ).toString(),
+        ),
         executionKey = "schedule/${schedule.id.value}/${schedule.startAt.toEpochMilli()}",
         kind = SessionKind.SCHEDULED,
         scheduleId = schedule.id,
@@ -507,6 +543,7 @@ private fun ExecutionSession.ownsPixelCamera(): Boolean =
 
 private class FakeAutomationEngine(
     private val executions: FakeExecutionRepository,
+    private val stopResult: ((ExecutionSession) -> AutomationRunResult)? = null,
     private val startResult: ((ExecutionSession) -> AutomationRunResult)? = null,
 ) : AutomationEngine {
     val startIds = mutableListOf<SessionId>()
@@ -526,7 +563,7 @@ private class FakeAutomationEngine(
         stopSawPersistedDelivery += session.alarmStopDeliveredAt != null && executions.events.any {
             it.sessionId == sessionId && it.name == "automation.alarm.stop_delivered"
         }
-        return AutomationRunResult.Succeeded(session)
+        return stopResult?.invoke(session) ?: AutomationRunResult.Succeeded(session)
     }
 }
 

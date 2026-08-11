@@ -494,10 +494,16 @@ class RehearsalStopWorkflow(
         if (session.status == SessionStatus.COMPLETED) {
             return if (promotionAllowed) finalizeCompleted(session.id) else cancelSafelyStopped(session)
         }
-        if (session.status in setOf(SessionStatus.FAILED, SessionStatus.CANCELLED) && session.stoppedVerifiedAt != null) {
+        if (
+            session.status in setOf(SessionStatus.FAILED, SessionStatus.CANCELLED) &&
+            session.stoppedVerifiedAt != null &&
+            session.mediaSavedVerifiedAt != null
+        ) {
             return cancelSafelyStopped(session)
         }
-        if (session.stoppedVerifiedAt != null) return cancelSafelyStopped(session)
+        if (session.stoppedVerifiedAt != null && !session.awaitsMediaSaveVerification) {
+            return cancelSafelyStopped(session)
+        }
         if (session.cameraOwnershipReleasedAt != null) return cancelWithoutOwnership(session)
         if (session.recordActionAt == null) {
             return cancelWithoutOwnership(session)
@@ -522,7 +528,8 @@ class RehearsalStopWorkflow(
         } ?: return RehearsalStopOutcome.Retryable("Rehearsal disappeared after STOP")
         return when {
             current.status == SessionStatus.COMPLETED && promotionAllowed -> finalizeCompleted(current.id)
-            current.stoppedVerifiedAt != null -> cancelSafelyStopped(current)
+            current.mediaSavedVerifiedAt != null -> cancelSafelyStopped(current)
+            current.awaitsMediaSaveVerification -> RehearsalStopOutcome.Retryable(result.failureMessage())
             else -> RehearsalStopOutcome.Retryable(result.failureMessage())
         }
     }
@@ -593,7 +600,7 @@ class RehearsalStopWorkflow(
 
         val verified = profile.copy(
             compatibility = ProfileCompatibility.VERIFIED,
-            verifiedAt = checkNotNull(report.session.stoppedVerifiedAt),
+            verifiedAt = checkNotNull(report.session.mediaSavedVerifiedAt),
         )
         try {
             profileRepository.save(verified)
@@ -625,6 +632,7 @@ class RehearsalStopWorkflow(
             session.recordingVerifiedAt == null -> "Rehearsal recording verification is missing"
             session.stopActionAt == null -> "Rehearsal stop dispatch proof is missing"
             session.stoppedVerifiedAt == null -> "Rehearsal stop verification is missing"
+            session.mediaSavedVerifiedAt == null -> "Rehearsal saved-media verification is missing"
             else -> null
         }
     }

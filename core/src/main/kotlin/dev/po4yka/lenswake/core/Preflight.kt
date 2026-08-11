@@ -39,6 +39,7 @@ data class PreflightCheck(
 enum class PreflightCheckType {
     EXACT_ALARMS,
     NOTIFICATIONS,
+    MEDIA_VIDEO_ACCESS,
     FULL_SCREEN_INTENT,
     PIXEL_CAMERA_INSTALLED,
     SECURE_CAMERA_RESOLVES,
@@ -57,6 +58,7 @@ enum class PreflightCheckType {
 /** A user-visible, typed route for resolving a failed readiness check. */
 enum class SetupRemediationAction {
     REQUEST_NOTIFICATION_PERMISSION,
+    REQUEST_MEDIA_VIDEO_PERMISSION,
     OPEN_NOTIFICATION_SETTINGS,
     OPEN_EXACT_ALARM_SETTINGS,
     OPEN_ACCESSIBILITY_SETTINGS,

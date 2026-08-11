@@ -889,6 +889,7 @@ class LenswakeViewModelTest {
             checks = listOf(
                 PreflightCheckType.EXACT_ALARMS,
                 PreflightCheckType.NOTIFICATIONS,
+                PreflightCheckType.MEDIA_VIDEO_ACCESS,
                 PreflightCheckType.FULL_SCREEN_INTENT,
                 PreflightCheckType.PIXEL_CAMERA_INSTALLED,
                 PreflightCheckType.SECURE_CAMERA_RESOLVES,
@@ -928,6 +929,7 @@ class LenswakeViewModelTest {
             checks = listOf(
                 PreflightCheckType.EXACT_ALARMS,
                 PreflightCheckType.NOTIFICATIONS,
+                PreflightCheckType.MEDIA_VIDEO_ACCESS,
                 PreflightCheckType.FULL_SCREEN_INTENT,
                 PreflightCheckType.PIXEL_CAMERA_INSTALLED,
                 PreflightCheckType.SECURE_CAMERA_RESOLVES,

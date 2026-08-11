@@ -414,6 +414,16 @@ class RoomRepositoriesTest {
             recordActionAt = Instant.ofEpochMilli(4_000),
             stoppedVerifiedAt = Instant.ofEpochMilli(5_000),
         )
+        val awaitingMedia = rehearsalSession(
+            id = "awaiting-media",
+            status = SessionStatus.FAILED,
+            expectedStopAtEpochMs = 8_000,
+            recordActionAt = Instant.ofEpochMilli(4_000),
+            recordingVerifiedAt = Instant.ofEpochMilli(4_500),
+            stoppedVerifiedAt = Instant.ofEpochMilli(5_000),
+            mediaBaselineGeneration = 41,
+            mediaStoreVersion = "version-1",
+        )
         val completed = rehearsalSession(
             id = "completed",
             status = SessionStatus.COMPLETED,
@@ -425,19 +435,20 @@ class RoomRepositoriesTest {
             failedWithOwnership,
             failedWithoutOwnership,
             failedAlreadyStopped,
+            awaitingMedia,
             completed,
         ).forEach { insertExecutionFixture(it) }
 
         assertEquals(
-            listOf(stopping.id, failedWithOwnership.id),
-            executions.findActiveRehearsals(limit = 2).map { it.id },
+            listOf(awaitingMedia.id, stopping.id, failedWithOwnership.id),
+            executions.findActiveRehearsals(limit = 3).map { it.id },
         )
         assertTrue(runCatching { executions.findActiveRehearsals(0) }.exceptionOrNull() is IllegalArgumentException)
         assertTrue(runCatching { executions.findActiveRehearsals(101) }.exceptionOrNull() is IllegalArgumentException)
     }
 
     @Test
-    fun latestSuccessfulRehearsalRequiresBothVerificationProofs() = runBlocking {
+    fun latestSuccessfulRehearsalRequiresAllVerificationProofs() = runBlocking {
         val profileId = ProfileId("profile-proof")
         val olderSuccess = rehearsalSession(
             id = "older-success",
@@ -446,6 +457,7 @@ class RoomRepositoriesTest {
             profileId = profileId,
             recordingVerifiedAt = Instant.ofEpochMilli(7_000),
             stoppedVerifiedAt = Instant.ofEpochMilli(8_000),
+            mediaSavedVerifiedAt = Instant.ofEpochMilli(8_100),
         )
         val latestSuccess = rehearsalSession(
             id = "latest-success",
@@ -454,6 +466,7 @@ class RoomRepositoriesTest {
             profileId = profileId,
             recordingVerifiedAt = Instant.ofEpochMilli(17_000),
             stoppedVerifiedAt = Instant.ofEpochMilli(18_000),
+            mediaSavedVerifiedAt = Instant.ofEpochMilli(18_100),
         )
         val missingStopProof = rehearsalSession(
             id = "missing-stop-proof",
@@ -462,6 +475,14 @@ class RoomRepositoriesTest {
             profileId = profileId,
             recordingVerifiedAt = Instant.ofEpochMilli(27_000),
         )
+        val missingMediaSaveProof = rehearsalSession(
+            id = "missing-media-save-proof",
+            status = SessionStatus.COMPLETED,
+            expectedStopAtEpochMs = 35_000,
+            profileId = profileId,
+            recordingVerifiedAt = Instant.ofEpochMilli(32_000),
+            stoppedVerifiedAt = Instant.ofEpochMilli(33_000),
+        )
         val otherProfile = rehearsalSession(
             id = "other-profile",
             status = SessionStatus.COMPLETED,
@@ -469,8 +490,9 @@ class RoomRepositoriesTest {
             profileId = ProfileId("other-profile"),
             recordingVerifiedAt = Instant.ofEpochMilli(37_000),
             stoppedVerifiedAt = Instant.ofEpochMilli(38_000),
+            mediaSavedVerifiedAt = Instant.ofEpochMilli(38_100),
         )
-        listOf(olderSuccess, latestSuccess, missingStopProof, otherProfile)
+        listOf(olderSuccess, latestSuccess, missingStopProof, missingMediaSaveProof, otherProfile)
             .forEach { insertExecutionFixture(it) }
 
         assertEquals(
@@ -478,6 +500,25 @@ class RoomRepositoriesTest {
             executions.latestSuccessfulRehearsal(profileId),
         )
         assertNull(executions.latestSuccessfulRehearsal(ProfileId("absent-profile")))
+    }
+
+    @Test
+    fun executionSessionRoundTripsMediaSaveProof() = runBlocking {
+        val session = rehearsalSession(
+            id = "media-save-round-trip",
+            status = SessionStatus.COMPLETED,
+            expectedStopAtEpochMs = 20_000,
+            recordingVerifiedAt = Instant.ofEpochMilli(17_000),
+            stoppedVerifiedAt = Instant.ofEpochMilli(18_000),
+            mediaBaselineGeneration = 41,
+            mediaStoreVersion = "version-1",
+            mediaSavedVerifiedAt = Instant.ofEpochMilli(18_500),
+            savedMediaGeneration = 42,
+        )
+
+        insertExecutionFixture(session)
+
+        assertEquals(session, executions.get(session.id))
     }
 
     @Test
@@ -791,6 +832,10 @@ class RoomRepositoriesTest {
         profileId: ProfileId = ProfileId("profile-1"),
         recordActionAt: Instant? = null,
         recordingVerifiedAt: Instant? = null,
+        mediaBaselineGeneration: Long? = null,
+        mediaStoreVersion: String? = null,
+        mediaSavedVerifiedAt: Instant? = null,
+        savedMediaGeneration: Long? = null,
         stoppedVerifiedAt: Instant? = null,
         cameraOwnershipReleasedAt: Instant? = null,
         kind: SessionKind = SessionKind.REHEARSAL,
@@ -807,6 +852,10 @@ class RoomRepositoriesTest {
         status = status,
         recordActionAt = recordActionAt,
         recordingVerifiedAt = recordingVerifiedAt,
+        mediaBaselineGeneration = mediaBaselineGeneration,
+        mediaStoreVersion = mediaStoreVersion,
+        mediaSavedVerifiedAt = mediaSavedVerifiedAt,
+        savedMediaGeneration = savedMediaGeneration,
         stoppedVerifiedAt = stoppedVerifiedAt,
         cameraOwnershipReleasedAt = cameraOwnershipReleasedAt,
         createdAt = Instant.ofEpochMilli(1_000),

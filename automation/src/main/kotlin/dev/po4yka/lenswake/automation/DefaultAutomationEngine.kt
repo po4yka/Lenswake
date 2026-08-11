@@ -91,6 +91,7 @@ class DefaultAutomationEngine(
     private val profileRepository: AutomationProfileRepository,
     private val deviceControl: DeviceControlPort,
     private val pixelCamera: PixelCameraPort,
+    private val recordingMedia: RecordingMediaPort,
     private val clock: LenswakeClock,
     private val config: AutomationConfig = AutomationConfig.production(),
     private val sleeper: AutomationSleeper = CoroutineAutomationSleeper,
@@ -157,6 +158,38 @@ class DefaultAutomationEngine(
         val originalStatus = context.current.status
         val originalFailure = context.current.failure
         val uncertainStopAtEntry = context.current.stopActionAt != null
+        val retryingOnlyMediaVerification =
+            originalStatus == SessionStatus.FAILED &&
+                originalFailure?.code == AutomationFailureCode.MEDIA_SAVE_NOT_CONFIRMED &&
+                context.current.stoppedVerifiedAt != null &&
+                context.current.recordingVerifiedAt != null
+        val preserveFailedOutcome =
+            (originalStatus == SessionStatus.FAILED && !retryingOnlyMediaVerification) ||
+                context.current.recordingVerifiedAt == null
+        val preservedFailure = originalFailure ?: if (preserveFailedOutcome) {
+            failure(
+                AutomationFailureCode.RECORDING_NOT_CONFIRMED,
+                "A dispatched recording was never verified before safe stop recovery",
+            )
+        } else {
+            null
+        }
+
+        // The camera can already be safely released while MediaStore is still publishing the
+        // video. Resume only the durable save verification after process death or a prior timeout;
+        // never reacquire Pixel Camera or dispatch STOP a second time.
+        if (context.current.stoppedVerifiedAt != null && context.current.mediaSavedVerifiedAt == null) {
+            if (!context.current.mediaVerificationRequired) {
+                return@execute finishVerifiedStop(
+                    context,
+                    preserveFailedOutcome,
+                    preservedFailure,
+                    completionOperation = AutomationOperation.VERIFY_STOPPED,
+                )
+            }
+            verifySavedRecording(context)
+            return@execute finishVerifiedStop(context, preserveFailedOutcome, preservedFailure)
+        }
         val hasOwnership = context.current.recordActionAt != null &&
             context.current.cameraOwnershipReleasedAt == null
         val stopOutstanding = context.current.stoppedVerifiedAt == null
@@ -181,17 +214,6 @@ class DefaultAutomationEngine(
             )
         }
         if (!stopOutstanding) return@execute AutomationRunResult.AlreadyTerminal(context.current)
-
-        val preserveFailedOutcome =
-            originalStatus == SessionStatus.FAILED || context.current.recordingVerifiedAt == null
-        val preservedFailure = originalFailure ?: if (preserveFailedOutcome) {
-            failure(
-                AutomationFailureCode.RECORDING_NOT_CONFIRMED,
-                "A dispatched recording was never verified before safe stop recovery",
-            )
-        } else {
-            null
-        }
 
         context.profileUse = loadProfileUse(context)
 
@@ -254,24 +276,149 @@ class DefaultAutomationEngine(
             failureMessage = "Pixel Camera did not leave the recording state",
             predicate = { it.isConfirmedStopped() },
         )
+        context.transition(
+            state = AutomationStateName.VERIFYING_MEDIA_SAVED,
+            status = SessionStatus.STOPPING,
+            operation = AutomationOperation.VERIFY_STOPPED,
+            outcome = AutomationOutcome.SUCCEEDED,
+        ) { session, now -> session.copy(stoppedVerifiedAt = session.stoppedVerifiedAt ?: now) }
+        if (!context.current.mediaVerificationRequired) {
+            return@execute finishVerifiedStop(
+                context,
+                preserveFailedOutcome,
+                preservedFailure,
+                completionOperation = AutomationOperation.VERIFY_STOPPED,
+            )
+        }
+        verifySavedRecording(context)
+        finishVerifiedStop(context, preserveFailedOutcome, preservedFailure)
+    }
+
+    private suspend fun finishVerifiedStop(
+        context: RunContext,
+        preserveFailedOutcome: Boolean,
+        preservedFailure: AutomationFailure?,
+        completionOperation: AutomationOperation = AutomationOperation.VERIFY_MEDIA_SAVED,
+    ): AutomationRunResult =
         if (preserveFailedOutcome) {
             context.transition(
                 state = AutomationStateName.FAILED,
                 status = SessionStatus.FAILED,
-                operation = AutomationOperation.VERIFY_STOPPED,
+                operation = completionOperation,
                 outcome = AutomationOutcome.SUCCEEDED,
                 metadata = mapOf("recovery" to "dispatched_but_unverified_recording"),
-            ) { session, now -> session.copy(stoppedVerifiedAt = now, failure = preservedFailure) }
+            ) { session, _ -> session.copy(failure = preservedFailure) }
             AutomationRunResult.StopVerifiedAfterFailure(context.current, preservedFailure)
         } else {
             context.transition(
                 state = AutomationStateName.COMPLETED,
                 status = SessionStatus.COMPLETED,
-                operation = AutomationOperation.VERIFY_STOPPED,
+                operation = completionOperation,
                 outcome = AutomationOutcome.SUCCEEDED,
-            ) { session, now -> session.copy(stoppedVerifiedAt = now, failure = null) }
+            ) { session, _ -> session.copy(failure = null) }
             AutomationRunResult.Succeeded(context.current)
         }
+
+    private suspend fun verifySavedRecording(context: RunContext) {
+        val baselineGeneration = context.current.mediaBaselineGeneration ?: fail(
+            context,
+            failure(
+                AutomationFailureCode.MEDIA_BASELINE_UNAVAILABLE,
+                "Recording output cannot be verified without a pre-Record MediaStore baseline",
+            ),
+        )
+        val mediaStoreVersion = context.current.mediaStoreVersion ?: fail(
+            context,
+            failure(
+                AutomationFailureCode.MEDIA_BASELINE_UNAVAILABLE,
+                "Recording output cannot be verified without the baseline MediaStore version",
+            ),
+        )
+        val baseline = RecordingMediaBaseline(baselineGeneration, mediaStoreVersion)
+        val operation = AutomationOperation.VERIFY_MEDIA_SAVED
+        val state = AutomationStateName.VERIFYING_MEDIA_SAVED
+        val policy = config.policyFor(operation)
+        var lastFailure: AutomationFailure? = null
+
+        for (attempt in 1..policy.maxAttempts) {
+            if (attempt > 1) {
+                retryTransition(context, operation, attempt, state)
+                sleeper.sleep(policy.delayBeforeAttempt(attempt))
+            }
+            context.transition(
+                state = state,
+                operation = operation,
+                outcome = AutomationOutcome.STARTED,
+                attempt = attempt,
+            )
+            val result = try {
+                when (val invocation = timed(operation) {
+                    recordingMedia.findSavedRecording(baseline)
+                }) {
+                    is TimedCall.Completed -> invocation.value
+                    TimedCall.TimedOut -> PortResult.Unavailable(timeoutFailure(operation))
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                PortResult.Unavailable(
+                    operationFailure(
+                        AutomationFailureCode.MEDIA_SAVE_NOT_CONFIRMED,
+                        "Saved recording could not be queried from MediaStore",
+                        error,
+                    ),
+                )
+            }
+            when (result) {
+                is PortResult.Observed -> result.value?.let { evidence ->
+                    if (evidence.generationAdded <= baselineGeneration) {
+                        lastFailure = failure(
+                            AutomationFailureCode.MEDIA_SAVE_NOT_CONFIRMED,
+                            "MediaStore returned video evidence that does not follow the recording baseline",
+                            mapOf(
+                                "baselineGeneration" to baselineGeneration.toString(),
+                                "candidateGeneration" to evidence.generationAdded.toString(),
+                            ),
+                        )
+                        context.transition(
+                            state = state,
+                            operation = operation,
+                            outcome = AutomationOutcome.FAILED,
+                            attempt = attempt,
+                            failure = lastFailure,
+                        )
+                        return@let
+                    }
+                    context.transition(
+                        state = state,
+                        operation = operation,
+                        outcome = AutomationOutcome.SUCCEEDED,
+                        attempt = attempt,
+                        metadata = mapOf(
+                            "mediaStoreGeneration" to evidence.generationAdded.toString(),
+                            "sizeBytes" to evidence.sizeBytes.toString(),
+                            "durationMs" to evidence.durationMillis.toString(),
+                        ),
+                    ) { session, now ->
+                        session.copy(
+                            mediaSavedVerifiedAt = now,
+                            savedMediaGeneration = evidence.generationAdded,
+                        )
+                    }
+                    return
+                }
+
+                is PortResult.Unavailable -> lastFailure = result.failure
+            }
+        }
+
+        fail(
+            context,
+            lastFailure ?: failure(
+                AutomationFailureCode.MEDIA_SAVE_NOT_CONFIRMED,
+                "No published Pixel Camera video appeared after the recording baseline",
+                mapOf("baselineGeneration" to baselineGeneration.toString()),
+            ),
+        )
     }
 
     private suspend fun reconcileUncertainStop(
@@ -844,6 +991,7 @@ class DefaultAutomationEngine(
     }
 
     private suspend fun dispatchRecordingStart(context: RunContext) {
+        captureMediaBaseline(context)
         val operation = AutomationOperation.START_RECORDING
         val state = AutomationStateName.STARTING_RECORDING
         val policy = config.policyFor(operation)
@@ -911,6 +1059,72 @@ class DefaultAutomationEngine(
             lastRejection ?: failure(
                 AutomationFailureCode.RECORD_ACTION_FAILED,
                 "Pixel Camera definitively rejected the Record action",
+            ),
+        )
+    }
+
+    private suspend fun captureMediaBaseline(context: RunContext) {
+        if (context.current.mediaBaselineGeneration != null) return
+        val operation = AutomationOperation.CAPTURE_MEDIA_BASELINE
+        val state = AutomationStateName.CAPTURING_MEDIA_BASELINE
+        val policy = config.policyFor(operation)
+        var lastFailure: AutomationFailure? = null
+
+        for (attempt in 1..policy.maxAttempts) {
+            if (attempt > 1) {
+                retryTransition(context, operation, attempt, state)
+                sleeper.sleep(policy.delayBeforeAttempt(attempt))
+            }
+            context.transition(
+                state = state,
+                operation = operation,
+                outcome = AutomationOutcome.STARTED,
+                attempt = attempt,
+            )
+            val result = try {
+                when (val invocation = timed(operation, recordingMedia::captureBaseline)) {
+                    is TimedCall.Completed -> invocation.value
+                    TimedCall.TimedOut -> PortResult.Unavailable(timeoutFailure(operation))
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                PortResult.Unavailable(
+                    operationFailure(
+                        AutomationFailureCode.MEDIA_BASELINE_UNAVAILABLE,
+                        "MediaStore baseline could not be captured",
+                        error,
+                    ),
+                )
+            }
+            when (result) {
+                is PortResult.Observed -> {
+                    context.transition(
+                        state = state,
+                        operation = operation,
+                        outcome = AutomationOutcome.SUCCEEDED,
+                        attempt = attempt,
+                        metadata = mapOf(
+                            "mediaStoreGeneration" to result.value.generation.toString(),
+                            "mediaStoreVersion" to result.value.version,
+                        ),
+                    ) { session, _ ->
+                        session.copy(
+                            mediaBaselineGeneration = result.value.generation,
+                            mediaStoreVersion = result.value.version,
+                        )
+                    }
+                    return
+                }
+
+                is PortResult.Unavailable -> lastFailure = result.failure
+            }
+        }
+
+        fail(
+            context,
+            lastFailure ?: failure(
+                AutomationFailureCode.MEDIA_BASELINE_UNAVAILABLE,
+                "MediaStore baseline could not be captured",
             ),
         )
     }
@@ -1356,7 +1570,15 @@ class DefaultAutomationEngine(
         outcome: AutomationOutcome,
     ): String = when {
         state == AutomationStateName.RECORDING -> "automation.record.start_verified"
-        state == AutomationStateName.COMPLETED -> "automation.record.stop_verified"
+        state == AutomationStateName.VERIFYING_MEDIA_SAVED &&
+            operation == AutomationOperation.VERIFY_MEDIA_SAVED &&
+            outcome == AutomationOutcome.SUCCEEDED -> "automation.media.save_verified"
+        state == AutomationStateName.COMPLETED && operation == AutomationOperation.VERIFY_STOPPED ->
+            "automation.record.stop_verified_media_unavailable_legacy"
+        state == AutomationStateName.COMPLETED -> "automation.record.stop_and_save_verified"
+        state == AutomationStateName.FAILED &&
+            operation == AutomationOperation.VERIFY_MEDIA_SAVED &&
+            outcome == AutomationOutcome.SUCCEEDED -> "automation.record.stop_and_save_verified_after_failure"
         state == AutomationStateName.FAILED &&
             operation == AutomationOperation.VERIFY_STOPPED &&
             outcome == AutomationOutcome.SUCCEEDED -> "automation.record.stop_verified_after_failure"

@@ -84,6 +84,7 @@ class PreflightAlarmRecoveryReadiness(
         // bounded Pixel Camera inspections after waking the display.
         val REQUIRED_CHECKS = setOf(
             PreflightCheckType.EXACT_ALARMS,
+            PreflightCheckType.MEDIA_VIDEO_ACCESS,
             PreflightCheckType.PIXEL_CAMERA_INSTALLED,
             PreflightCheckType.SECURE_CAMERA_RESOLVES,
             PreflightCheckType.DEVICE_WAKE,

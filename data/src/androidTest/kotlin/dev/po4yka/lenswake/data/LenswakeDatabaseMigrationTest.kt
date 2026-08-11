@@ -66,11 +66,12 @@ class LenswakeDatabaseMigrationTest {
 
         val migrated = migrationHelper.runMigrationsAndValidate(
             DATABASE_NAME,
-            4,
+            5,
             true,
             LenswakeDatabase.MIGRATION_1_2,
             LenswakeDatabase.MIGRATION_2_3,
             LenswakeDatabase.MIGRATION_3_4,
+            LenswakeDatabase.MIGRATION_4_5,
         )
         migrated.query(
             "SELECT id FROM automation_profiles WHERE id = 'profile-migration'",
@@ -86,6 +87,7 @@ class LenswakeDatabaseMigrationTest {
                 LenswakeDatabase.MIGRATION_1_2,
                 LenswakeDatabase.MIGRATION_2_3,
                 LenswakeDatabase.MIGRATION_3_4,
+                LenswakeDatabase.MIGRATION_4_5,
             )
             .build()
         val (rawProfile, schedule) = runBlocking {
@@ -205,7 +207,7 @@ class LenswakeDatabaseMigrationTest {
 
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.databaseBuilder(context, LenswakeDatabase::class.java, DATABASE_NAME)
-            .addMigrations(LenswakeDatabase.MIGRATION_3_4)
+            .addMigrations(LenswakeDatabase.MIGRATION_3_4, LenswakeDatabase.MIGRATION_4_5)
             .build()
         val (profile, schemaOneProfile) = runBlocking {
             val repository = RoomAutomationProfileRepository(database)
@@ -237,6 +239,75 @@ class LenswakeDatabaseMigrationTest {
         assertEquals(82, stateSignal.minimumScore)
         assertEquals(false, stateSignal.selectors.single().requiresClickable)
         assertNull(stateSignal.selectors.single().expectedChecked)
+    }
+
+    @Test
+    fun migratesVersionFourWithNullableMediaSaveProofColumns() {
+        migrationHelper.createDatabase(DATABASE_NAME, 4).apply {
+            execSQL(
+                """
+                INSERT INTO execution_sessions (
+                    id, execution_key, kind, profile_id, capture_type,
+                    time_lapse_speed, lens_selection,
+                    expected_start_at_epoch_ms, expected_stop_at_epoch_ms,
+                    status, revision, created_at_epoch_ms, updated_at_epoch_ms
+                ) VALUES (
+                    'execution-media-migration', 'rehearsal/media-migration', 'REHEARSAL',
+                    'profile-migration', 'TIME_LAPSE', 'X120', 'REAR_MAIN',
+                    1000, 2000, 'COMPLETED', 3, 500, 1500
+                )
+                """.trimIndent(),
+            )
+            execSQL(
+                """
+                INSERT INTO execution_sessions (
+                    id, execution_key, kind, profile_id, capture_type,
+                    time_lapse_speed, lens_selection,
+                    expected_start_at_epoch_ms, expected_stop_at_epoch_ms,
+                    status, record_action_at_epoch_ms, revision,
+                    created_at_epoch_ms, updated_at_epoch_ms
+                ) VALUES (
+                    'execution-active-migration', 'schedule/active-migration', 'SCHEDULED',
+                    'profile-migration', 'TIME_LAPSE', 'X120', 'REAR_MAIN',
+                    1000, 2000, 'RECORDING', 1200, 3, 500, 1500
+                )
+                """.trimIndent(),
+            )
+            close()
+        }
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            DATABASE_NAME,
+            5,
+            true,
+            LenswakeDatabase.MIGRATION_4_5,
+        )
+        migrated.query(
+            """
+            SELECT media_baseline_generation, media_store_version, media_verification_required,
+                   media_saved_verified_at_epoch_ms, saved_media_generation
+            FROM execution_sessions
+            WHERE id = 'execution-media-migration'
+            """.trimIndent(),
+        ).use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals(true, cursor.isNull(0))
+            assertEquals(true, cursor.isNull(1))
+            assertEquals(1, cursor.getInt(2))
+            assertEquals(true, cursor.isNull(3))
+            assertEquals(true, cursor.isNull(4))
+        }
+        migrated.query(
+            """
+            SELECT media_verification_required
+            FROM execution_sessions
+            WHERE id = 'execution-active-migration'
+            """.trimIndent(),
+        ).use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+        migrated.close()
     }
 
     private companion object {

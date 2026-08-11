@@ -345,6 +345,42 @@ class ScheduleWorkflowTest {
     }
 
     @Test
+    fun missingSavedVideoAccessRejectsEnabledCreateWithoutPersistenceOrAlarms() = runTest {
+        val events = mutableListOf<String>()
+        val schedules = FakeScheduleRepository(emptyList(), events)
+        val profiles = FakeProfileRepository(listOf(profile()))
+        val workflow = ScheduleWorkflow(
+            scheduleRepository = schedules,
+            executionRepository = FakeExecutionRepository(),
+            profileRepository = profiles,
+            scheduler = FakeRecordingScheduler(events, stopFailures = 0),
+            clock = LenswakeClock { now },
+            preflightProbe = RuntimePreflightProbe {
+                readyPreflight().copy(
+                    checks = readyPreflight().checks.map { check ->
+                        if (check.type == PreflightCheckType.MEDIA_VIDEO_ACCESS) {
+                            check.copy(
+                                status = PreflightStatus.FAILED,
+                                message = "Saved video access is not granted.",
+                            )
+                        } else {
+                            check
+                        }
+                    },
+                )
+            },
+        )
+
+        val result = workflow.create(command())
+
+        val rejected = assertInstanceOf(ScheduleWorkflowResult.Rejected::class.java, result)
+        assertEquals(ScheduleWorkflowFailureCode.RUNTIME_NOT_READY, rejected.code)
+        assertTrue(rejected.message.contains("Saved video access is not granted"))
+        assertTrue(events.isEmpty())
+        assertTrue(schedules.current().isEmpty())
+    }
+
+    @Test
     fun concurrentMutationsAreSerializedAcrossPersistenceAndAlarmRegistration() = runTest {
         val events = mutableListOf<String>()
         val schedules = FakeScheduleRepository(emptyList(), events)
@@ -667,6 +703,7 @@ class ScheduleWorkflowTest {
             listOf(
                 PreflightCheckType.EXACT_ALARMS,
                 PreflightCheckType.NOTIFICATIONS,
+                PreflightCheckType.MEDIA_VIDEO_ACCESS,
                 PreflightCheckType.FULL_SCREEN_INTENT,
                 PreflightCheckType.PIXEL_CAMERA_INSTALLED,
                 PreflightCheckType.SECURE_CAMERA_RESOLVES,

@@ -33,6 +33,7 @@ Implemented now:
 - persisted schedules, environment-bound automation profiles, execution sessions, structured events, and immutable execution-environment snapshots;
 - explicit START and STOP workflows that distinguish action dispatch from verified camera state;
 - write-ahead recording ownership, operation-specific timeouts, safe reconciliation after uncertain Record dispatch, and safe STOP recovery;
+- a pre-Record MediaStore generation baseline and post-STOP saved-file verification: only a newly generated, published Pixel Camera-owned external video with positive size and duration completes a session;
 - profile-driven selector scoring, meaningful-discriminant enforcement, ambiguity rejection, observable state signals, per-speed targets, and verified rear-main-lens selection;
 - selector-schema and environment compatibility checks that require a current, timestamped `VERIFIED` profile for unattended execution;
 - dynamically resolved secure Pixel Camera launch and a package-scoped, bounded Accessibility adapter;
@@ -99,7 +100,7 @@ Lenswake should be able to:
 11. Keep the recording running without requiring Lenswake to remain visible.
 12. Wake the device again when necessary.
 13. Stop recording at the configured time.
-14. Verify that Pixel Camera successfully stopped and saved the recording.
+14. Verify that Pixel Camera stopped and that MediaStore exposes its newly published saved video.
 15. Recover gracefully from unexpected Pixel Camera UI states.
 
 Reliability is more important than speed.
@@ -1035,6 +1036,19 @@ AccessibilityService
 
 requiring user activation in Android Settings.
 
+## Video media read access
+
+Used only to verify a post-STOP, Pixel Camera-owned external video through MediaStore; Lenswake
+does not use it to create, rename, delete, or otherwise own camera output.
+
+```text
+READ_MEDIA_VIDEO
+READ_MEDIA_VISUAL_USER_SELECTED (Android 14+ access-state handling)
+```
+
+Unattended verification requires the full `READ_MEDIA_VIDEO` grant. The selected-media permission
+lets setup identify and remediate a partial grant; partial access alone never passes preflight.
+
 ## Notifications
 
 Used for diagnostics, session state, errors, and potentially alarm-related fallback flows.
@@ -1301,6 +1315,41 @@ expectedStopAt = 07:30
 If Lenswake becomes active again before that time, it may inspect Pixel Camera and reconcile the actual state.
 
 The scheduled STOP alarm remains the authoritative termination trigger.
+
+---
+
+# Saved-file verification
+
+Lenswake does not create or own the recording file. To verify that Pixel Camera saved the
+recording, it captures and persists a MediaStore generation baseline before dispatching `Record`.
+After STOP is independently verified, Lenswake queries external video media using full-library
+`READ_MEDIA_VIDEO` access and accepts only an unambiguous candidate that:
+
+- belongs to the Pixel Camera package;
+- has `GENERATION_ADDED` greater than the persisted baseline;
+- is published (`IS_PENDING = 0`); and
+- reports a positive size and duration.
+
+The baseline also persists the opaque MediaStore volume version; generations are compared only
+while that version remains unchanged. Partial selected-video access is rejected because it cannot
+guarantee visibility of a future unattended Pixel Camera output. Multiple qualifying candidates
+are treated as ambiguous and fail closed.
+
+The durable session checkpoints are `mediaBaselineGeneration`, `mediaStoreVersion`,
+`mediaSavedVerifiedAt`, and `savedMediaGeneration`, so a restarted Lenswake process can retain and
+resume the correlation outcome.
+Structured execution evidence also records the observed generation, size, and duration. A missing
+baseline, unreadable media, or no qualifying published video is an explicit failure, not a
+completed recording.
+
+Executions with a persisted Record dispatch already in flight when the Room v4→v5 migration runs
+are the sole exception: their STOP is still verified and completed without inventing retroactive
+media evidence, and a dedicated
+`automation.record.stop_verified_media_unavailable_legacy` event records that limitation. Such a
+rehearsal cannot verify or promote a profile.
+
+This is correlation evidence only: Lenswake neither guesses a filename nor claims ownership of a
+media URI, path, or Pixel Camera output.
 
 ---
 

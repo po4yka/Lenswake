@@ -103,19 +103,30 @@ class AlarmManagerRehearsalStopSchedulerTest {
             stoppedVerifiedAt = now.minusSeconds(5),
             status = SessionStatus.STOPPING,
         )
-        val active = listOf(future, overdueOwned, overdueUndispatched, alreadyStopped)
+        val awaitingMedia = session(
+            "awaiting-media",
+            expectedStopAt = now.minusSeconds(8),
+            recordActionAt = now.minusSeconds(90),
+            stoppedVerifiedAt = now.minusSeconds(4),
+            mediaBaselineGeneration = 41,
+            mediaStoreVersion = "version-1",
+            status = SessionStatus.FAILED,
+        )
+        val active = listOf(future, overdueOwned, overdueUndispatched, alreadyStopped, awaitingMedia)
         val repository = FakeRehearsalExecutionRepository(active).also { it.activeRehearsals = active }
         val backend = FakeRehearsalStopAlarmBackend()
 
         assertTrue(scheduler(repository, backend).restoreAll().isSuccess)
 
         assertEquals(listOf(alreadyStopped.id), backend.cancelled)
-        assertEquals(3, backend.scheduled.size)
+        assertEquals(4, backend.scheduled.size)
         assertEquals(future.expectedStopAt, backend.scheduled[0].triggerAt)
         assertEquals(overdueOwned.expectedStopAt, backend.scheduled[1].trigger.expectedAt)
         assertEquals(now.plusMillis(1_000), backend.scheduled[1].triggerAt)
         assertEquals(overdueUndispatched.expectedStopAt, backend.scheduled[2].trigger.expectedAt)
         assertEquals(now.plusMillis(1_000), backend.scheduled[2].triggerAt)
+        assertEquals(awaitingMedia.expectedStopAt, backend.scheduled[3].trigger.expectedAt)
+        assertEquals(now.plusMillis(1_000), backend.scheduled[3].triggerAt)
     }
 
     @Test
@@ -160,6 +171,8 @@ class AlarmManagerRehearsalStopSchedulerTest {
         kind: SessionKind = SessionKind.REHEARSAL,
         recordActionAt: Instant? = null,
         stoppedVerifiedAt: Instant? = null,
+        mediaBaselineGeneration: Long? = null,
+        mediaStoreVersion: String? = null,
         status: SessionStatus = SessionStatus.PENDING,
     ): ExecutionSession = ExecutionSession(
         id = SessionId(id),
@@ -174,6 +187,8 @@ class AlarmManagerRehearsalStopSchedulerTest {
         status = status,
         recordActionAt = recordActionAt,
         stoppedVerifiedAt = stoppedVerifiedAt,
+        mediaBaselineGeneration = mediaBaselineGeneration,
+        mediaStoreVersion = mediaStoreVersion,
         createdAt = now.minusSeconds(120),
         updatedAt = now.minusSeconds(60),
     )

@@ -72,6 +72,7 @@ class AndroidRuntimePreflightProbe(
             observation = RuntimePreflightObservation(
                 exactAlarms = exactAlarmObservation(),
                 notifications = notificationObservation(),
+                mediaVideoAccess = mediaVideoAccessObservation(),
                 fullScreenIntent = fullScreenIntentObservation(),
                 pixelCameraInstalled = RuntimeCapabilityObservation(
                     status = cameraStatus,
@@ -151,6 +152,32 @@ class AndroidRuntimePreflightProbe(
         RuntimeCapabilityObservation(
             status = PreflightStatus.UNKNOWN,
             message = "Notification capability could not be checked: ${error.javaClass.simpleName}.",
+        )
+    }
+
+    private fun mediaVideoAccessObservation(): RuntimeCapabilityObservation = runCatching {
+        val fullAccess = applicationContext.checkSelfPermission(
+            android.Manifest.permission.READ_MEDIA_VIDEO,
+        ) == PackageManager.PERMISSION_GRANTED
+        val partialAccess = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+            applicationContext.checkSelfPermission(
+                android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+            ) == PackageManager.PERMISSION_GRANTED
+        RuntimeCapabilityObservation(
+            status = if (fullAccess) PreflightStatus.PASSED else PreflightStatus.FAILED,
+            message = if (fullAccess) {
+                "Lenswake can read saved Pixel Camera videos for recording verification."
+            } else if (partialAccess) {
+                "Selected-video access is insufficient for unattended verification of future Pixel Camera recordings."
+            } else {
+                "Lenswake needs full video-library access to verify saved Pixel Camera recordings."
+            },
+            remediation = if (fullAccess) null else SetupRemediationAction.REQUEST_MEDIA_VIDEO_PERMISSION,
+        )
+    }.getOrElse { error ->
+        RuntimeCapabilityObservation(
+            status = PreflightStatus.UNKNOWN,
+            message = "Saved-video access could not be checked: ${error.javaClass.simpleName}.",
         )
     }
 

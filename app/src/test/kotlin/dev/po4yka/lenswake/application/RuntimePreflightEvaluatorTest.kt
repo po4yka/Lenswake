@@ -41,6 +41,7 @@ class RuntimePreflightEvaluatorTest {
 
         assertEquals(PreflightStatus.FAILED, checks.getValue(PreflightCheckType.EXACT_ALARMS).status)
         assertEquals(PreflightStatus.PASSED, checks.getValue(PreflightCheckType.NOTIFICATIONS).status)
+        assertEquals(PreflightStatus.PASSED, checks.getValue(PreflightCheckType.MEDIA_VIDEO_ACCESS).status)
         assertEquals(PreflightStatus.PASSED, checks.getValue(PreflightCheckType.FULL_SCREEN_INTENT).status)
         assertEquals(PreflightStatus.UNKNOWN, checks.getValue(PreflightCheckType.PIXEL_CAMERA_INSTALLED).status)
         assertEquals(PreflightStatus.UNKNOWN, checks.getValue(PreflightCheckType.SECURE_CAMERA_RESOLVES).status)
@@ -93,6 +94,25 @@ class RuntimePreflightEvaluatorTest {
             SetupRemediationAction.OPEN_FULL_SCREEN_INTENT_SETTINGS,
             checks.getValue(PreflightCheckType.FULL_SCREEN_INTENT).remediation,
         )
+    }
+
+    @Test
+    fun missingSavedVideoAccessIsBlockingAndRequestsTheRuntimePermission() {
+        val report = evaluator.evaluate(
+            observation = observation(
+                mediaVideoAccess = RuntimeCapabilityObservation(
+                    PreflightStatus.FAILED,
+                    "Saved video access denied.",
+                    SetupRemediationAction.REQUEST_MEDIA_VIDEO_PERMISSION,
+                ),
+            ),
+            profiles = emptyList(),
+        )
+
+        val check = report.checks.associateBy { it.type }.getValue(PreflightCheckType.MEDIA_VIDEO_ACCESS)
+        assertEquals(PreflightSeverity.BLOCKING, check.severity)
+        assertEquals(PreflightStatus.FAILED, check.status)
+        assertEquals(SetupRemediationAction.REQUEST_MEDIA_VIDEO_PERMISSION, check.remediation)
     }
 
     @Test
@@ -183,12 +203,28 @@ class RuntimePreflightEvaluatorTest {
         val environment = environment()
         val profile = profile(environment)
         val staleProof = successfulRehearsal(profile).copy(
-            stoppedVerifiedAt = profile.verifiedAt?.minusSeconds(1),
+            mediaSavedVerifiedAt = profile.verifiedAt?.minusSeconds(1),
         )
 
         val check = evaluator.evaluate(
             observation = observation(cameraEnvironment = environment).copy(
                 successfulRehearsals = mapOf(profile.id to staleProof),
+            ),
+            profiles = listOf(profile),
+        ).checks.single { it.type == PreflightCheckType.REHEARSAL_CURRENT }
+
+        assertEquals(PreflightStatus.FAILED, check.status)
+    }
+
+    @Test
+    fun rehearsalWithoutSavedMediaDoesNotQualify() {
+        val environment = environment()
+        val profile = profile(environment)
+        val withoutMedia = successfulRehearsal(profile).copy(mediaSavedVerifiedAt = null)
+
+        val check = evaluator.evaluate(
+            observation = observation(cameraEnvironment = environment).copy(
+                successfulRehearsals = mapOf(profile.id to withoutMedia),
             ),
             profiles = listOf(profile),
         ).checks.single { it.type == PreflightCheckType.REHEARSAL_CURRENT }
@@ -241,6 +277,7 @@ class RuntimePreflightEvaluatorTest {
     private fun observation(
         exactAlarms: RuntimeCapabilityObservation = passed("Exact alarms available."),
         notifications: RuntimeCapabilityObservation = passed("Notifications available."),
+        mediaVideoAccess: RuntimeCapabilityObservation = passed("Saved video access available."),
         fullScreenIntent: RuntimeCapabilityObservation = passed("Full-screen intents available."),
         pixelCameraInstalled: RuntimeCapabilityObservation = passed("Pixel Camera installed."),
         cameraEnvironment: PixelCameraEnvironment? = environment(),
@@ -254,6 +291,7 @@ class RuntimePreflightEvaluatorTest {
     ) = RuntimePreflightObservation(
         exactAlarms = exactAlarms,
         notifications = notifications,
+        mediaVideoAccess = mediaVideoAccess,
         fullScreenIntent = fullScreenIntent,
         pixelCameraInstalled = pixelCameraInstalled,
         cameraEnvironment = cameraEnvironment,
@@ -292,6 +330,7 @@ class RuntimePreflightEvaluatorTest {
             recordingVerifiedAt = startedAt,
             stopActionAt = stoppedAt,
             stoppedVerifiedAt = stoppedAt,
+            mediaSavedVerifiedAt = stoppedAt,
             createdAt = startedAt.minusSeconds(60),
             updatedAt = stoppedAt,
         )

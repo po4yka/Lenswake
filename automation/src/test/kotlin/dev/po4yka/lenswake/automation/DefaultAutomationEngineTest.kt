@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -149,6 +150,60 @@ class DefaultAutomationEngineTest {
         assertNotNull(checkpointAtPortCall?.recordActionAt)
         assertNull(checkpointAtPortCall?.recordingVerifiedAt)
         assertEquals(AutomationStateName.STARTING_RECORDING, checkpointAtPortCall?.currentAutomationState)
+    }
+
+    @Test
+    fun `media baseline is persisted before invoking Pixel Camera`() = runTest {
+        val session = session(status = SessionStatus.PENDING)
+        val repository = FakeExecutionRepository(session)
+        var baselineAtPortCall: Long? = null
+        val camera = FakePixelCamera(
+            state = readyToRecordState(),
+            onStartRecording = {
+                baselineAtPortCall = repository.get(session.id)?.mediaBaselineGeneration
+            },
+        )
+        val media = FakeRecordingMedia(baselineGeneration = 41)
+        val engine = engine(
+            repository = repository,
+            device = FakeDeviceControl(interactive = true),
+            camera = camera,
+            media = media,
+        )
+
+        val result = engine.start(session.id)
+
+        val succeeded = assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        assertEquals(41, baselineAtPortCall)
+        assertEquals(41, succeeded.session.mediaBaselineGeneration)
+        assertEquals(listOf("captureBaseline"), media.calls)
+    }
+
+    @Test
+    fun `missing media permission fails before Record is dispatched`() = runTest {
+        val session = session(status = SessionStatus.PENDING)
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(state = readyToRecordState())
+        val permissionFailure = AutomationFailure(
+            AutomationFailureCode.MEDIA_READ_PERMISSION_MISSING,
+            "Video access is not granted",
+        )
+        val media = FakeRecordingMedia(
+            baselineResult = PortResult.Unavailable(permissionFailure),
+        )
+
+        val result = engine(
+            repository = repository,
+            device = FakeDeviceControl(interactive = true),
+            camera = camera,
+            media = media,
+            attempts = 1,
+        ).start(session.id)
+
+        val failed = assertInstanceOf(AutomationRunResult.Failed::class.java, result)
+        assertEquals(AutomationFailureCode.MEDIA_READ_PERMISSION_MISSING, failed.failure.code)
+        assertNull(failed.session.recordActionAt)
+        assertEquals(0, camera.calls.count { it == "startRecording" })
     }
 
     @Test
@@ -743,6 +798,248 @@ class DefaultAutomationEngineTest {
     }
 
     @Test
+    fun `stop completes only after a published Pixel Camera video is observed`() = runTest {
+        val session = session(status = SessionStatus.RECORDING).copy(
+            currentAutomationState = AutomationStateName.RECORDING,
+            recordActionAt = NOW.minusSeconds(60),
+            recordingVerifiedAt = NOW.minusSeconds(59),
+        )
+        val repository = FakeExecutionRepository(session)
+        val media = FakeRecordingMedia(
+            savedResults = listOf(
+                PortResult.Observed(null),
+                PortResult.Observed(null),
+                PortResult.Observed(
+                    SavedRecordingEvidence(
+                        generationAdded = 12,
+                        sizeBytes = 4_096,
+                        durationMillis = 500,
+                    ),
+                ),
+            ),
+        )
+        val engine = engine(
+            repository = repository,
+            device = FakeDeviceControl(interactive = true),
+            camera = FakePixelCamera(
+                state = PixelCameraState.TimeLapse(
+                    TimeLapseSpeed.X120,
+                    recording = true,
+                    lens = LensSelection.REAR_MAIN,
+                ),
+            ),
+            media = media,
+            attempts = 3,
+        )
+
+        val result = engine.stop(session.id)
+
+        val succeeded = assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        assertNotNull(succeeded.session.stoppedVerifiedAt)
+        assertNotNull(succeeded.session.mediaSavedVerifiedAt)
+        assertEquals(12, succeeded.session.savedMediaGeneration)
+        assertEquals(3, media.calls.count { it == "findSavedRecording:7" })
+        assertEquals(AutomationStateName.COMPLETED, repository.events.last().state)
+    }
+
+    @Test
+    fun `missing saved media fails after releasing camera ownership`() = runTest {
+        val session = session(status = SessionStatus.RECORDING).copy(
+            currentAutomationState = AutomationStateName.RECORDING,
+            recordActionAt = NOW.minusSeconds(60),
+            recordingVerifiedAt = NOW.minusSeconds(59),
+        )
+        val repository = FakeExecutionRepository(session)
+        val media = FakeRecordingMedia(savedResults = listOf(PortResult.Observed(null)))
+        val engine = engine(
+            repository = repository,
+            device = FakeDeviceControl(interactive = true),
+            camera = FakePixelCamera(
+                state = PixelCameraState.TimeLapse(
+                    TimeLapseSpeed.X120,
+                    recording = true,
+                    lens = LensSelection.REAR_MAIN,
+                ),
+            ),
+            media = media,
+            attempts = 2,
+        )
+
+        val result = engine.stop(session.id)
+
+        val failed = assertInstanceOf(AutomationRunResult.Failed::class.java, result)
+        assertEquals(AutomationFailureCode.MEDIA_SAVE_NOT_CONFIRMED, failed.failure.code)
+        assertNotNull(failed.session.stoppedVerifiedAt)
+        assertNull(failed.session.mediaSavedVerifiedAt)
+        assertFalse(failed.session.ownsPixelCamera)
+        assertEquals(2, media.calls.count { it == "findSavedRecording:7" })
+    }
+
+    @Test
+    fun `media evidence at or before baseline is rejected`() = runTest {
+        val session = session(status = SessionStatus.RECORDING).copy(
+            currentAutomationState = AutomationStateName.RECORDING,
+            recordActionAt = NOW.minusSeconds(60),
+            recordingVerifiedAt = NOW.minusSeconds(59),
+        )
+        val repository = FakeExecutionRepository(session)
+        val media = FakeRecordingMedia(
+            savedResults = listOf(
+                PortResult.Observed(
+                    SavedRecordingEvidence(
+                        generationAdded = 7,
+                        sizeBytes = 4_096,
+                        durationMillis = 500,
+                    ),
+                ),
+            ),
+        )
+
+        val result = engine(
+            repository = repository,
+            device = FakeDeviceControl(interactive = true),
+            camera = FakePixelCamera(
+                state = PixelCameraState.TimeLapse(
+                    TimeLapseSpeed.X120,
+                    recording = true,
+                    lens = LensSelection.REAR_MAIN,
+                ),
+            ),
+            media = media,
+            attempts = 1,
+        ).stop(session.id)
+
+        val failed = assertInstanceOf(AutomationRunResult.Failed::class.java, result)
+        assertEquals(AutomationFailureCode.MEDIA_SAVE_NOT_CONFIRMED, failed.failure.code)
+        assertNull(failed.session.mediaSavedVerifiedAt)
+        assertFalse(failed.session.ownsPixelCamera)
+    }
+
+    @Test
+    fun `legacy in-flight execution completes verified stop without fabricating media proof`() = runTest {
+        val session = session(status = SessionStatus.RECORDING).copy(
+            currentAutomationState = AutomationStateName.RECORDING,
+            recordActionAt = NOW.minusSeconds(60),
+            recordingVerifiedAt = NOW.minusSeconds(59),
+            mediaBaselineGeneration = null,
+            mediaStoreVersion = null,
+            mediaVerificationRequired = false,
+        )
+        val repository = FakeExecutionRepository(session)
+        val media = FakeRecordingMedia()
+
+        val result = engine(
+            repository = repository,
+            device = FakeDeviceControl(interactive = true),
+            camera = FakePixelCamera(
+                state = PixelCameraState.TimeLapse(
+                    TimeLapseSpeed.X120,
+                    recording = true,
+                    lens = LensSelection.REAR_MAIN,
+                ),
+            ),
+            media = media,
+            attempts = 1,
+        ).stop(session.id)
+
+        val succeeded = assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        assertEquals(SessionStatus.COMPLETED, succeeded.session.status)
+        assertNotNull(succeeded.session.stoppedVerifiedAt)
+        assertNull(succeeded.session.mediaSavedVerifiedAt)
+        assertTrue(media.calls.isEmpty())
+        assertEquals(
+            "automation.record.stop_verified_media_unavailable_legacy",
+            repository.events.last().name,
+        )
+    }
+
+    @Test
+    fun `save verification resumes after process death without touching Pixel Camera`() = runTest {
+        val session = session(status = SessionStatus.STOPPING).copy(
+            currentAutomationState = AutomationStateName.VERIFYING_MEDIA_SAVED,
+            recordActionAt = NOW.minusSeconds(60),
+            recordingVerifiedAt = NOW.minusSeconds(59),
+            stopActionAt = NOW.minusSeconds(2),
+            stoppedVerifiedAt = NOW.minusSeconds(1),
+        )
+        val repository = FakeExecutionRepository(session)
+        val device = FakeDeviceControl(interactive = false)
+        val camera = FakePixelCamera(PixelCameraState.NotRunning)
+        val media = FakeRecordingMedia(
+            savedResults = listOf(
+                PortResult.Observed(
+                    SavedRecordingEvidence(
+                        generationAdded = 11,
+                        sizeBytes = 2_048,
+                        durationMillis = 1_000,
+                    ),
+                ),
+            ),
+        )
+        val engine = engine(repository, device, camera, media = media)
+
+        val result = engine.stop(session.id)
+
+        val succeeded = assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        assertEquals(SessionStatus.COMPLETED, succeeded.session.status)
+        assertNotNull(succeeded.session.mediaSavedVerifiedAt)
+        assertEquals(11, succeeded.session.savedMediaGeneration)
+        assertEquals(listOf("findSavedRecording:7"), media.calls)
+        assertEquals(emptyList<String>(), device.calls + camera.calls)
+    }
+
+    @Test
+    fun `late media publication clears transient save failure on durable retry`() = runTest {
+        val session = session(status = SessionStatus.RECORDING).copy(
+            currentAutomationState = AutomationStateName.RECORDING,
+            recordActionAt = NOW.minusSeconds(60),
+            recordingVerifiedAt = NOW.minusSeconds(59),
+        )
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(
+            state = PixelCameraState.TimeLapse(
+                TimeLapseSpeed.X120,
+                recording = true,
+                lens = LensSelection.REAR_MAIN,
+            ),
+        )
+        val first = engine(
+            repository = repository,
+            device = FakeDeviceControl(interactive = true),
+            camera = camera,
+            media = FakeRecordingMedia(savedResults = listOf(PortResult.Observed(null))),
+            attempts = 1,
+        ).stop(session.id)
+        assertInstanceOf(AutomationRunResult.Failed::class.java, first)
+
+        val retryDevice = FakeDeviceControl(interactive = false)
+        val retryCamera = FakePixelCamera(PixelCameraState.NotRunning)
+        val second = engine(
+            repository = repository,
+            device = retryDevice,
+            camera = retryCamera,
+            media = FakeRecordingMedia(
+                savedResults = listOf(
+                    PortResult.Observed(
+                        SavedRecordingEvidence(
+                            generationAdded = 8,
+                            sizeBytes = 2_048,
+                            durationMillis = 1_000,
+                        ),
+                    ),
+                ),
+            ),
+            attempts = 1,
+        ).stop(session.id)
+
+        val succeeded = assertInstanceOf(AutomationRunResult.Succeeded::class.java, second)
+        assertEquals(SessionStatus.COMPLETED, succeeded.session.status)
+        assertNull(succeeded.session.failure)
+        assertNotNull(succeeded.session.mediaSavedVerifiedAt)
+        assertEquals(emptyList<String>(), retryDevice.calls + retryCamera.calls)
+    }
+
+    @Test
     fun `stop accepts a verified owned recording when Pixel Camera hides mode controls`() = runTest {
         val session = session(status = SessionStatus.RECORDING).copy(
             currentAutomationState = AutomationStateName.RECORDING,
@@ -1054,11 +1351,13 @@ class DefaultAutomationEngineTest {
     }
 
     @Test
-    fun `cancelled session with verified stop remains terminal`() = runTest {
+    fun `cancelled session with verified stop and save remains terminal`() = runTest {
         val session = session(status = SessionStatus.CANCELLED).copy(
             currentAutomationState = AutomationStateName.CANCELLED,
             recordActionAt = NOW.minusSeconds(60),
             stoppedVerifiedAt = NOW,
+            mediaSavedVerifiedAt = NOW,
+            savedMediaGeneration = 8,
         )
         val repository = FakeExecutionRepository(session)
         val camera = FakePixelCamera(PixelCameraState.NotRunning)
@@ -1193,9 +1492,9 @@ class DefaultAutomationEngineTest {
         assertEquals(originalFailure, recovered.session.failure)
         assertNotNull(recovered.session.stoppedVerifiedAt)
         assertEquals(listOf("stopRecording"), device.calls + camera.calls)
-        assertEquals(AutomationOperation.VERIFY_STOPPED, repository.events.last().operation)
+        assertEquals(AutomationOperation.VERIFY_MEDIA_SAVED, repository.events.last().operation)
         assertEquals(AutomationOutcome.SUCCEEDED, repository.events.last().outcome)
-        assertEquals("automation.record.stop_verified_after_failure", repository.events.last().name)
+        assertEquals("automation.record.stop_and_save_verified_after_failure", repository.events.last().name)
     }
 
     @Test
@@ -1217,11 +1516,13 @@ class DefaultAutomationEngineTest {
     }
 
     @Test
-    fun `failed session with an already verified stop remains terminal`() = runTest {
+    fun `failed session with fully verified stop and save remains terminal`() = runTest {
         val session = session(status = SessionStatus.FAILED).copy(
             currentAutomationState = AutomationStateName.FAILED,
             recordActionAt = NOW.minusSeconds(60),
             stoppedVerifiedAt = NOW,
+            mediaSavedVerifiedAt = NOW,
+            savedMediaGeneration = 8,
             failure = AutomationFailure(AutomationFailureCode.STOP_NOT_CONFIRMED, "Original failure"),
         )
         val repository = FakeExecutionRepository(session)
@@ -1420,12 +1721,14 @@ class DefaultAutomationEngineTest {
         attempts: Int = 3,
         verifyRecordingAttempts: Int = attempts,
         profile: PixelCameraProfile? = profile(),
+        media: FakeRecordingMedia = FakeRecordingMedia(),
         timeout: Duration = 5_000.milliseconds,
     ) = DefaultAutomationEngine(
         executionRepository = repository,
         profileRepository = FakeProfileRepository(profile),
         deviceControl = device,
         pixelCamera = camera,
+        recordingMedia = media,
         clock = { NOW },
         config = AutomationConfig(
             retryPolicies = AutomationOperation.entries.associateWith { operation ->
@@ -1446,6 +1749,35 @@ class DefaultAutomationEngineTest {
         sleeper = AutomationSleeper { },
     )
 
+    private class FakeRecordingMedia(
+        private val baselineGeneration: Long = 7,
+        private val baselineResult: PortResult<RecordingMediaBaseline> =
+            PortResult.Observed(RecordingMediaBaseline(baselineGeneration, "version-1")),
+        savedResults: List<PortResult<SavedRecordingEvidence?>> = emptyList(),
+    ) : RecordingMediaPort {
+        val calls = mutableListOf<String>()
+        private val savedResults = ArrayDeque(savedResults)
+        private val defaultSavedResult = savedResults.lastOrNull() ?: PortResult.Observed(
+            SavedRecordingEvidence(
+                generationAdded = baselineGeneration + 1,
+                sizeBytes = 1,
+                durationMillis = 1,
+            ),
+        )
+
+        override suspend fun captureBaseline(): PortResult<RecordingMediaBaseline> {
+            calls += "captureBaseline"
+            return baselineResult
+        }
+
+        override suspend fun findSavedRecording(
+            baseline: RecordingMediaBaseline,
+        ): PortResult<SavedRecordingEvidence?> {
+            calls += "findSavedRecording:${baseline.generation}"
+            return savedResults.removeFirstOrNull() ?: defaultSavedResult
+        }
+    }
+
     private fun session(
         status: SessionStatus,
         capture: CaptureConfiguration = CaptureConfiguration.TimeLapse(
@@ -1464,6 +1796,8 @@ class DefaultAutomationEngineTest {
         expectedStartAt = Instant.parse("2026-08-10T01:00:00Z"),
         expectedStopAt = Instant.parse("2026-08-10T03:00:00Z"),
         status = status,
+        mediaBaselineGeneration = if (status == SessionStatus.PENDING) null else 7,
+        mediaStoreVersion = if (status == SessionStatus.PENDING) null else "version-1",
         createdAt = Instant.parse("2026-08-09T00:00:00Z"),
         updatedAt = Instant.parse("2026-08-09T00:00:00Z"),
     )
