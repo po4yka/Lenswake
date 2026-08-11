@@ -1,33 +1,20 @@
 package dev.po4yka.lenswake.integration
 
-import dev.po4yka.lenswake.accessibility.AccessibilityDispatchResult
 import dev.po4yka.lenswake.accessibility.AccessibilitySnapshotResult
-import dev.po4yka.lenswake.accessibility.PixelCameraAccessibilityRuntime
 import dev.po4yka.lenswake.automation.ActionDispatch
 import dev.po4yka.lenswake.automation.PixelCameraPort
 import dev.po4yka.lenswake.automation.PixelCameraState
 import dev.po4yka.lenswake.automation.PortResult
 import dev.po4yka.lenswake.automation.ProfileUse
-import dev.po4yka.lenswake.automation.SelectorMatchResult
 import dev.po4yka.lenswake.automation.SelectorMatcher
-import dev.po4yka.lenswake.automation.UiNodeSnapshot
-import dev.po4yka.lenswake.core.AutomationAction
 import dev.po4yka.lenswake.core.AutomationFailure
 import dev.po4yka.lenswake.core.AutomationFailureCode
-import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.CaptureMode
 import dev.po4yka.lenswake.core.InteractionMethod
 import dev.po4yka.lenswake.core.LensSelection
-import dev.po4yka.lenswake.core.NormalizedPoint
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
-import dev.po4yka.lenswake.core.PixelCameraProfile
-import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
-import dev.po4yka.lenswake.core.PixelCameraStateSignal
-import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.TimeLapseSpeed
-import dev.po4yka.lenswake.core.supportedCaptureConfigurations
 import dev.po4yka.lenswake.platform.CameraLaunchDispatch
-import dev.po4yka.lenswake.platform.PIXEL_CAMERA_PACKAGE
 import dev.po4yka.lenswake.platform.PlatformCapabilityCode
 import dev.po4yka.lenswake.platform.SecurePixelCameraLauncher
 
@@ -39,10 +26,19 @@ import dev.po4yka.lenswake.platform.SecurePixelCameraLauncher
  */
 class PixelCameraAccessibilityPort internal constructor(
     private val cameraLauncher: () -> CameraLaunchDispatch,
-    private val selectorMatcher: SelectorMatcher,
-    private val environmentProbe: () -> PortResult<PixelCameraEnvironment>,
+    selectorMatcher: SelectorMatcher,
+    environmentProbe: () -> PortResult<PixelCameraEnvironment>,
     private val accessibilityGateway: PixelCameraAccessibilityGateway,
 ) : PixelCameraPort {
+    private val profileValidator = PixelCameraProfileValidator(environmentProbe)
+    private val stateInferer = PixelCameraStateInferer(selectorMatcher)
+    private val actionDispatcher = PixelCameraActionDispatcher(selectorMatcher, accessibilityGateway)
+    private val speedControlCloser = TimeLapseSpeedControlCloser(
+        selectorMatcher = selectorMatcher,
+        gateway = accessibilityGateway,
+        stateInferer = stateInferer,
+    )
+
     constructor(
         launcher: SecurePixelCameraLauncher,
         selectorMatcher: SelectorMatcher,
@@ -54,659 +50,92 @@ class PixelCameraAccessibilityPort internal constructor(
         accessibilityGateway = RuntimePixelCameraAccessibilityGateway,
     )
 
-    override suspend fun inspect(profileUse: ProfileUse): PortResult<PixelCameraState> {
-        validateProfile(profileUse)?.let { return PortResult.Unavailable(it) }
-        return when (val snapshot = accessibilityGateway.snapshot()) {
-            AccessibilitySnapshotResult.ServiceDisconnected -> PortResult.Unavailable(
-                failure(
-                    AutomationFailureCode.ACCESSIBILITY_DISABLED,
-                    "Lenswake Accessibility Service is not connected",
-                ),
-            )
+    override suspend fun inspect(profileUse: ProfileUse): PortResult<PixelCameraState> =
+        profileValidator.validate(profileUse)?.let { PortResult.Unavailable(it) }
+            ?: stateInferer.inspect(accessibilityGateway.snapshot(), profileUse.profile)
 
-            AccessibilitySnapshotResult.RefreshFailed -> PortResult.Unavailable(
-                failure(
-                    AutomationFailureCode.ACCESSIBILITY_REFRESH_FAILED,
-                    "The active Pixel Camera accessibility window could not be refreshed",
-                ),
-            )
+    override suspend fun launchSecureCamera(profileUse: ProfileUse): ActionDispatch =
+        profileValidator.validate(profileUse)?.let(ActionDispatch::Rejected)
+            ?: when (val result = cameraLauncher()) {
+                is CameraLaunchDispatch.Dispatched -> ActionDispatch.Dispatched(
+                    InteractionMethod.STANDARD_ANDROID_API,
+                )
 
-            AccessibilitySnapshotResult.NoActiveWindow,
-            AccessibilitySnapshotResult.PixelCameraNotForeground,
-            -> PortResult.Observed(PixelCameraState.NotRunning)
-
-            is AccessibilitySnapshotResult.Available -> {
-                if (snapshot.truncated) {
-                    PortResult.Unavailable(
-                        failure(
-                            AutomationFailureCode.CAMERA_STATE_UNKNOWN,
-                            "The bounded Pixel Camera accessibility snapshot was truncated",
-                        ),
-                    )
-                } else {
-                    inferState(profileUse.profile, snapshot.nodes)
-                }
+                is CameraLaunchDispatch.Unavailable -> ActionDispatch.Rejected(
+                    AutomationFailure(
+                        code = result.failureCode(),
+                        message = result.capability.detail,
+                        context = mapOf("platformCapability" to result.capability.code.name),
+                    ),
+                )
             }
-        }
-    }
-
-    override suspend fun launchSecureCamera(profileUse: ProfileUse): ActionDispatch {
-        validateProfile(profileUse)?.let { return ActionDispatch.Rejected(it) }
-        return when (val result = cameraLauncher()) {
-            is CameraLaunchDispatch.Dispatched -> ActionDispatch.Dispatched(
-                InteractionMethod.STANDARD_ANDROID_API,
-            )
-
-            is CameraLaunchDispatch.Unavailable -> ActionDispatch.Rejected(
-                AutomationFailure(
-                    code = when (result.capability.code) {
-                        PlatformCapabilityCode.PIXEL_CAMERA_NOT_INSTALLED ->
-                            AutomationFailureCode.PIXEL_CAMERA_NOT_INSTALLED
-                        PlatformCapabilityCode.SECURE_CAMERA_NOT_RESOLVABLE,
-                        PlatformCapabilityCode.RESOLVED_ACTIVITY_WRONG_PACKAGE,
-                        PlatformCapabilityCode.RESOLVED_ACTIVITY_NOT_EXPORTED,
-                        -> AutomationFailureCode.PIXEL_CAMERA_RESOLUTION_FAILED
-                        PlatformCapabilityCode.SECURE_CAMERA_DISPATCH_REJECTED,
-                        PlatformCapabilityCode.SECURE_CAMERA_DISPATCH_FAILED,
-                        PlatformCapabilityCode.NO_VERIFIED_WAKE_PATH,
-                        -> AutomationFailureCode.PIXEL_CAMERA_LAUNCH_FAILED
-                    },
-                    message = result.capability.detail,
-                    context = mapOf("platformCapability" to result.capability.code.name),
-                ),
-            )
-        }
-    }
 
     override suspend fun selectVideo(profileUse: ProfileUse): ActionDispatch =
-        dispatch(AutomationAction.SELECT_VIDEO, profileUse)
+        actionDispatcher.dispatchValidated(profileUse, profileValidator, videoAction)
 
     override suspend fun selectTimeLapse(profileUse: ProfileUse): ActionDispatch =
-        dispatch(AutomationAction.SELECT_TIME_LAPSE, profileUse)
+        actionDispatcher.dispatchValidated(profileUse, profileValidator, timeLapseAction)
 
     override suspend fun selectNightSightTimeLapse(profileUse: ProfileUse): ActionDispatch =
-        dispatch(AutomationAction.SELECT_NIGHT_SIGHT_TIME_LAPSE, profileUse)
+        actionDispatcher.dispatchValidated(profileUse, profileValidator, nightSightTimeLapseAction)
 
     override suspend fun openTimeLapseSpeedControl(profileUse: ProfileUse): ActionDispatch =
-        dispatch(AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL, profileUse)
+        actionDispatcher.dispatchValidated(profileUse, profileValidator, openSpeedControlAction)
 
     override suspend fun selectTimeLapseSpeed(
         speed: TimeLapseSpeed,
         profileUse: ProfileUse,
-    ): ActionDispatch = dispatch(AutomationAction.SELECT_TIME_LAPSE_SPEED, profileUse, speed)
+    ): ActionDispatch = actionDispatcher.dispatchValidated(
+        profileUse = profileUse,
+        validator = profileValidator,
+        action = selectSpeedAction,
+        speed = speed,
+    )
 
     override suspend fun closeTimeLapseSpeedControl(
         expectedSpeed: TimeLapseSpeed?,
         profileUse: ProfileUse,
-    ): ActionDispatch {
-        validateProfile(profileUse)?.let { return ActionDispatch.Rejected(it) }
-        val snapshot = when (val result = accessibilityGateway.snapshot()) {
-            is AccessibilitySnapshotResult.Available -> result
-            AccessibilitySnapshotResult.ServiceDisconnected -> return ActionDispatch.Rejected(
-                failure(
-                    AutomationFailureCode.ACCESSIBILITY_DISABLED,
-                    "Lenswake Accessibility Service is not connected",
-                ),
-            )
-            AccessibilitySnapshotResult.RefreshFailed -> return ActionDispatch.Rejected(
-                failure(
-                    AutomationFailureCode.ACCESSIBILITY_REFRESH_FAILED,
-                    "The active Pixel Camera accessibility window could not be refreshed",
-                ),
-            )
-            AccessibilitySnapshotResult.NoActiveWindow,
-            AccessibilitySnapshotResult.PixelCameraNotForeground,
-            -> return ActionDispatch.Rejected(
-                failure(
-                    AutomationFailureCode.PIXEL_CAMERA_NOT_FOREGROUND,
-                    "Pixel Camera is not the active accessibility window",
-                ),
-            )
-        }
-        if (snapshot.truncated) {
-            return ActionDispatch.Rejected(
-                failure(
-                    AutomationFailureCode.CAMERA_STATE_UNKNOWN,
-                    "The bounded Pixel Camera accessibility snapshot was truncated",
-                ),
-            )
-        }
-        val freshState = when (val inferred = inferState(profileUse.profile, snapshot.nodes)) {
-            is PortResult.Observed -> inferred.value
-            is PortResult.Unavailable -> return ActionDispatch.Rejected(inferred.failure)
-        }
-        if (
-            freshState !is PixelCameraState.TimeLapseSpeedPicker ||
-            freshState.recording ||
-            (expectedSpeed != null && freshState.speed != expectedSpeed)
-        ) {
-            return ActionDispatch.Rejected(
-                failure(
-                    AutomationFailureCode.TIME_LAPSE_SPEED_CONTROL_CLOSE_FAILED,
-                    "A fresh Pixel Camera snapshot did not confirm the selected Time Lapse speed picker",
-                ),
-            )
-        }
-        val pickerSelector = profileUse.profile.stateSignals[PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN]
-            ?: return ActionDispatch.Rejected(
-                failure(
-                    AutomationFailureCode.TIME_LAPSE_SPEED_CONTROL_CLOSE_FAILED,
-                    "The profile does not define an observable Time Lapse speed picker",
-                ),
-            )
-        val pickerNode = when (
-            val match = selectorMatcher.match(pickerSelector, profileUse.profile, snapshot.nodes)
-        ) {
-            is SelectorMatchResult.Match -> match.node
-            else -> return ActionDispatch.Rejected(
-                failure(
-                    AutomationFailureCode.TIME_LAPSE_SPEED_CONTROL_CLOSE_FAILED,
-                    "The open Time Lapse speed picker could not be bound to a fresh UI node",
-                ),
-            )
-        }
-        return when (accessibilityGateway.dispatchGlobalBack(pickerNode)) {
-            AccessibilityDispatchResult.GlobalActionDispatched -> ActionDispatch.Dispatched(
-                InteractionMethod.ACCESSIBILITY_ACTION,
-            )
-            AccessibilityDispatchResult.ServiceDisconnected -> ActionDispatch.Rejected(
-                failure(
-                    AutomationFailureCode.ACCESSIBILITY_DISABLED,
-                    "Lenswake Accessibility Service disconnected before closing the speed picker",
-                ),
-            )
-            AccessibilityDispatchResult.RefreshFailed -> ActionDispatch.Rejected(
-                failure(
-                    AutomationFailureCode.ACCESSIBILITY_REFRESH_FAILED,
-                    "The active Pixel Camera window changed before closing the speed picker",
-                ),
-            )
-            AccessibilityDispatchResult.TargetNotFound,
-            AccessibilityDispatchResult.TargetNotEligible,
-            -> ActionDispatch.Rejected(
-                failure(
-                    AutomationFailureCode.PIXEL_CAMERA_NOT_FOREGROUND,
-                    "Pixel Camera was no longer the active window before closing the speed picker",
-                ),
-            )
-            else -> ActionDispatch.Rejected(
-                failure(
-                    AutomationFailureCode.TIME_LAPSE_SPEED_CONTROL_CLOSE_FAILED,
-                    "Android rejected the global Back action for the Time Lapse speed picker",
-                ),
-            )
-        }
-    }
+    ): ActionDispatch = profileValidator.validate(profileUse)?.let(ActionDispatch::Rejected)
+        ?: speedControlCloser.close(expectedSpeed, profileUse.profile)
 
     override suspend fun selectLens(
         lens: LensSelection,
         profileUse: ProfileUse,
-    ): ActionDispatch = dispatch(LENS_ACTIONS.getValue(lens), profileUse)
+    ): ActionDispatch = actionDispatcher.dispatchValidated(
+        profileUse,
+        profileValidator,
+        lensActions.getValue(lens),
+    )
 
     override suspend fun startRecording(
         mode: CaptureMode,
         profileUse: ProfileUse,
-    ): ActionDispatch =
-        dispatch(mode.startAction, profileUse)
+    ): ActionDispatch = actionDispatcher.dispatchValidated(
+        profileUse,
+        profileValidator,
+        mode.startAction,
+    )
 
     override suspend fun stopRecording(
         mode: CaptureMode,
         profileUse: ProfileUse,
-    ): ActionDispatch =
-        dispatch(mode.stopAction, profileUse)
-
-    private suspend fun dispatch(
-        action: AutomationAction,
-        profileUse: ProfileUse,
-        speed: TimeLapseSpeed? = null,
-    ): ActionDispatch {
-        validateProfile(profileUse)?.let { return ActionDispatch.Rejected(it) }
-        val profile = profileUse.profile
-        val snapshot = when (val result = accessibilityGateway.snapshot()) {
-            is AccessibilitySnapshotResult.Available -> result
-            AccessibilitySnapshotResult.ServiceDisconnected -> return ActionDispatch.Rejected(
-                failure(
-                    AutomationFailureCode.ACCESSIBILITY_DISABLED,
-                    "Lenswake Accessibility Service is not connected",
-                ),
-            )
-            AccessibilitySnapshotResult.RefreshFailed -> return ActionDispatch.Rejected(
-                failure(
-                    AutomationFailureCode.ACCESSIBILITY_REFRESH_FAILED,
-                    "The active Pixel Camera accessibility window could not be refreshed",
-                ),
-            )
-            AccessibilitySnapshotResult.NoActiveWindow,
-            AccessibilitySnapshotResult.PixelCameraNotForeground,
-            -> return ActionDispatch.Rejected(
-                failure(
-                    AutomationFailureCode.PIXEL_CAMERA_NOT_FOREGROUND,
-                    "Pixel Camera is not the active accessibility window",
-                ),
-            )
-        }
-        if (snapshot.truncated) {
-            return ActionDispatch.Rejected(
-                failure(
-                    AutomationFailureCode.CAMERA_STATE_UNKNOWN,
-                    "The bounded Pixel Camera accessibility snapshot was truncated",
-                ),
-            )
-        }
-
-        val match = if (action == AutomationAction.SELECT_TIME_LAPSE_SPEED) {
-            val requestedSpeed = requireNotNull(speed) {
-                "A Time Lapse speed is required for the speed-selection action"
-            }
-            profile.speedTargets[requestedSpeed]?.let { selectors ->
-                selectorMatcher.match(selectors, profile, snapshot.nodes)
-            } ?: SelectorMatchResult.TargetNotConfigured
-        } else {
-            selectorMatcher.match(action, profile, snapshot.nodes)
-        }
-        val targetNode = when (match) {
-            is SelectorMatchResult.Match -> match.node
-            is SelectorMatchResult.Ambiguous -> return ActionDispatch.Rejected(
-                failure(
-                    AutomationFailureCode.UI_TARGET_AMBIGUOUS,
-                    "Multiple equally confident Pixel Camera targets matched $action",
-                ),
-            )
-            is SelectorMatchResult.BelowThreshold -> return ActionDispatch.Rejected(
-                AutomationFailure(
-                    code = AutomationFailureCode.UI_TARGET_CONFIDENCE_TOO_LOW,
-                    message = "Pixel Camera target confidence was below the profile threshold",
-                    context = mapOf(
-                        "action" to action.name,
-                        "bestScore" to match.bestScore.toString(),
-                        "minimumScore" to match.minimumScore.toString(),
-                    ),
-                ),
-            )
-            SelectorMatchResult.NoEligibleNodes,
-            SelectorMatchResult.TargetNotConfigured,
-            -> return dispatchProfileGesture(action, profile)
-                ?: ActionDispatch.Rejected(missingActionFailure(action))
-        }
-
-        return when (accessibilityGateway.dispatchClick(targetNode)) {
-            AccessibilityDispatchResult.SemanticActionDispatched -> ActionDispatch.Dispatched(
-                InteractionMethod.ACCESSIBILITY_ACTION,
-            )
-            AccessibilityDispatchResult.GestureSubmitted -> ActionDispatch.Dispatched(
-                InteractionMethod.ACCESSIBILITY_NODE_GESTURE,
-            )
-            AccessibilityDispatchResult.GlobalActionDispatched -> error(
-                "A node click cannot return a global action dispatch",
-            )
-            AccessibilityDispatchResult.ServiceDisconnected -> ActionDispatch.Rejected(
-                failure(
-                    AutomationFailureCode.ACCESSIBILITY_DISABLED,
-                    "Lenswake Accessibility Service disconnected before dispatch",
-                ),
-            )
-            AccessibilityDispatchResult.RefreshFailed -> ActionDispatch.Rejected(
-                failure(
-                    AutomationFailureCode.ACCESSIBILITY_REFRESH_FAILED,
-                    "The active Pixel Camera accessibility window could not be refreshed before dispatch",
-                ),
-            )
-            AccessibilityDispatchResult.TargetIdentityChanged -> ActionDispatch.Rejected(
-                AutomationFailure(
-                    code = AutomationFailureCode.UI_TARGET_CHANGED,
-                    message = "The selected Pixel Camera target changed before dispatch",
-                    context = mapOf("action" to action.name),
-                ),
-            )
-            AccessibilityDispatchResult.TargetNotFound,
-            AccessibilityDispatchResult.TargetNotEligible,
-            AccessibilityDispatchResult.GlobalActionRejected,
-            -> ActionDispatch.Rejected(missingActionFailure(action))
-            AccessibilityDispatchResult.GestureRejected -> dispatchProfileGesture(action, profile)
-                ?: ActionDispatch.Rejected(missingActionFailure(action))
-        }
-    }
-
-    private suspend fun dispatchProfileGesture(
-        action: AutomationAction,
-        profile: PixelCameraProfile,
-    ): ActionDispatch? {
-        val gesture = profile.fallbackGestures[action] ?: return null
-        return when (accessibilityGateway.dispatchProfileGesture(gesture.point)) {
-            AccessibilityDispatchResult.GestureSubmitted -> ActionDispatch.Dispatched(
-                InteractionMethod.ACCESSIBILITY_PROFILE_GESTURE,
-            )
-            AccessibilityDispatchResult.ServiceDisconnected -> ActionDispatch.Rejected(
-                failure(
-                    AutomationFailureCode.ACCESSIBILITY_DISABLED,
-                    "Lenswake Accessibility Service disconnected before profile gesture dispatch",
-                ),
-            )
-            AccessibilityDispatchResult.RefreshFailed -> ActionDispatch.Rejected(
-                failure(
-                    AutomationFailureCode.ACCESSIBILITY_REFRESH_FAILED,
-                    "The active Pixel Camera window could not be refreshed before profile gesture dispatch",
-                ),
-            )
-            AccessibilityDispatchResult.TargetNotFound,
-            AccessibilityDispatchResult.TargetNotEligible,
-            -> ActionDispatch.Rejected(
-                failure(
-                    AutomationFailureCode.PIXEL_CAMERA_NOT_FOREGROUND,
-                    "Pixel Camera was no longer the active window before profile gesture dispatch",
-                ),
-            )
-            AccessibilityDispatchResult.SemanticActionDispatched,
-            AccessibilityDispatchResult.GlobalActionDispatched,
-            AccessibilityDispatchResult.TargetIdentityChanged,
-            AccessibilityDispatchResult.GestureRejected,
-            AccessibilityDispatchResult.GlobalActionRejected,
-            -> ActionDispatch.Rejected(missingActionFailure(action))
-        }
-    }
-
-    private fun inferState(
-        profile: PixelCameraProfile,
-        nodes: List<UiNodeSnapshot>,
-    ): PortResult<PixelCameraState> {
-        val requiredSignals = buildSet {
-            add(PixelCameraStateSignal.PHOTO_MODE_ACTIVE)
-            add(PixelCameraStateSignal.RECORDING_ACTIVE)
-            add(PixelCameraStateSignal.NOT_RECORDING)
-            profile.supportedCaptureConfigurations().forEach { capture ->
-                add(LENS_SIGNALS.entries.single { it.value == capture.lens }.key)
-                when (capture) {
-                    is CaptureConfiguration.Video -> add(PixelCameraStateSignal.VIDEO_MODE_ACTIVE)
-                    is CaptureConfiguration.TimeLapse -> {
-                        add(PixelCameraStateSignal.VIDEO_MODE_ACTIVE)
-                        add(PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE)
-                        add(PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN)
-                        add(SPEED_SIGNALS.entries.single { it.value == capture.speed }.key)
-                    }
-                    is CaptureConfiguration.NightSightTimeLapse ->
-                        add(PixelCameraStateSignal.NIGHT_SIGHT_TIME_LAPSE_MODE_ACTIVE)
-                }
-            }
-        }
-        val missingSignals = requiredSignals - profile.stateSignals.keys
-        if (missingSignals.isNotEmpty()) {
-            return PortResult.Unavailable(
-                AutomationFailure(
-                    code = AutomationFailureCode.CAMERA_STATE_UNKNOWN,
-                    message = "The profile lacks required observable Pixel Camera state signals",
-                    context = mapOf(
-                        "missingSignals" to missingSignals.sortedBy { it.name }
-                            .joinToString(",") { it.name },
-                    ),
-                ),
-            )
-        }
-
-        val active = linkedSetOf<PixelCameraStateSignal>()
-        val ambiguous = linkedSetOf<PixelCameraStateSignal>()
-        for ((signal, selectorSet) in profile.stateSignals) {
-            when (selectorMatcher.match(selectorSet, profile, nodes)) {
-                is SelectorMatchResult.Match -> active += signal
-                is SelectorMatchResult.Ambiguous -> ambiguous += signal
-                is SelectorMatchResult.BelowThreshold,
-                SelectorMatchResult.NoEligibleNodes,
-                SelectorMatchResult.TargetNotConfigured,
-                -> Unit
-            }
-        }
-
-        val recordingStateSignals = setOf(
-            PixelCameraStateSignal.RECORDING_ACTIVE,
-            PixelCameraStateSignal.NOT_RECORDING,
-        )
-        val ambiguousRecordingSignals = ambiguous.intersect(recordingStateSignals)
-        if (ambiguousRecordingSignals.isNotEmpty()) {
-            return unavailableAmbiguousState(ambiguousRecordingSignals)
-        }
-        val recordingSignals = active.intersect(
-            recordingStateSignals,
-        )
-        if (recordingSignals.size != 1) {
-            return unavailableConflictingState("recording", recordingSignals)
-        }
-        val recording = PixelCameraStateSignal.RECORDING_ACTIVE in recordingSignals
-        if (ambiguous.isNotEmpty()) {
-            return if (recording && ambiguous.all(STOP_OPTIONAL_SIGNALS::contains)) {
-                PortResult.Observed(PixelCameraState.RecordingUnknownMode)
-            } else {
-                unavailableAmbiguousState(ambiguous)
-            }
-        }
-        val activeLenses = activeLensValues(active)
-        if (activeLenses.size > 1) return unavailableConflictingState("lens", activeLenses)
-
-        if (PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN in active) {
-            if (recording) return PortResult.Observed(PixelCameraState.RecordingUnknownMode)
-            val activeSpeeds = SPEED_SIGNALS.filterKeys(active::contains).values.toSet()
-            if (activeSpeeds.size > 1) return unavailableConflictingState("timeLapseSpeed", activeSpeeds)
-            return PortResult.Observed(
-                PixelCameraState.TimeLapseSpeedPicker(
-                    speed = activeSpeeds.singleOrNull(),
-                    recording = recording,
-                    lens = inferLens(active),
-                ),
-            )
-        }
-
-        val modeSignals = active.intersect(
-            setOf(
-                PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
-                PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
-                PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
-                PixelCameraStateSignal.NIGHT_SIGHT_TIME_LAPSE_MODE_ACTIVE,
-            ),
-        )
-        if (modeSignals.size != 1) {
-            return if (recording && modeSignals.isEmpty()) {
-                PortResult.Observed(PixelCameraState.RecordingUnknownMode)
-            } else {
-                unavailableConflictingState("mode", modeSignals)
-            }
-        }
-
-        return when (modeSignals.single()) {
-            PixelCameraStateSignal.PHOTO_MODE_ACTIVE -> if (recording) {
-                PortResult.Observed(PixelCameraState.RecordingUnknownMode)
-            } else {
-                PortResult.Observed(PixelCameraState.Photo)
-            }
-            PixelCameraStateSignal.VIDEO_MODE_ACTIVE -> {
-                val lens = inferLens(active)
-                if (recording && lens == null) {
-                    PortResult.Observed(PixelCameraState.RecordingUnknownMode)
-                } else {
-                    PortResult.Observed(PixelCameraState.Video(recording, lens))
-                }
-            }
-            PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE -> inferTimeLapse(active, recording)
-            PixelCameraStateSignal.NIGHT_SIGHT_TIME_LAPSE_MODE_ACTIVE -> {
-                val lens = inferLens(active)
-                if (recording && lens == null) {
-                    PortResult.Observed(PixelCameraState.RecordingUnknownMode)
-                } else {
-                    PortResult.Observed(PixelCameraState.NightSightTimeLapse(recording, lens))
-                }
-            }
-            else -> error("Only mode signals are considered")
-        }
-    }
-
-    private fun inferTimeLapse(
-        active: Set<PixelCameraStateSignal>,
-        recording: Boolean,
-    ): PortResult<PixelCameraState> {
-        val activeSpeeds = SPEED_SIGNALS.filterKeys(active::contains).values.toSet()
-        if (activeSpeeds.size > 1) return unavailableConflictingState("timeLapseSpeed", activeSpeeds)
-        val speed = activeSpeeds.singleOrNull()
-        val lens = inferLens(active)
-        if (recording && (speed == null || lens == null)) {
-            return PortResult.Observed(PixelCameraState.RecordingUnknownMode)
-        }
-        return PortResult.Observed(
-            PixelCameraState.TimeLapse(
-                speed = speed,
-                recording = recording,
-                lens = lens,
-            ),
-        )
-    }
-
-    private fun activeLensValues(active: Set<PixelCameraStateSignal>): Set<LensSelection> =
-        LENS_SIGNALS.filterKeys(active::contains).values.toSet()
-
-    private fun inferLens(active: Set<PixelCameraStateSignal>): LensSelection? =
-        activeLensValues(active).singleOrNull()
-
-    private fun unavailableConflictingState(
-        dimension: String,
-        values: Set<*>,
-    ): PortResult.Unavailable = PortResult.Unavailable(
-        AutomationFailure(
-            code = AutomationFailureCode.CAMERA_STATE_UNKNOWN,
-            message = "Pixel Camera $dimension state is missing or conflicting",
-            context = mapOf("matches" to values.joinToString(",")),
-        ),
+    ): ActionDispatch = actionDispatcher.dispatchValidated(
+        profileUse,
+        profileValidator,
+        mode.stopAction,
     )
-
-    private fun unavailableAmbiguousState(
-        signals: Set<PixelCameraStateSignal>,
-    ): PortResult.Unavailable = PortResult.Unavailable(
-        AutomationFailure(
-            code = AutomationFailureCode.UI_TARGET_AMBIGUOUS,
-            message = "The Pixel Camera state signal was ambiguous",
-            context = mapOf("signals" to signals.sortedBy { it.name }.joinToString(",") { it.name }),
-        ),
-    )
-
-    private fun validateProfile(profileUse: ProfileUse): AutomationFailure? {
-        val profile = profileUse.profile
-        if (profile.environment.cameraPackage != PIXEL_CAMERA_PACKAGE) {
-            return AutomationFailure(
-                code = AutomationFailureCode.PROFILE_INCOMPATIBLE,
-                message = "The profile does not target the supported Pixel Camera package",
-            )
-        }
-        if (profile.selectorSchemaVersion != PixelCameraSelectorSchema.CURRENT_VERSION) {
-            return AutomationFailure(
-                code = AutomationFailureCode.PROFILE_INCOMPATIBLE,
-                message = "The profile selector schema is not supported by this Lenswake build",
-                context = mapOf(
-                    "profileSchema" to profile.selectorSchemaVersion.toString(),
-                    "supportedSchema" to PixelCameraSelectorSchema.CURRENT_VERSION.toString(),
-                ),
-            )
-        }
-        val currentEnvironment = when (val result = environmentProbe()) {
-            is PortResult.Observed -> result.value
-            is PortResult.Unavailable -> return result.failure
-        }
-        val compatibility = profile.compatibilityFor(currentEnvironment)
-        return when {
-            compatibility == ProfileCompatibility.INCOMPATIBLE -> AutomationFailure(
-                code = AutomationFailureCode.PROFILE_INCOMPATIBLE,
-                message = "The current device or Pixel Camera package is incompatible with the profile",
-            )
-            profileUse.kind == ProfileUse.Kind.REHEARSAL -> null
-            compatibility == ProfileCompatibility.VERIFIED -> null
-            else -> AutomationFailure(
-                code = AutomationFailureCode.PROFILE_REQUIRES_REHEARSAL,
-                message = "Unattended automation requires a profile verified for the exact current environment",
-            )
-        }
-    }
-
-    private fun missingActionFailure(action: AutomationAction): AutomationFailure = failure(
-        code = when (action) {
-            AutomationAction.SELECT_VIDEO -> AutomationFailureCode.VIDEO_MODE_NOT_FOUND
-            AutomationAction.SELECT_TIME_LAPSE,
-            AutomationAction.SELECT_NIGHT_SIGHT_TIME_LAPSE,
-            -> AutomationFailureCode.TIME_LAPSE_MODE_NOT_FOUND
-            AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL -> AutomationFailureCode.TIME_LAPSE_SPEED_NOT_FOUND
-            AutomationAction.SELECT_TIME_LAPSE_SPEED -> AutomationFailureCode.TIME_LAPSE_SPEED_NOT_FOUND
-            AutomationAction.SELECT_REAR_MAIN_LENS,
-            AutomationAction.SELECT_REAR_ULTRAWIDE_LENS,
-            AutomationAction.SELECT_REAR_TELEPHOTO_LENS,
-            AutomationAction.SELECT_FRONT_LENS,
-            -> AutomationFailureCode.LENS_NOT_FOUND
-            AutomationAction.START_RECORDING,
-            AutomationAction.START_VIDEO_RECORDING,
-            AutomationAction.START_NIGHT_SIGHT_TIME_LAPSE_RECORDING,
-            -> AutomationFailureCode.RECORD_CONTROL_NOT_FOUND
-            AutomationAction.STOP_RECORDING,
-            AutomationAction.STOP_VIDEO_RECORDING,
-            AutomationAction.STOP_NIGHT_SIGHT_TIME_LAPSE_RECORDING,
-            -> AutomationFailureCode.STOP_CONTROL_NOT_FOUND
-        },
-        message = "No safe Pixel Camera target was available for $action",
-    )
-
-    private fun failure(code: AutomationFailureCode, message: String): AutomationFailure =
-        AutomationFailure(code = code, message = message)
-
-    private companion object {
-        val SPEED_SIGNALS = mapOf(
-            PixelCameraStateSignal.TIME_LAPSE_SPEED_AUTO_ACTIVE to TimeLapseSpeed.AUTO,
-            PixelCameraStateSignal.TIME_LAPSE_SPEED_X5_ACTIVE to TimeLapseSpeed.X5,
-            PixelCameraStateSignal.TIME_LAPSE_SPEED_X10_ACTIVE to TimeLapseSpeed.X10,
-            PixelCameraStateSignal.TIME_LAPSE_SPEED_X30_ACTIVE to TimeLapseSpeed.X30,
-            PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE to TimeLapseSpeed.X120,
-        )
-        val LENS_SIGNALS = mapOf(
-            PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE to LensSelection.REAR_MAIN,
-            PixelCameraStateSignal.REAR_ULTRAWIDE_LENS_ACTIVE to LensSelection.REAR_ULTRAWIDE,
-            PixelCameraStateSignal.REAR_TELEPHOTO_LENS_ACTIVE to LensSelection.REAR_TELEPHOTO,
-            PixelCameraStateSignal.FRONT_LENS_ACTIVE to LensSelection.FRONT,
-        )
-        val LENS_ACTIONS = mapOf(
-            LensSelection.REAR_MAIN to AutomationAction.SELECT_REAR_MAIN_LENS,
-            LensSelection.REAR_ULTRAWIDE to AutomationAction.SELECT_REAR_ULTRAWIDE_LENS,
-            LensSelection.REAR_TELEPHOTO to AutomationAction.SELECT_REAR_TELEPHOTO_LENS,
-            LensSelection.FRONT to AutomationAction.SELECT_FRONT_LENS,
-        )
-        val CaptureMode.startAction: AutomationAction
-            get() = when (this) {
-                CaptureMode.VIDEO -> AutomationAction.START_VIDEO_RECORDING
-                CaptureMode.TIME_LAPSE -> AutomationAction.START_RECORDING
-                CaptureMode.NIGHT_SIGHT_TIME_LAPSE ->
-                    AutomationAction.START_NIGHT_SIGHT_TIME_LAPSE_RECORDING
-            }
-        val CaptureMode.stopAction: AutomationAction
-            get() = when (this) {
-                CaptureMode.VIDEO -> AutomationAction.STOP_VIDEO_RECORDING
-                CaptureMode.TIME_LAPSE -> AutomationAction.STOP_RECORDING
-                CaptureMode.NIGHT_SIGHT_TIME_LAPSE ->
-                    AutomationAction.STOP_NIGHT_SIGHT_TIME_LAPSE_RECORDING
-            }
-        val STOP_OPTIONAL_SIGNALS = SPEED_SIGNALS.keys + setOf(
-            PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN,
-        ) + LENS_SIGNALS.keys
-    }
 }
 
-internal interface PixelCameraAccessibilityGateway {
-    suspend fun snapshot(): AccessibilitySnapshotResult
-
-    suspend fun dispatchClick(node: UiNodeSnapshot): AccessibilityDispatchResult
-
-    suspend fun dispatchProfileGesture(point: NormalizedPoint): AccessibilityDispatchResult
-
-    suspend fun dispatchGlobalBack(pickerNode: UiNodeSnapshot): AccessibilityDispatchResult
-}
-
-private object RuntimePixelCameraAccessibilityGateway : PixelCameraAccessibilityGateway {
-    override suspend fun snapshot(): AccessibilitySnapshotResult = PixelCameraAccessibilityRuntime.snapshot()
-
-    override suspend fun dispatchClick(node: UiNodeSnapshot): AccessibilityDispatchResult =
-        PixelCameraAccessibilityRuntime.dispatchClick(node)
-
-    override suspend fun dispatchProfileGesture(point: NormalizedPoint): AccessibilityDispatchResult =
-        PixelCameraAccessibilityRuntime.dispatchProfileGesture(point)
-
-    override suspend fun dispatchGlobalBack(pickerNode: UiNodeSnapshot): AccessibilityDispatchResult =
-        PixelCameraAccessibilityRuntime.dispatchGlobalBack(pickerNode)
-}
+private fun CameraLaunchDispatch.Unavailable.failureCode(): AutomationFailureCode =
+    when (capability.code) {
+        PlatformCapabilityCode.PIXEL_CAMERA_NOT_INSTALLED ->
+            AutomationFailureCode.PIXEL_CAMERA_NOT_INSTALLED
+        PlatformCapabilityCode.SECURE_CAMERA_NOT_RESOLVABLE,
+        PlatformCapabilityCode.RESOLVED_ACTIVITY_WRONG_PACKAGE,
+        PlatformCapabilityCode.RESOLVED_ACTIVITY_NOT_EXPORTED,
+        -> AutomationFailureCode.PIXEL_CAMERA_RESOLUTION_FAILED
+        PlatformCapabilityCode.SECURE_CAMERA_DISPATCH_REJECTED,
+        PlatformCapabilityCode.SECURE_CAMERA_DISPATCH_FAILED,
+        PlatformCapabilityCode.NO_VERIFIED_WAKE_PATH,
+        -> AutomationFailureCode.PIXEL_CAMERA_LAUNCH_FAILED
+    }

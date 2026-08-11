@@ -30,7 +30,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Test
 
-class PixelCameraAccessibilityPortTest {
+class PixelCameraAccessibilityPortTest : PixelCameraAccessibilityPortTestFixture() {
     @Test
     fun `configured profile gesture is dispatched when no semantic target is available`() = runTest {
         val fallbackPoint = NormalizedPoint(x = 0.5f, y = 0.85f)
@@ -136,6 +136,9 @@ class PixelCameraAccessibilityPortTest {
         assertEquals(null, gateway.clickedNode)
     }
 
+}
+
+class PixelCameraAccessibilityStateTest : PixelCameraAccessibilityPortTestFixture() {
     @Test
     fun `time lapse reports rear main lens only when its profile signal matches`() = runTest {
         val gateway = FakeAccessibilityGateway(
@@ -300,6 +303,9 @@ class PixelCameraAccessibilityPortTest {
         )
     }
 
+}
+
+class PixelCameraAccessibilityFailureTest : PixelCameraAccessibilityPortTestFixture() {
     @Test
     fun `inspection rejects an accessibility snapshot whose root could not refresh`() = runTest {
         val result = port(
@@ -444,6 +450,9 @@ class PixelCameraAccessibilityPortTest {
         assertEquals(0, gateway.globalBackCalls)
     }
 
+}
+
+class PixelCameraAccessibilityStateSafetyTest : PixelCameraAccessibilityPortTestFixture() {
     @Test
     fun `time lapse lens remains unknown when configured rear main signal does not match`() = runTest {
         val gateway = FakeAccessibilityGateway(
@@ -614,6 +623,9 @@ class PixelCameraAccessibilityPortTest {
         assertInstanceOf(PortResult.Observed::class.java, result)
     }
 
+}
+
+class PixelCameraAccessibilityActionRoutingTest : PixelCameraAccessibilityPortTestFixture() {
     @Test
     fun `rear main lens action dispatches only its profile-defined target`() = runTest {
         val target = node(LENS_ACTION_RESOURCE).copy(
@@ -719,6 +731,9 @@ class PixelCameraAccessibilityPortTest {
         assertInstanceOf(PortResult.Observed::class.java, result)
     }
 
+}
+
+class PixelCameraAccessibilityProfileValidationTest : PixelCameraAccessibilityPortTestFixture() {
     @Test
     fun `computed probable compatibility requires rehearsal`() = runTest {
         val gateway = FakeAccessibilityGateway(activeSignals())
@@ -838,7 +853,10 @@ class PixelCameraAccessibilityPortTest {
         assertEquals(0, gateway.snapshotCalls)
     }
 
-    private fun port(
+}
+
+abstract class PixelCameraAccessibilityPortTestFixture {
+    protected fun port(
         currentEnvironment: PixelCameraEnvironment = environment(),
         gateway: FakeAccessibilityGateway,
     ): PixelCameraAccessibilityPort = PixelCameraAccessibilityPort(
@@ -848,12 +866,12 @@ class PixelCameraAccessibilityPortTest {
         accessibilityGateway = gateway,
     )
 
-    private fun profileUse(
+    protected fun profileUse(
         profile: PixelCameraProfile = profile(),
         kind: ProfileUse.Kind = ProfileUse.Kind.UNATTENDED,
     ): ProfileUse = ProfileUse(profile, kind)
 
-    private fun profile(): PixelCameraProfile {
+    protected fun profile(): PixelCameraProfile {
         val requiredSignals = setOf(
             PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
             PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
@@ -883,7 +901,7 @@ class PixelCameraAccessibilityPortTest {
         )
     }
 
-    private fun environment(): PixelCameraEnvironment = PixelCameraEnvironment(
+    protected fun environment(): PixelCameraEnvironment = PixelCameraEnvironment(
         deviceManufacturer = "Google",
         deviceModel = "Pixel 8 Pro",
         androidSdk = 37,
@@ -896,10 +914,10 @@ class PixelCameraAccessibilityPortTest {
         densityDpi = 480,
     )
 
-    private fun activeSignals(vararg signals: PixelCameraStateSignal): List<UiNodeSnapshot> =
+    protected fun activeSignals(vararg signals: PixelCameraStateSignal): List<UiNodeSnapshot> =
         signals.map { node(it.name) }
 
-    private fun selectorSet(resourceId: String): UiSelectorSet = UiSelectorSet(
+    protected fun selectorSet(resourceId: String): UiSelectorSet = UiSelectorSet(
         selectors = listOf(
             UiSelector(
                 packageName = CAMERA_PACKAGE,
@@ -910,7 +928,7 @@ class PixelCameraAccessibilityPortTest {
         minimumScore = 100,
     )
 
-    private fun node(resourceId: String): UiNodeSnapshot = UiNodeSnapshot(
+    protected fun node(resourceId: String): UiNodeSnapshot = UiNodeSnapshot(
         id = "node-$resourceId",
         packageName = CAMERA_PACKAGE,
         resourceId = resourceId,
@@ -924,7 +942,7 @@ class PixelCameraAccessibilityPortTest {
         enabled = true,
     )
 
-    private class FakeAccessibilityGateway(
+    protected class FakeAccessibilityGateway(
         private val nodes: List<UiNodeSnapshot> = emptyList(),
         private val dispatchResult: AccessibilityDispatchResult = AccessibilityDispatchResult.TargetNotFound,
         private val profileGestureResult: AccessibilityDispatchResult = AccessibilityDispatchResult.GestureSubmitted,
@@ -966,7 +984,7 @@ class PixelCameraAccessibilityPortTest {
         }
     }
 
-    private companion object {
+    protected companion object {
         const val CAMERA_PACKAGE = "com.google.android.GoogleCamera"
         const val VIDEO_ACTION_RESOURCE = "profile.mode.video"
         const val TIME_LAPSE_ACTION_RESOURCE = "profile.mode.time-lapse"
