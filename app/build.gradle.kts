@@ -44,12 +44,6 @@ android {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
 
-    lint {
-        warningsAsErrors = true
-        // Release availability is maintained separately and is not a source-correctness signal.
-        disable += setOf("AndroidGradlePluginVersion", "GradleDependency", "NewerVersionAvailable")
-    }
-
     testOptions {
         unitTests.all {
             it.useJUnitPlatform()

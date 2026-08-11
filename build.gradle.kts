@@ -9,8 +9,29 @@ plugins {
     alias(libs.plugins.room) apply false
 }
 
+private val volatileDependencyRecommendationChecks =
+    setOf("AndroidGradlePluginVersion", "GradleDependency", "NewerVersionAvailable")
+
+private fun com.android.build.api.dsl.Lint.configureProjectPolicy() {
+    warningsAsErrors = true
+    // These volatile update recommendations are reviewed during dependency maintenance.
+    // Source and project correctness checks remain enabled and strict.
+    disable += volatileDependencyRecommendationChecks
+}
+
 subprojects {
     apply(plugin = "dev.detekt")
+
+    pluginManager.withPlugin("com.android.application") {
+        extensions.configure<com.android.build.api.dsl.ApplicationExtension> {
+            lint.configureProjectPolicy()
+        }
+    }
+    pluginManager.withPlugin("com.android.library") {
+        extensions.configure<com.android.build.api.dsl.LibraryExtension> {
+            lint.configureProjectPolicy()
+        }
+    }
 
     extensions.configure<dev.detekt.gradle.extensions.DetektExtension> {
         buildUponDefaultConfig = true

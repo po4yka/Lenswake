@@ -63,6 +63,10 @@ The debug APK can be built with:
 ./gradlew check assembleDebug
 ```
 
+Android lint treats every enabled warning as an error. Only `AndroidGradlePluginVersion`, `GradleDependency`, and
+`NewerVersionAvailable` are excluded: they are volatile dependency-update recommendations reviewed separately during
+intentional dependency maintenance, not fixed source or project defects. All other lint checks remain enabled.
+
 Physical-device tests are an additional gate; a successful JVM build is not Pixel Camera reliability evidence.
 
 ---
