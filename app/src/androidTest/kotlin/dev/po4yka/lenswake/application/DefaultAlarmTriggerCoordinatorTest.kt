@@ -36,6 +36,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -67,7 +69,11 @@ class DefaultAlarmTriggerCoordinatorTest {
         val executions = FakeExecutionRepository()
         val engine = FakeAutomationEngine(executions)
         val collector = FakeEnvironmentSnapshotCollector()
-        val coordinator = coordinator(executions, engine, collector = collector)
+        val coordinator = coordinator(
+            executions,
+            engine,
+            CoordinatorOptions(now = startAt.plusSeconds(1), collector = collector),
+        )
         val trigger = startTrigger(schedule.updatedAt)
 
         assertTrue(coordinator.handle(trigger) is AlarmHandlingResult.Accepted)
@@ -91,9 +97,11 @@ class DefaultAlarmTriggerCoordinatorTest {
         val engine = FakeAutomationEngine(executions)
         val collector = FakeEnvironmentSnapshotCollector(failure = IllegalStateException("probe failed"))
 
-        val result = coordinator(executions, engine, collector = collector).handle(
-            startTrigger(schedule.updatedAt),
-        )
+        val result = coordinator(
+            executions,
+            engine,
+            CoordinatorOptions(now = startAt.plusSeconds(1), collector = collector),
+        ).handle(startTrigger(schedule.updatedAt))
 
         assertTrue(result is AlarmHandlingResult.Retryable)
         assertTrue(engine.startIds.isEmpty())
@@ -108,8 +116,13 @@ class DefaultAlarmTriggerCoordinatorTest {
         val blocked = coordinator(
             executions = executions,
             engine = engine,
-            collector = collector,
-            startReadiness = { Result.failure(IllegalStateException("Accessibility disconnected")) },
+            options = CoordinatorOptions(
+                now = startAt.plusSeconds(1),
+                collector = collector,
+                startReadiness = {
+                    Result.failure(IllegalStateException("Accessibility disconnected"))
+                },
+            ),
         ).handle(startTrigger(schedule.updatedAt))
 
         assertTrue(blocked is AlarmHandlingResult.TerminalRejected)
@@ -123,7 +136,7 @@ class DefaultAlarmTriggerCoordinatorTest {
         val duplicateStart = coordinator(
             executions = executions,
             engine = engine,
-            collector = collector,
+            options = CoordinatorOptions(now = startAt.plusSeconds(1), collector = collector),
         ).handle(startTrigger(schedule.updatedAt))
 
         assertTrue(duplicateStart is AlarmHandlingResult.Accepted)
@@ -135,7 +148,7 @@ class DefaultAlarmTriggerCoordinatorTest {
         val stopped = coordinator(
             executions = executions,
             engine = engine,
-            now = stopAt.plusSeconds(1),
+            options = CoordinatorOptions(now = stopAt.plusSeconds(1)),
         ).handle(stopTrigger())
 
         assertTrue(stopped is AlarmHandlingResult.Accepted)
@@ -152,11 +165,39 @@ class DefaultAlarmTriggerCoordinatorTest {
         val result = coordinator(
             executions = executions,
             engine = engine,
-            collector = hangingCollector,
-            snapshotTimeoutMillis = 25,
+            options = CoordinatorOptions(
+                now = startAt.plusSeconds(1),
+                collector = hangingCollector,
+                snapshotTimeoutMillis = 25,
+            ),
         ).handle(startTrigger(schedule.updatedAt))
 
         assertTrue(result is AlarmHandlingResult.Retryable)
+        assertTrue(engine.startIds.isEmpty())
+        assertTrue(executions.snapshots.isEmpty())
+    }
+
+    @Test
+    fun outerSnapshotDeadlinePropagatesCancellation() = runBlocking {
+        val executions = FakeExecutionRepository()
+        val engine = FakeAutomationEngine(executions)
+        val hangingCollector = EnvironmentSnapshotCollector { _, _ -> awaitCancellation() }
+
+        val failure = runCatching {
+            withTimeout(25) {
+                coordinator(
+                    executions = executions,
+                    engine = engine,
+                    options = CoordinatorOptions(
+                        now = startAt.plusSeconds(1),
+                        collector = hangingCollector,
+                        snapshotTimeoutMillis = 5_000,
+                    ),
+                ).handle(startTrigger(schedule.updatedAt))
+            }
+        }.exceptionOrNull()
+
+        assertTrue(failure is TimeoutCancellationException)
         assertTrue(engine.startIds.isEmpty())
         assertTrue(executions.snapshots.isEmpty())
     }
@@ -221,8 +262,11 @@ class DefaultAlarmTriggerCoordinatorTest {
         val engine = FakeAutomationEngine(executions)
         val collector = FakeEnvironmentSnapshotCollector()
 
-        val result = coordinator(executions, engine, collector = collector)
-            .handle(startTrigger(schedule.updatedAt))
+        val result = coordinator(
+            executions,
+            engine,
+            CoordinatorOptions(now = startAt.plusSeconds(1), collector = collector),
+        ).handle(startTrigger(schedule.updatedAt))
 
         val rejected = result as AlarmHandlingResult.TerminalRejected
         assertTrue(rejected.reason.contains(owner.id.value))
@@ -273,7 +317,7 @@ class DefaultAlarmTriggerCoordinatorTest {
         val result = coordinator(
             executions = executions,
             engine = engine,
-            now = stopAt.plusSeconds(1),
+            options = CoordinatorOptions(now = stopAt.plusSeconds(1)),
         ).handle(stopTrigger())
 
         assertTrue(result is AlarmHandlingResult.Accepted)
@@ -290,7 +334,7 @@ class DefaultAlarmTriggerCoordinatorTest {
         val coordinator = coordinator(
             executions = executions,
             engine = engine,
-            now = stopAt.plusSeconds(1),
+            options = CoordinatorOptions(now = stopAt.plusSeconds(1)),
         )
 
         assertTrue(coordinator.handle(stopTrigger()) is AlarmHandlingResult.Accepted)
@@ -323,7 +367,7 @@ class DefaultAlarmTriggerCoordinatorTest {
         val result = coordinator(
             executions = executions,
             engine = engine,
-            now = stopAt.plusSeconds(1),
+            options = CoordinatorOptions(now = stopAt.plusSeconds(1)),
         ).handle(stopTrigger())
 
         assertTrue(result is AlarmHandlingResult.Retryable)
@@ -346,7 +390,7 @@ class DefaultAlarmTriggerCoordinatorTest {
         val coordinator = coordinator(
             executions = executions,
             engine = engine,
-            now = stopAt.plusSeconds(1),
+            options = CoordinatorOptions(now = stopAt.plusSeconds(1)),
         )
 
         assertTrue(coordinator.handle(stopTrigger()) is AlarmHandlingResult.Accepted)
@@ -372,7 +416,7 @@ class DefaultAlarmTriggerCoordinatorTest {
         val result = coordinator(
             executions = executions,
             engine = engine,
-            now = stopAt.plusSeconds(1),
+            options = CoordinatorOptions(now = stopAt.plusSeconds(1)),
         ).handle(stopTrigger())
 
         assertTrue(result is AlarmHandlingResult.Accepted)
@@ -392,19 +436,23 @@ class DefaultAlarmTriggerCoordinatorTest {
     private fun coordinator(
         executions: FakeExecutionRepository,
         engine: FakeAutomationEngine,
-        now: Instant = startAt.plusSeconds(1),
-        collector: EnvironmentSnapshotCollector = FakeEnvironmentSnapshotCollector(),
-        snapshotTimeoutMillis: Long = 5_000,
-        startReadiness: suspend (ProfileId) -> Result<Unit> = { Result.success(Unit) },
+        options: CoordinatorOptions = CoordinatorOptions(now = startAt.plusSeconds(1)),
     ): DefaultAlarmTriggerCoordinator = DefaultAlarmTriggerCoordinator(
         scheduleRepository = FakeScheduleRepository(schedule),
         executionRepository = executions,
         environmentSnapshotRepository = executions,
-        environmentSnapshotCollector = collector,
+        environmentSnapshotCollector = options.collector,
         automationEngine = engine,
-        startReadiness = startReadiness,
-        clock = LenswakeClock { now },
-        snapshotCollectionTimeoutMillis = snapshotTimeoutMillis,
+        startReadiness = options.startReadiness,
+        clock = LenswakeClock { options.now },
+        snapshotCollectionTimeoutMillis = options.snapshotTimeoutMillis,
+    )
+
+    private data class CoordinatorOptions(
+        val now: Instant,
+        val collector: EnvironmentSnapshotCollector = FakeEnvironmentSnapshotCollector(),
+        val snapshotTimeoutMillis: Long = 5_000,
+        val startReadiness: suspend (ProfileId) -> Result<Unit> = { Result.success(Unit) },
     )
 
     private fun startTrigger(updatedAt: Instant) = AlarmTrigger(
@@ -469,15 +517,19 @@ private class FakeExecutionRepository : ExecutionRepository, EnvironmentSnapshot
         sessions.values.firstOrNull { it.scheduleId == scheduleId && it.ownsPixelCamera }
 
     override suspend fun reservePixelCamera(session: ExecutionSession): ExecutionReservationResult {
-        sessions.values.firstOrNull {
+        val existing = sessions.values.firstOrNull {
             it.id == session.id && it.executionKey == session.executionKey
-        }?.let { return ExecutionReservationResult.Reserved(it, newlyCreated = false) }
-        sessions.values.firstOrNull(ExecutionSession::ownsPixelCamera)?.let {
-            return ExecutionReservationResult.CameraBusy(it)
         }
-        sessions[session.id] = session
-        observed.value = sessions.values.toList()
-        return ExecutionReservationResult.Reserved(session, newlyCreated = true)
+        val owner = sessions.values.firstOrNull(ExecutionSession::ownsPixelCamera)
+        return when {
+            existing != null -> ExecutionReservationResult.Reserved(existing, newlyCreated = false)
+            owner != null -> ExecutionReservationResult.CameraBusy(owner)
+            else -> {
+                sessions[session.id] = session
+                observed.value = sessions.values.toList()
+                ExecutionReservationResult.Reserved(session, newlyCreated = true)
+            }
+        }
     }
 
     override suspend fun apply(
