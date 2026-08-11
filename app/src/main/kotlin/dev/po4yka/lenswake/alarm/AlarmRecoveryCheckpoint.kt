@@ -64,7 +64,7 @@ internal class SharedPreferencesAlarmRecoveryCheckpointPersistence(
         checkpoint.reconcileInterruptedSessions.toString(),
         Base64.encodeToString(
             checkpoint.lastFailure.toByteArray(StandardCharsets.UTF_8),
-            Base64.NO_WRAP or Base64.URL_SAFE,
+            BASE64_FLAGS,
         ),
     ).joinToString(SEPARATOR)
 
@@ -75,6 +75,11 @@ internal class SharedPreferencesAlarmRecoveryCheckpointPersistence(
             fields.size == LEGACY_FIELD_COUNT && fields[0] == LEGACY_FORMAT_VERSION -> false
             else -> return@runCatching null
         }
+        val lastFailureField = if (currentFormat) {
+            CURRENT_LAST_FAILURE_FIELD
+        } else {
+            LEGACY_LAST_FAILURE_FIELD
+        }
         AlarmRecoveryCheckpoint(
             attempt = fields[1].toInt(),
             nextAttemptAtEpochMillis = fields[2].takeIf(String::isNotBlank)?.toLong(),
@@ -82,7 +87,7 @@ internal class SharedPreferencesAlarmRecoveryCheckpointPersistence(
             updatedAtEpochMillis = fields[4].toLong(),
             reconcileInterruptedSessions = if (currentFormat) fields[5].toBooleanStrict() else false,
             lastFailure = String(
-                Base64.decode(fields[if (currentFormat) 6 else 5], Base64.NO_WRAP or Base64.URL_SAFE),
+                Base64.decode(fields[lastFailureField], BASE64_FLAGS),
                 StandardCharsets.UTF_8,
             ),
         )
@@ -96,6 +101,9 @@ internal class SharedPreferencesAlarmRecoveryCheckpointPersistence(
         const val SEPARATOR = "|"
         const val FIELD_COUNT = 7
         const val LEGACY_FIELD_COUNT = 6
+        const val BASE64_FLAGS = Base64.NO_WRAP or Base64.URL_SAFE
+        const val CURRENT_LAST_FAILURE_FIELD = 6
+        const val LEGACY_LAST_FAILURE_FIELD = 5
     }
 }
 
@@ -137,26 +145,43 @@ internal class AlarmRecoveryRetryCoordinator(
     fun retry(
         detail: String,
         capabilityUnavailable: Boolean = false,
-    ): AlarmRecoveryRetryResult {
-        val persistedCheckpoint = runCatching { persistence.checkpoint() }
-            .getOrElse { error ->
-                return escalate(
-                    AlarmTransportFailureCode.RECOVERY_REQUEUE_FAILED,
-                    "$detail Recovery checkpoint could not be read: ${error.message.orEmpty()}",
-                )
-            }
-        val currentAttempt = persistedCheckpoint?.attempt ?: 0
-        val reconcileInterruptedSessions =
-            persistedCheckpoint?.reconcileInterruptedSessions == true
-        if (capabilityUnavailable) {
-            persistExhausted(currentAttempt, detail, reconcileInterruptedSessions)
-            return escalate(AlarmTransportFailureCode.RECOVERY_CAPABILITY_UNAVAILABLE, detail)
-        }
-        if (currentAttempt >= maxAttempts) {
-            persistExhausted(currentAttempt, detail, reconcileInterruptedSessions)
-            return escalate(AlarmTransportFailureCode.RECOVERY_ATTEMPTS_EXHAUSTED, detail)
-        }
+    ): AlarmRecoveryRetryResult = runCatching { persistence.checkpoint() }.fold(
+        onSuccess = { checkpoint ->
+            retry(checkpoint, detail, capabilityUnavailable)
+        },
+        onFailure = { error ->
+            escalate(
+                AlarmTransportFailureCode.RECOVERY_REQUEUE_FAILED,
+                "$detail Recovery checkpoint could not be read: ${error.message.orEmpty()}",
+            )
+        },
+    )
 
+    private fun retry(
+        checkpoint: AlarmRecoveryCheckpoint?,
+        detail: String,
+        capabilityUnavailable: Boolean,
+    ): AlarmRecoveryRetryResult {
+        val currentAttempt = checkpoint?.attempt ?: 0
+        val reconcileInterruptedSessions = checkpoint?.reconcileInterruptedSessions == true
+        return when {
+            capabilityUnavailable -> {
+                persistExhausted(currentAttempt, detail, reconcileInterruptedSessions)
+                escalate(AlarmTransportFailureCode.RECOVERY_CAPABILITY_UNAVAILABLE, detail)
+            }
+            currentAttempt >= maxAttempts -> {
+                persistExhausted(currentAttempt, detail, reconcileInterruptedSessions)
+                escalate(AlarmTransportFailureCode.RECOVERY_ATTEMPTS_EXHAUSTED, detail)
+            }
+            else -> scheduleRetry(currentAttempt, detail, reconcileInterruptedSessions)
+        }
+    }
+
+    private fun scheduleRetry(
+        currentAttempt: Int,
+        detail: String,
+        reconcileInterruptedSessions: Boolean,
+    ): AlarmRecoveryRetryResult {
         val nextAttempt = currentAttempt + 1
         val triggerAt = nowEpochMillis() + backoffMillis(nextAttempt)
         val checkpoint = AlarmRecoveryCheckpoint(
@@ -167,69 +192,91 @@ internal class AlarmRecoveryRetryCoordinator(
             updatedAtEpochMillis = nowEpochMillis(),
             reconcileInterruptedSessions = reconcileInterruptedSessions,
         )
-        if (!runCatching { persistence.persist(checkpoint) }.getOrDefault(false)) {
-            return escalate(
+        val persisted = runCatching { persistence.persist(checkpoint) }.getOrDefault(false)
+        return if (!persisted) {
+            escalate(
                 AlarmTransportFailureCode.RECOVERY_REQUEUE_FAILED,
                 "$detail Recovery checkpoint could not be persisted.",
             )
+        } else {
+            val scheduled = runCatching { backend.schedule(triggerAt) }
+                .getOrElse { Result.failure(it) }
+            if (scheduled.isSuccess) {
+                AlarmRecoveryRetryResult.Scheduled(nextAttempt, triggerAt)
+            } else {
+                val schedulingDetail = "$detail Recovery requeue failed: " +
+                    scheduled.exceptionOrNull()?.message.orEmpty()
+                persistExhausted(
+                    nextAttempt,
+                    schedulingDetail.trim(),
+                    reconcileInterruptedSessions,
+                )
+                escalate(
+                    AlarmTransportFailureCode.RECOVERY_REQUEUE_FAILED,
+                    schedulingDetail.trim(),
+                )
+            }
         }
-        val scheduled = runCatching { backend.schedule(triggerAt) }
-            .getOrElse { Result.failure(it) }
-        if (scheduled.isSuccess) return AlarmRecoveryRetryResult.Scheduled(nextAttempt, triggerAt)
-
-        val schedulingDetail = "$detail Recovery requeue failed: " +
-            scheduled.exceptionOrNull()?.message.orEmpty()
-        persistExhausted(nextAttempt, schedulingDetail.trim(), reconcileInterruptedSessions)
-        return escalate(AlarmTransportFailureCode.RECOVERY_REQUEUE_FAILED, schedulingDetail.trim())
     }
 
     fun retryWithScheduler(
         detail: String,
         capabilityUnavailable: Boolean = false,
-    ): Boolean {
-        val persistedCheckpoint = runCatching { persistence.checkpoint() }
-            .getOrElse { error ->
-                escalate(
-                    AlarmTransportFailureCode.RECOVERY_REQUEUE_FAILED,
-                    "$detail Recovery checkpoint could not be read: ${error.message.orEmpty()}",
-                )
-                return false
-            }
-        val currentAttempt = persistedCheckpoint?.attempt ?: 0
-        val reconcileInterruptedSessions =
-            persistedCheckpoint?.reconcileInterruptedSessions == true
-        if (capabilityUnavailable) {
-            persistExhausted(currentAttempt, detail, reconcileInterruptedSessions)
-            escalate(AlarmTransportFailureCode.RECOVERY_CAPABILITY_UNAVAILABLE, detail)
-            return false
-        }
-        if (currentAttempt >= maxAttempts) {
-            persistExhausted(currentAttempt, detail, reconcileInterruptedSessions)
-            escalate(AlarmTransportFailureCode.RECOVERY_ATTEMPTS_EXHAUSTED, detail)
-            return false
-        }
-
-        val nextAttempt = currentAttempt + 1
-        val triggerAt = nowEpochMillis() + backoffMillis(nextAttempt)
-        val persisted = runCatching {
-            persistence.persist(
-                AlarmRecoveryCheckpoint(
-                    attempt = nextAttempt,
-                    lastFailure = detail,
-                    nextAttemptAtEpochMillis = triggerAt,
-                    exhausted = false,
-                    updatedAtEpochMillis = nowEpochMillis(),
-                    reconcileInterruptedSessions = reconcileInterruptedSessions,
-                ),
+    ): Boolean = runCatching { persistence.checkpoint() }.fold(
+        onSuccess = { checkpoint ->
+            retryWithScheduler(checkpoint, detail, capabilityUnavailable)
+        },
+        onFailure = { error ->
+            escalate(
+                AlarmTransportFailureCode.RECOVERY_REQUEUE_FAILED,
+                "$detail Recovery checkpoint could not be read: ${error.message.orEmpty()}",
             )
-        }.getOrDefault(false)
-        if (persisted) return true
+            false
+        },
+    )
 
-        escalate(
-            AlarmTransportFailureCode.RECOVERY_REQUEUE_FAILED,
-            "$detail Recovery checkpoint could not be persisted.",
-        )
-        return false
+    private fun retryWithScheduler(
+        checkpoint: AlarmRecoveryCheckpoint?,
+        detail: String,
+        capabilityUnavailable: Boolean,
+    ): Boolean {
+        val currentAttempt = checkpoint?.attempt ?: 0
+        val reconcileInterruptedSessions = checkpoint?.reconcileInterruptedSessions == true
+        return when {
+            capabilityUnavailable -> {
+                persistExhausted(currentAttempt, detail, reconcileInterruptedSessions)
+                escalate(AlarmTransportFailureCode.RECOVERY_CAPABILITY_UNAVAILABLE, detail)
+                false
+            }
+            currentAttempt >= maxAttempts -> {
+                persistExhausted(currentAttempt, detail, reconcileInterruptedSessions)
+                escalate(AlarmTransportFailureCode.RECOVERY_ATTEMPTS_EXHAUSTED, detail)
+                false
+            }
+            else -> {
+                val nextAttempt = currentAttempt + 1
+                val triggerAt = nowEpochMillis() + backoffMillis(nextAttempt)
+                val persisted = runCatching {
+                    persistence.persist(
+                        AlarmRecoveryCheckpoint(
+                            attempt = nextAttempt,
+                            lastFailure = detail,
+                            nextAttemptAtEpochMillis = triggerAt,
+                            exhausted = false,
+                            updatedAtEpochMillis = nowEpochMillis(),
+                            reconcileInterruptedSessions = reconcileInterruptedSessions,
+                        ),
+                    )
+                }.getOrDefault(false)
+                if (!persisted) {
+                    escalate(
+                        AlarmTransportFailureCode.RECOVERY_REQUEUE_FAILED,
+                        "$detail Recovery checkpoint could not be persisted.",
+                    )
+                }
+                persisted
+            }
+        }
     }
 
     fun resolve(cancelScheduledRetry: Boolean = true): Boolean {
