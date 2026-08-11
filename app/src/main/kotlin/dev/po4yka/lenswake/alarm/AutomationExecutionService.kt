@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.IBinder
@@ -15,7 +16,6 @@ import dev.po4yka.lenswake.ui.AndroidUiStringProvider
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
@@ -39,11 +39,11 @@ internal const val AUTOMATION_SERVICE_RESTART_MODE: Int = Service.START_REDELIVE
 class AutomationExecutionService : Service() {
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(
-        serviceJob + Dispatchers.IO + CoroutineName("lenswake-alarm-execution"),
+        serviceJob + CoroutineName("lenswake-alarm-execution"),
     )
     private val queuedKeys = ConcurrentHashMap.newKeySet<String>()
     private val lifecycleGate = AlarmServiceLifecycleGate()
-    private lateinit var notificationManager: NotificationManager
+    private lateinit var foregroundController: AutomationForegroundController
     private lateinit var journal: AlarmDeliveryJournal
     private lateinit var retryCoordinator: AlarmDeliveryRetryCoordinator
     private lateinit var journalCorruptionHandler: AlarmJournalCorruptionDeliveryHandler
@@ -52,7 +52,7 @@ class AutomationExecutionService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        notificationManager = getSystemService(NotificationManager::class.java)
+        foregroundController = AutomationForegroundController(this)
         journal = AlarmDeliveryJournal(this)
         val escalator = AlarmTransportEscalator(
             persistence = SharedPreferencesAlarmTransportFailurePersistence(this),
@@ -71,21 +71,22 @@ class AutomationExecutionService : Service() {
                 escalator = escalator,
             ),
         )
+        val workProcessor = AlarmWorkProcessor(
+            applicationContext = applicationContext,
+            retryCoordinator = retryCoordinator,
+            scheduleRetry = ::scheduleRetry,
+            complete = ::complete,
+        )
         dispatcher = AlarmWorkDispatcher(
             scope = serviceScope,
-            execute = ::process,
+            execute = workProcessor::process,
             onPreemptionTimeout = { queued ->
                 scheduleRetry(queued, "STOP could not preempt matching START within its finite deadline.")
                 complete(queued, removeFromJournal = false)
             },
             onCancelled = { queued -> complete(queued, removeFromJournal = false) },
         )
-        createNotificationChannel()
-        startForeground(
-            NOTIFICATION_ID,
-            notification(getString(R.string.automation_notification_preparing)),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED,
-        )
+        foregroundController.start()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int =
@@ -144,96 +145,8 @@ class AutomationExecutionService : Service() {
 
     override fun onDestroy() {
         serviceScope.cancel()
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        foregroundController.stop()
         super.onDestroy()
-    }
-
-    private suspend fun process(queued: QueuedTrigger) {
-        val work = queued.entry.work
-        val elapsedBeforeExecution = SystemClock.elapsedRealtime() - queued.enqueuedAtElapsedRealtime
-        val remainingDeadline = EXECUTION_DEADLINE_MILLIS - elapsedBeforeExecution
-        var removeFromJournal = false
-        if (remainingDeadline <= 0) {
-            Log.e(TAG, "${work.displayKind} alarm expired while waiting for serialized execution")
-            scheduleRetry(queued, "Alarm expired while waiting for serialized execution.")
-            complete(queued, removeFromJournal)
-            return
-        }
-        try {
-            val provider = applicationContext as? AlarmComponentProvider
-                ?: error("Application does not provide AlarmComponentProvider")
-            when (val result = withTimeout(remainingDeadline) {
-                handle(work, provider)
-            }) {
-                AlarmHandlingResult.Accepted -> {
-                    removeFromJournal = true
-                    retryCoordinator.resolve(work)
-                    Log.i(
-                        TAG,
-                        "${work.displayKind} automation completed for ${work.targetId}",
-                    )
-                }
-                is AlarmHandlingResult.TerminalRejected -> {
-                    removeFromJournal = true
-                    if (work.isStop) {
-                        val escalation = retryCoordinator.escalateTerminalStop(
-                            work,
-                            result.reason,
-                        )
-                        Log.e(
-                            TAG,
-                            "STOP terminal rejection requires manual confirmation; " +
-                                "markerPersisted=${escalation.markerPersisted}, " +
-                                "notification=${escalation.notification}",
-                        )
-                    } else {
-                        retryCoordinator.resolve(work)
-                    }
-                    Log.e(
-                        TAG,
-                        "${work.displayKind} automation terminally rejected for ${work.targetId}: ${result.reason}",
-                    )
-                }
-                is AlarmHandlingResult.Retryable -> {
-                    scheduleRetry(queued, result.reason)
-                    Log.e(
-                        TAG,
-                        "${work.displayKind} automation needs reconciliation for ${work.targetId}: ${result.reason}",
-                        result.cause,
-                    )
-                }
-            }
-        } catch (error: TimeoutCancellationException) {
-            scheduleRetry(queued, "Automation exceeded its finite service deadline.")
-            Log.e(
-                TAG,
-                "${work.displayKind} automation exceeded the finite foreground-service deadline",
-                error,
-            )
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: RuntimeException) {
-            scheduleRetry(queued, "Unhandled foreground-service failure: ${error.message.orEmpty()}")
-            Log.e(TAG, "Unhandled ${work.displayKind} foreground-service failure", error)
-        } finally {
-            complete(queued, removeFromJournal)
-        }
-    }
-
-    private suspend fun handle(
-        work: AlarmDeliveryWork,
-        provider: AlarmComponentProvider,
-    ): AlarmHandlingResult {
-        return when (work) {
-            is AlarmDeliveryWork.Schedule -> provider.alarmTriggerCoordinator.handle(work.trigger)
-            is AlarmDeliveryWork.RehearsalStop -> {
-                val rehearsalProvider = applicationContext as? RehearsalStopComponentProvider
-                    ?: return AlarmHandlingResult.Retryable(
-                        "Application does not provide RehearsalStopTriggerCoordinator",
-                    )
-                rehearsalProvider.rehearsalStopTriggerCoordinator.handle(work.trigger)
-            }
-        }
     }
 
     private fun enqueue(entry: AlarmDeliveryJournal.Entry): Boolean {
@@ -299,32 +212,174 @@ class AutomationExecutionService : Service() {
             START_STICKY
         }
 
+    private companion object {
+        const val TAG = "LenswakeAlarm"
+    }
+}
+
+private class AutomationForegroundController(
+    private val service: Service,
+) {
+    private val notificationManager = service.getSystemService(NotificationManager::class.java)
+
+    fun start() {
+        createNotificationChannel()
+        service.startForeground(
+            NOTIFICATION_ID,
+            notification(service.getString(R.string.automation_notification_preparing)),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED,
+        )
+    }
+
+    fun stop() {
+        service.stopForeground(Service.STOP_FOREGROUND_REMOVE)
+    }
+
     private fun createNotificationChannel() {
         notificationManager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
-                getString(R.string.automation_channel_name),
+                service.getString(R.string.automation_channel_name),
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
-                description = getString(R.string.automation_channel_description)
+                description = service.getString(R.string.automation_channel_description)
                 setShowBadge(false)
             },
         )
     }
 
-    private fun notification(message: String): Notification = Notification.Builder(this, CHANNEL_ID)
-        .setSmallIcon(android.R.drawable.ic_menu_camera)
-        .setContentTitle(getString(R.string.automation_notification_title))
-        .setContentText(message)
-        .setCategory(Notification.CATEGORY_SERVICE)
-        .setOnlyAlertOnce(true)
-        .setOngoing(true)
-        .build()
+    private fun notification(message: String): Notification =
+        Notification.Builder(service, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_menu_camera)
+            .setContentTitle(service.getString(R.string.automation_notification_title))
+            .setContentText(message)
+            .setCategory(Notification.CATEGORY_SERVICE)
+            .setOnlyAlertOnce(true)
+            .setOngoing(true)
+            .build()
+
+    private companion object {
+        const val CHANNEL_ID = "scheduled_automation"
+        const val NOTIFICATION_ID = 1_001
+    }
+}
+
+private class AlarmWorkProcessor(
+    applicationContext: Context,
+    private val retryCoordinator: AlarmDeliveryRetryCoordinator,
+    private val scheduleRetry: (QueuedTrigger, String) -> Unit,
+    private val complete: (QueuedTrigger, Boolean) -> Unit,
+    private val elapsedRealtime: () -> Long = SystemClock::elapsedRealtime,
+) {
+    private val applicationContext = applicationContext.applicationContext
+
+    suspend fun process(queued: QueuedTrigger) {
+        val elapsedBeforeExecution = elapsedRealtime() - queued.enqueuedAtElapsedRealtime
+        val remainingDeadline = EXECUTION_DEADLINE_MILLIS - elapsedBeforeExecution
+        if (remainingDeadline <= 0) {
+            Log.e(
+                TAG,
+                "${queued.entry.work.displayKind} alarm expired while waiting for serialized execution",
+            )
+            scheduleRetry(queued, "Alarm expired while waiting for serialized execution.")
+            complete(queued, false)
+        } else {
+            executeWithinDeadline(queued, remainingDeadline)
+        }
+    }
+
+    /**
+     * This foreground-service boundary converts heterogeneous runtime failures from application
+     * coordinators and Android APIs into the durable retry path; cancellation remains transparent.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private suspend fun executeWithinDeadline(queued: QueuedTrigger, remainingDeadline: Long) {
+        val work = queued.entry.work
+        var removeFromJournal = false
+        try {
+            val provider = applicationContext as? AlarmComponentProvider
+                ?: error("Application does not provide AlarmComponentProvider")
+            val result = withTimeout(remainingDeadline) { handle(work, provider) }
+            removeFromJournal = handleResult(queued, result)
+        } catch (error: TimeoutCancellationException) {
+            scheduleRetry(queued, "Automation exceeded its finite service deadline.")
+            Log.e(
+                TAG,
+                "${work.displayKind} automation exceeded the finite foreground-service deadline",
+                error,
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: RuntimeException) {
+            scheduleRetry(queued, "Unhandled foreground-service failure: ${error.message.orEmpty()}")
+            Log.e(TAG, "Unhandled ${work.displayKind} foreground-service failure", error)
+        } finally {
+            complete(queued, removeFromJournal)
+        }
+    }
+
+    private fun handleResult(
+        queued: QueuedTrigger,
+        result: AlarmHandlingResult,
+    ): Boolean {
+        val work = queued.entry.work
+        return when (result) {
+            AlarmHandlingResult.Accepted -> {
+                retryCoordinator.resolve(work)
+                Log.i(TAG, "${work.displayKind} automation completed for ${work.targetId}")
+                true
+            }
+            is AlarmHandlingResult.TerminalRejected -> {
+                if (work.isStop) {
+                    val escalation = retryCoordinator.escalateTerminalStop(work, result.reason)
+                    Log.e(
+                        TAG,
+                        "STOP terminal rejection requires manual confirmation; " +
+                            "markerPersisted=${escalation.markerPersisted}, " +
+                            "notification=${escalation.notification}",
+                    )
+                } else {
+                    retryCoordinator.resolve(work)
+                }
+                Log.e(
+                    TAG,
+                    "${work.displayKind} automation terminally rejected for ${work.targetId}: " +
+                        result.reason,
+                )
+                true
+            }
+            is AlarmHandlingResult.Retryable -> {
+                scheduleRetry(queued, result.reason)
+                Log.e(
+                    TAG,
+                    "${work.displayKind} automation needs reconciliation for ${work.targetId}: " +
+                        result.reason,
+                    result.cause,
+                )
+                false
+            }
+        }
+    }
+
+    private suspend fun handle(
+        work: AlarmDeliveryWork,
+        provider: AlarmComponentProvider,
+    ): AlarmHandlingResult = when (work) {
+        is AlarmDeliveryWork.Schedule -> provider.alarmTriggerCoordinator.handle(work.trigger)
+        is AlarmDeliveryWork.RehearsalStop -> {
+            val rehearsalProvider = applicationContext as? RehearsalStopComponentProvider
+            if (rehearsalProvider == null) {
+                AlarmHandlingResult.Retryable(
+                    "Application does not provide RehearsalStopTriggerCoordinator",
+                )
+            } else {
+                rehearsalProvider.rehearsalStopTriggerCoordinator.handle(work.trigger)
+            }
+        }
+    }
 
     private companion object {
         const val TAG = "LenswakeAlarm"
-        const val CHANNEL_ID = "scheduled_automation"
-        const val NOTIFICATION_ID = 1_001
         const val EXECUTION_DEADLINE_MILLIS = 120_000L
     }
 }
