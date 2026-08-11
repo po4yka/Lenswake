@@ -56,27 +56,33 @@ internal class AndroidExactAlarmRearmBackend(
     }
 }
 
-/** Re-arms journal transport only; it never calls the camera or automation coordinator. */
+/**
+ * Re-arms journal transport only; it never calls the camera or automation coordinator. The exact
+ * alarm backend crosses several Android APIs that can fail with unrelated runtime exception types;
+ * all represent the same retained-journal recovery failure.
+ */
 internal class AlarmJournalReconciler(
     private val journal: AlarmDeliveryJournal,
     private val backend: ExactAlarmRearmBackend,
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
 ) {
+    @Suppress("TooGenericExceptionCaught")
     fun rearmAll(): JournalRearmResult {
         val snapshot = journal.read()
         val entries = snapshot.entries
-        if (entries.isEmpty()) return JournalRearmResult.Rearmed(0, snapshot.corruptEntries)
-        if (!backend.canScheduleExactAlarms()) {
-            return JournalRearmResult.ExactAlarmsUnavailable(snapshot.corruptEntries)
-        }
-        return try {
-            val firstTriggerAt = nowEpochMillis() + REARM_DELAY_MILLIS
-            entries.forEachIndexed { index, entry ->
-                backend.rearm(entry.work, firstTriggerAt + index * REARM_STAGGER_MILLIS)
+        return when {
+            entries.isEmpty() -> JournalRearmResult.Rearmed(0, snapshot.corruptEntries)
+            !backend.canScheduleExactAlarms() ->
+                JournalRearmResult.ExactAlarmsUnavailable(snapshot.corruptEntries)
+            else -> try {
+                val firstTriggerAt = nowEpochMillis() + REARM_DELAY_MILLIS
+                entries.forEachIndexed { index, entry ->
+                    backend.rearm(entry.work, firstTriggerAt + index * REARM_STAGGER_MILLIS)
+                }
+                    JournalRearmResult.Rearmed(entries.size, snapshot.corruptEntries)
+            } catch (error: RuntimeException) {
+                JournalRearmResult.Failed(error, snapshot.corruptEntries)
             }
-            JournalRearmResult.Rearmed(entries.size, snapshot.corruptEntries)
-        } catch (error: RuntimeException) {
-            JournalRearmResult.Failed(error, snapshot.corruptEntries)
         }
     }
 
