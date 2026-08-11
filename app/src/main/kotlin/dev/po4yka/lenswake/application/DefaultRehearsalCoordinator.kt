@@ -1134,21 +1134,18 @@ private class RehearsalPromotionWorkflow(
     }
 
     private suspend fun persistVerificationReceipt(initial: ExecutionSession): ExecutionSession? {
-        var current = initial
+        var current: ExecutionSession? = initial
         var attempts = 0
-        while (
-            current.rehearsalVerifiedAt == null &&
-            current.revision < Long.MAX_VALUE &&
-            attempts < RECEIPT_CAS_ATTEMPTS
-        ) {
+        while (shouldPersistReceipt(current, attempts)) {
+            val session = checkNotNull(current)
             val verifiedAt = maxOf(
                 clock.now(),
-                current.updatedAt,
-                checkNotNull(current.mediaSavedVerifiedAt),
+                session.updatedAt,
+                checkNotNull(session.mediaSavedVerifiedAt),
             )
-            val verified = current.copy(
+            val verified = session.copy(
                 rehearsalVerifiedAt = verifiedAt,
-                revision = current.revision + 1,
+                revision = session.revision + 1,
                 updatedAt = verifiedAt,
             )
             val event = AutomationEvent(
@@ -1162,20 +1159,33 @@ private class RehearsalPromotionWorkflow(
             )
             val applied = preservingCancellation {
                 executionRepository.apply(
-                    ExecutionChange(current.revision, verified),
+                    ExecutionChange(session.revision, verified),
                     event,
                 )
-            }.getOrNull() ?: break
+            }.getOrNull()
             current = when (applied) {
                 is ExecutionApplyResult.Applied -> applied.session
                 is ExecutionApplyResult.RevisionConflict -> {
-                    preservingCancellation { executionRepository.get(current.id) }.getOrNull() ?: break
+                    preservingCancellation { executionRepository.get(session.id) }.getOrNull()
                 }
+
+                null -> null
             }
             attempts += 1
         }
-        return current.takeIf { it.rehearsalVerifiedAt != null }
+        return current?.takeIf { it.rehearsalVerifiedAt != null }
     }
+
+    private fun shouldPersistReceipt(
+        session: ExecutionSession?,
+        attempts: Int,
+    ): Boolean =
+        when {
+            session == null -> false
+            session.rehearsalVerifiedAt != null -> false
+            session.revision == Long.MAX_VALUE -> false
+            else -> attempts < RECEIPT_CAS_ATTEMPTS
+        }
 }
 
 private sealed interface StopStep<out T> {
