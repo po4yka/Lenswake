@@ -52,7 +52,9 @@ class AlarmDeliveryJournalTest {
         assertNotNull(replacement)
         assertEquals(
             1,
-            firstJournal.read().entries.single { it.scheduleTrigger.kind == AlarmKind.START }.scheduleTrigger.deliveryAttempt,
+            firstJournal.read().entries
+                .single { it.scheduleTrigger.kind == AlarmKind.START }
+                .scheduleTrigger.deliveryAttempt,
         )
         val reverted = firstJournal.replace(
             requireNotNull(replacement).key,
@@ -61,7 +63,9 @@ class AlarmDeliveryJournalTest {
         assertNotNull(reverted)
         assertEquals(
             0,
-            firstJournal.read().entries.single { it.scheduleTrigger.kind == AlarmKind.START }.scheduleTrigger.deliveryAttempt,
+            firstJournal.read().entries
+                .single { it.scheduleTrigger.kind == AlarmKind.START }
+                .scheduleTrigger.deliveryAttempt,
         )
 
         firstJournal.read().entries.forEach { firstJournal.remove(it.key) }

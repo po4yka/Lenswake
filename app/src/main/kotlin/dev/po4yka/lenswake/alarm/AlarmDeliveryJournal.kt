@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.util.Base64
+import java.net.URISyntaxException
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 
@@ -38,8 +39,13 @@ internal class AlarmDeliveryJournal(
         }
     }
 
-    /** Stale-entry cleanup must finish before the reconciled snapshot is returned. */
+    /**
+     * Stale-entry cleanup must finish before the reconciled snapshot is returned. Persisted Intent
+     * decoding is an untrusted Android boundary whose URI and Bundle accessors can throw several
+     * unrelated runtime exception types, all of which represent the same corrupt journal entry.
+     */
     @SuppressLint("ApplySharedPref", "UseKtx")
+    @Suppress("TooGenericExceptionCaught")
     fun read(): Snapshot {
         val decoded = mutableListOf<Entry>()
         val corruptEntries = mutableListOf<CorruptEntry>()
@@ -51,7 +57,7 @@ internal class AlarmDeliveryJournal(
             }
             val intent = try {
                 Intent.parseUri(encodedIntent, Intent.URI_INTENT_SCHEME)
-            } catch (error: Exception) {
+            } catch (error: URISyntaxException) {
                 corruptEntries += CorruptEntry(
                     key,
                     CorruptionReason.InvalidIntentUri(error.javaClass.simpleName),
@@ -60,7 +66,7 @@ internal class AlarmDeliveryJournal(
             }
             val work = try {
                 AlarmDeliveryWorkContract.parse(intent)
-            } catch (error: Exception) {
+            } catch (error: RuntimeException) {
                 corruptEntries += CorruptEntry(
                     key,
                     CorruptionReason.InvalidDeliveryWork(error.javaClass.simpleName),
