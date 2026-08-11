@@ -149,14 +149,6 @@ class AlarmManagerRecordingScheduler internal constructor(
         register(schedule, kind, clock.now())
     }
 
-    private fun RecordingSchedule.canonicalPersistedSnapshot(enabled: Boolean): RecordingSchedule = copy(
-        startAt = Instant.ofEpochMilli(startAt.toEpochMilli()),
-        stopAt = Instant.ofEpochMilli(stopAt.toEpochMilli()),
-        enabled = enabled,
-        createdAt = Instant.ofEpochMilli(createdAt.toEpochMilli()),
-        updatedAt = Instant.ofEpochMilli(updatedAt.toEpochMilli()),
-    )
-
     private fun register(
         schedule: RecordingSchedule,
         kind: AlarmKind,
@@ -189,28 +181,39 @@ class AlarmManagerRecordingScheduler internal constructor(
         now: Instant,
         allowDisabled: Boolean,
     ) {
-        if (!schedule.enabled && !allowDisabled) {
-            throw SchedulingException(SchedulingFailureCode.SCHEDULE_DISABLED, "Schedule is disabled")
-        }
-        if (!schedule.stopAt.isAfter(schedule.startAt)) {
-            throw SchedulingException(
+        val failure = when {
+            !schedule.enabled && !allowDisabled -> SchedulingException(
+                SchedulingFailureCode.SCHEDULE_DISABLED,
+                "Schedule is disabled",
+            )
+            !schedule.stopAt.isAfter(schedule.startAt) -> SchedulingException(
                 SchedulingFailureCode.INVALID_TIME_RANGE,
                 "Stop time must be after start time",
             )
+            !triggerAt.isAfter(now) -> SchedulingException(
+                code = when (kind) {
+                    AlarmKind.START -> SchedulingFailureCode.START_NOT_IN_FUTURE
+                    AlarmKind.STOP -> SchedulingFailureCode.STOP_NOT_IN_FUTURE
+                },
+                message = "${kind.name.lowercase()} alarm must be in the future",
+            )
+            else -> null
         }
-        if (!triggerAt.isAfter(now)) {
-            val code = when (kind) {
-                AlarmKind.START -> SchedulingFailureCode.START_NOT_IN_FUTURE
-                AlarmKind.STOP -> SchedulingFailureCode.STOP_NOT_IN_FUTURE
-            }
-            throw SchedulingException(code, "${kind.name.lowercase()} alarm must be in the future")
-        }
+        if (failure != null) throw failure
     }
 
     private companion object {
         const val OVERDUE_STOP_RECOVERY_DELAY_MILLIS = 1_000L
     }
 }
+
+private fun RecordingSchedule.canonicalPersistedSnapshot(enabled: Boolean): RecordingSchedule = copy(
+    startAt = Instant.ofEpochMilli(startAt.toEpochMilli()),
+    stopAt = Instant.ofEpochMilli(stopAt.toEpochMilli()),
+    enabled = enabled,
+    createdAt = Instant.ofEpochMilli(createdAt.toEpochMilli()),
+    updatedAt = Instant.ofEpochMilli(updatedAt.toEpochMilli()),
+)
 
 internal class AndroidRecordingAlarmBackend(
     context: Context,
