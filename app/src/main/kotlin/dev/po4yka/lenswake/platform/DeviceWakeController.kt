@@ -184,7 +184,7 @@ internal object DeviceWakeNotificationContract {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             ActivityOptions.makeBasic()
                 .setPendingIntentCreatorBackgroundActivityStartMode(
-                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS,
+                    PendingIntentCreatorBackgroundActivityStartMode.resolve(),
                 )
                 .toBundle(),
         )

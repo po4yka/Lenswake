@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import dev.po4yka.lenswake.platform.PendingIntentCreatorBackgroundActivityStartMode
 
 /** Keeps durable automation alarms service-bound while migrating the rejected gateway transport. */
 internal object AutomationAlarmPendingIntentFactory {
@@ -80,7 +81,7 @@ internal object AutomationAlarmPendingIntentFactory {
 
     private fun creatorOptions() = ActivityOptions.makeBasic()
         .setPendingIntentCreatorBackgroundActivityStartMode(
-            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS,
+            PendingIntentCreatorBackgroundActivityStartMode.resolve(),
         )
         .toBundle()
 }
