@@ -38,25 +38,27 @@ internal class AlarmRecoveryBootstrapCoordinator(
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
 ) {
     fun handle(action: String, userUnlocked: Boolean): AlarmRecoveryBootstrapResult {
-        if (action !in SUPPORTED_ACTIONS) return AlarmRecoveryBootstrapResult.Ignored
-        val checkpoint = checkpointFor(action)
-        if (!runCatching { persistence.persist(checkpoint) }.getOrDefault(false)) {
-            return failureHandler.retry(
-                "Recovery requested by $action, but its Direct Boot checkpoint could not be persisted.",
-                capabilityUnavailable = false,
-            ).toBootstrapResult()
+        return when {
+            action !in SUPPORTED_ACTIONS -> AlarmRecoveryBootstrapResult.Ignored
+            !runCatching { persistence.persist(checkpointFor(action)) }.getOrDefault(false) ->
+                failureHandler.retry(
+                    "Recovery requested by $action, but its Direct Boot checkpoint " +
+                        "could not be persisted.",
+                    capabilityUnavailable = false,
+                ).toBootstrapResult()
+            action == Intent.ACTION_LOCKED_BOOT_COMPLETED || !userUnlocked ->
+                AlarmRecoveryBootstrapResult.DeferredUntilUnlock
+            else -> jobScheduler.schedule(action).fold(
+                onSuccess = { AlarmRecoveryBootstrapResult.Scheduled },
+                onFailure = { failure ->
+                    failureHandler.retry(
+                        "Recovery job scheduling failed for $action: " +
+                            "${failure.javaClass.simpleName}: ${failure.message.orEmpty()}",
+                        capabilityUnavailable = false,
+                    ).toBootstrapResult()
+                },
+            )
         }
-        if (action == Intent.ACTION_LOCKED_BOOT_COMPLETED || !userUnlocked) {
-            return AlarmRecoveryBootstrapResult.DeferredUntilUnlock
-        }
-
-        val startFailure = jobScheduler.schedule(action).exceptionOrNull()
-            ?: return AlarmRecoveryBootstrapResult.Scheduled
-        return failureHandler.retry(
-            "Recovery job scheduling failed for $action: " +
-                "${startFailure.javaClass.simpleName}: ${startFailure.message.orEmpty()}",
-            capabilityUnavailable = false,
-        ).toBootstrapResult()
     }
 
     private fun checkpointFor(action: String): AlarmRecoveryCheckpoint {
