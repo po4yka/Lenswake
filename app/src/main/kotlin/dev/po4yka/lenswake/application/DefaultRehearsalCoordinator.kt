@@ -331,7 +331,7 @@ private class RehearsalStartWorkflow(
                 id = sessionId,
                 executionKey = "rehearsal/${sessionId.value}/${profile.definitionFingerprint()}",
                 kind = SessionKind.REHEARSAL,
-                scheduleId = null,
+                scheduleId = request.scheduleId,
                 scheduleName = "Rehearsal",
                 profileId = profile.id,
                 capture = request.capture,
@@ -710,10 +710,12 @@ class RehearsalStopWorkflow(
     private val persistence = RehearsalStopPersistence(executionRepository, clock)
     private val promotion =
         RehearsalPromotionWorkflow(
+            executionRepository = executionRepository,
             environmentSnapshotRepository = environmentSnapshotRepository,
             profileRepository = profileRepository,
             environmentProbe = environmentProbe,
             backstop = backstop,
+            clock = clock,
         )
 
     suspend fun stopInline(sessionId: SessionId): RehearsalStopOutcome =
@@ -990,10 +992,12 @@ private class RehearsalStopPersistence(
 }
 
 private class RehearsalPromotionWorkflow(
+    private val executionRepository: ExecutionRepository,
     private val environmentSnapshotRepository: EnvironmentSnapshotRepository,
     private val profileRepository: AutomationProfileRepository,
     private val environmentProbe: () -> PortResult<PixelCameraEnvironment>,
     private val backstop: RehearsalStopBackstop,
+    private val clock: LenswakeClock,
 ) {
     suspend fun finalizeCompleted(sessionId: SessionId): RehearsalStopOutcome =
         when (val report = loadReport(sessionId)) {
@@ -1106,16 +1110,71 @@ private class RehearsalPromotionWorkflow(
                 RehearsalStopOutcome.Retryable("Verified profile read-back did not match")
             }
 
-            backstop.cancel(report.session.id).isFailure -> {
+            else -> persistReceiptAndCancel(report.session, verified)
+        }
+    }
+
+    private suspend fun persistReceiptAndCancel(
+        session: ExecutionSession,
+        verifiedProfile: PixelCameraProfile,
+    ): RehearsalStopOutcome {
+        val verifiedSession = persistVerificationReceipt(session)
+            ?: return RehearsalStopOutcome.Retryable("Could not persist rehearsal verification receipt")
+        return when {
+            backstop.cancel(verifiedSession.id).isFailure -> {
                 RehearsalStopOutcome.Retryable(
-                    "Verified profile persisted but STOP backstop cancellation failed",
+                    "Rehearsal verification receipt persisted but STOP backstop cancellation failed",
                 )
             }
 
             else -> {
-                RehearsalStopOutcome.Promoted(report.session, verified)
+                RehearsalStopOutcome.Promoted(verifiedSession, verifiedProfile)
             }
         }
+    }
+
+    private suspend fun persistVerificationReceipt(initial: ExecutionSession): ExecutionSession? {
+        var current = initial
+        var attempts = 0
+        while (
+            current.rehearsalVerifiedAt == null &&
+            current.revision < Long.MAX_VALUE &&
+            attempts < RECEIPT_CAS_ATTEMPTS
+        ) {
+            val verifiedAt = maxOf(
+                clock.now(),
+                current.updatedAt,
+                checkNotNull(current.mediaSavedVerifiedAt),
+            )
+            val verified = current.copy(
+                rehearsalVerifiedAt = verifiedAt,
+                revision = current.revision + 1,
+                updatedAt = verifiedAt,
+            )
+            val event = AutomationEvent(
+                id = EventId.new(),
+                sessionId = verified.id,
+                name = "automation.rehearsal.verification_receipt_persisted",
+                sequence = verified.revision,
+                timestamp = verifiedAt,
+                state = AutomationStateName.COMPLETED,
+                outcome = AutomationOutcome.SUCCEEDED,
+            )
+            val applied = preservingCancellation {
+                executionRepository.apply(
+                    ExecutionChange(current.revision, verified),
+                    event,
+                )
+            }.getOrNull() ?: break
+            current = when (applied) {
+                is ExecutionApplyResult.Applied -> applied.session
+                is ExecutionApplyResult.RevisionConflict -> {
+                    preservingCancellation { executionRepository.get(current.id) }.getOrNull() ?: break
+                }
+            }
+            attempts += 1
+        }
+        return current.takeIf { it.rehearsalVerifiedAt != null }
     }
 }
 
@@ -1398,13 +1457,17 @@ internal fun ExecutionSession.qualifiesRehearsal(
         status == SessionStatus.COMPLETED &&
         profileId == profile.id &&
         this.capture == capture &&
+        failure == null &&
         recordingVerifiedAt != null &&
+        recordActionAt != null &&
         stopActionAt != null &&
         stoppedVerifiedAt != null &&
         mediaSavedVerifiedAt != null &&
+        rehearsalVerifiedAt != null &&
         testedProfileFingerprint() == profile.definitionFingerprint()
 
 private fun Char.isHexDigit(): Boolean = this in '0'..'9' || this in 'a'..'f'
 
 private const val SHA_256_HEX_LENGTH = 64
 private const val UNSIGNED_BYTE_MASK = 0xFF
+private const val RECEIPT_CAS_ATTEMPTS = 3

@@ -81,14 +81,23 @@ class DefaultRehearsalCoordinatorTest {
     @Test
     fun successfulRehearsalArmsBackstopBeforeStartAndPromotesExactProof() = runBlocking {
         val fixture = fixture()
+        val scheduleId = ScheduleId("schedule-bound-rehearsal")
 
-        val result = fixture.coordinator.run(request)
+        val result = fixture.coordinator.run(request.copy(scheduleId = scheduleId))
 
         val completed = assertInstanceOf(RehearsalResult.Completed::class.java, result)
+        assertEquals(scheduleId, completed.session.scheduleId)
         assertEquals(now.plusSeconds(95), completed.session.expectedStopAt)
         assertEquals(completed.session.mediaSavedVerifiedAt, completed.verifiedProfile.verifiedAt)
+        assertEquals(now.plusSeconds(9), completed.session.rehearsalVerifiedAt)
         assertEquals(ProfileCompatibility.VERIFIED, fixture.profiles.saved.compatibility)
         assertEquals(listOf("schedule", "start", "delay", "stop", "cancel"), fixture.order)
+        assertEquals(
+            1,
+            fixture.executions.events.count {
+                it.name == "automation.rehearsal.verification_receipt_persisted"
+            },
+        )
     }
 
     @Test
@@ -193,7 +202,43 @@ class DefaultRehearsalCoordinatorTest {
         assertInstanceOf(RehearsalResult.Rejected::class.java, result)
         assertEquals(ProfileCompatibility.NEEDS_REHEARSAL, fixture.profiles.saved.compatibility)
         assertEquals(2, fixture.profiles.saved.selectorSchemaVersion)
+        assertEquals(null, fixture.executions.sessions.values.single().rehearsalVerifiedAt)
         assertEquals(1, fixture.backstop.cancelCalls)
+    }
+
+    @Test
+    fun profilePromotionReadBackFailureDoesNotPersistVerificationReceipt() = runBlocking {
+        val fixture = fixture(profileReadBackMismatch = true)
+
+        val result = fixture.coordinator.run(request)
+
+        assertInstanceOf(RehearsalResult.SafetyStopPending::class.java, result)
+        assertEquals(null, fixture.executions.sessions.values.single().rehearsalVerifiedAt)
+        assertEquals(0, fixture.backstop.cancelCalls)
+    }
+
+    @Test
+    fun completedRehearsalFinalizationRecoversAfterReceiptWasPersistedBeforeProcessDeath() = runBlocking {
+        val fixture = fixture(backstopCancelFailures = 1)
+
+        val first = fixture.coordinator.run(request)
+
+        assertInstanceOf(RehearsalResult.SafetyStopPending::class.java, first)
+        val persisted = fixture.executions.sessions.values.single()
+        assertEquals(now.plusSeconds(9), persisted.rehearsalVerifiedAt)
+        assertEquals(1, fixture.backstop.cancelCalls)
+
+        val recovered = fixture.stopWorkflow.stopInline(persisted.id)
+
+        val promoted = assertInstanceOf(RehearsalStopOutcome.Promoted::class.java, recovered)
+        assertEquals(persisted.rehearsalVerifiedAt, promoted.session.rehearsalVerifiedAt)
+        assertEquals(2, fixture.backstop.cancelCalls)
+        assertEquals(
+            1,
+            fixture.executions.events.count {
+                it.name == "automation.rehearsal.verification_receipt_persisted"
+            },
+        )
     }
 
     @Test
@@ -320,12 +365,14 @@ class DefaultRehearsalCoordinatorTest {
         completeMediaProof: Boolean = true,
         delayFailure: Throwable? = null,
         replaceProfileDuringDelay: Boolean = false,
+        profileReadBackMismatch: Boolean = false,
+        backstopCancelFailures: Int = 0,
         clockNow: Instant = now,
     ): Fixture {
         val order = mutableListOf<String>()
         val executions = FakeRehearsalRepository()
-        val profiles = FakeProfileRepository(profile)
-        val backstop = FakeBackstop(order, backstopScheduleFails)
+        val profiles = FakeProfileRepository(profile, profileReadBackMismatch)
+        val backstop = FakeBackstop(order, backstopScheduleFails, backstopCancelFailures)
         val engine = FakeRehearsalEngine(
             executions,
             order,
@@ -368,6 +415,7 @@ class DefaultRehearsalCoordinatorTest {
         return Fixture(
             coordinator = coordinator,
             alarmCoordinator = DefaultRehearsalStopTriggerCoordinator(stopWorkflow),
+            stopWorkflow = stopWorkflow,
             executions = executions,
             profiles = profiles,
             engine = engine,
@@ -394,6 +442,7 @@ class DefaultRehearsalCoordinatorTest {
     private data class Fixture(
         val coordinator: DefaultRehearsalCoordinator,
         val alarmCoordinator: DefaultRehearsalStopTriggerCoordinator,
+        val stopWorkflow: RehearsalStopWorkflow,
         val executions: FakeRehearsalRepository,
         val profiles: FakeProfileRepository,
         val engine: FakeRehearsalEngine,
@@ -402,12 +451,22 @@ class DefaultRehearsalCoordinatorTest {
     )
 }
 
-private class FakeProfileRepository(initial: PixelCameraProfile) : AutomationProfileRepository {
+private class FakeProfileRepository(
+    initial: PixelCameraProfile,
+    private val readBackMismatch: Boolean = false,
+) : AutomationProfileRepository {
     var saved: PixelCameraProfile = initial
     override fun observeProfiles(): Flow<List<PixelCameraProfile>> = flowOf(listOf(saved))
     override fun observePersistenceIssues(): Flow<List<dev.po4yka.lenswake.core.ProfilePersistenceIssue>> =
         flowOf(emptyList())
-    override suspend fun get(id: ProfileId): PixelCameraProfile? = saved.takeIf { it.id == id }
+    override suspend fun get(id: ProfileId): PixelCameraProfile? =
+        saved.takeIf { it.id == id }?.let { profile ->
+            if (readBackMismatch && profile.compatibility == ProfileCompatibility.VERIFIED) {
+                profile.copy(verifiedAt = checkNotNull(profile.verifiedAt).plusMillis(1))
+            } else {
+                profile
+            }
+        }
     override suspend fun save(profile: PixelCameraProfile) { saved = profile }
     override suspend fun delete(id: ProfileId) = Unit
 }
@@ -526,6 +585,7 @@ private fun ExecutionSession.ownsPixelCamera(): Boolean =
 private class FakeBackstop(
     private val order: MutableList<String>,
     private val scheduleFails: Boolean,
+    private var cancelFailuresRemaining: Int,
 ) : RehearsalStopBackstop {
     var cancelCalls = 0
     override suspend fun schedule(sessionId: SessionId): Result<Unit> {
@@ -535,7 +595,12 @@ private class FakeBackstop(
     override suspend fun cancel(sessionId: SessionId): Result<Unit> {
         cancelCalls += 1
         order += "cancel"
-        return Result.success(Unit)
+        return if (cancelFailuresRemaining > 0) {
+            cancelFailuresRemaining -= 1
+            Result.failure(IllegalStateException("cancel failed"))
+        } else {
+            Result.success(Unit)
+        }
     }
     override suspend fun restoreAll(): Result<Unit> = Result.success(Unit)
 }

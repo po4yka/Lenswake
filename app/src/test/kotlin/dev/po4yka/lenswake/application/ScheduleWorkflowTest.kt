@@ -70,7 +70,7 @@ class ScheduleWorkflowTest {
         val fixture = fixture()
 
         val result = fixture.workflow.create(
-            command(capture = CaptureConfiguration.Video(LensSelection.FRONT)),
+            command(capture = CaptureConfiguration.Video(LensSelection.REAR_TELEPHOTO)),
         )
 
         val rejected = assertInstanceOf(ScheduleWorkflowResult.Rejected::class.java, result)
@@ -146,7 +146,7 @@ class ScheduleWorkflowTest {
     }
 
     @Test
-    fun createAcceptsExactProofAfterAnotherCaptureAdvancesProfileVerificationTime() = runTest {
+    fun independentlyVerifiedCapturesRemainSchedulableAfterProfileVerificationAdvances() = runTest {
         val events = mutableListOf<String>()
         val workflow = ScheduleWorkflow(
             scheduleRepository = FakeScheduleRepository(emptyList(), events),
@@ -161,10 +161,22 @@ class ScheduleWorkflowTest {
             preflightProbe = RuntimePreflightProbe { readyPreflight() },
         )
 
-        val result = workflow.create(command())
+        val first = workflow.create(command())
+        val second = workflow.create(
+            command(
+                name = "Front video",
+                startAt = now.plusSeconds(14_400),
+                stopAt = now.plusSeconds(18_000),
+                capture = CaptureConfiguration.Video(LensSelection.FRONT),
+            ),
+        )
 
-        assertInstanceOf(ScheduleWorkflowResult.Applied::class.java, result)
-        assertEquals(listOf("save", "stop", "start", "save"), events)
+        assertInstanceOf(ScheduleWorkflowResult.Applied::class.java, first)
+        assertInstanceOf(ScheduleWorkflowResult.Applied::class.java, second)
+        assertEquals(
+            listOf("save", "stop", "start", "save", "save", "stop", "start", "save"),
+            events,
+        )
     }
 
     @Test
@@ -729,6 +741,7 @@ class ScheduleWorkflowTest {
                         stopActionAt = proofAt.minusSeconds(1),
                         stoppedVerifiedAt = proofAt,
                         mediaSavedVerifiedAt = proofAt,
+                        rehearsalVerifiedAt = proofAt,
                         createdAt = proofAt.minusSeconds(10),
                         updatedAt = proofAt,
                     ),
@@ -854,6 +867,8 @@ class ScheduleWorkflowTest {
                 AutomationAction.SELECT_FRONT_LENS,
                 AutomationAction.START_RECORDING,
                 AutomationAction.STOP_RECORDING,
+                AutomationAction.START_VIDEO_RECORDING,
+                AutomationAction.STOP_VIDEO_RECORDING,
             ).associateWith { selector },
             speedTargets = mapOf(
                 TimeLapseSpeed.X30 to selector,
