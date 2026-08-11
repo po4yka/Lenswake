@@ -33,12 +33,13 @@ class LenswakeDatabaseMigrationTest {
 
         val migrated = migrationHelper.runMigrationsAndValidate(
             DATABASE_NAME,
-            5,
+            6,
             true,
             LenswakeDatabase.MIGRATION_1_2,
             LenswakeDatabase.MIGRATION_2_3,
             LenswakeDatabase.MIGRATION_3_4,
             LenswakeDatabase.MIGRATION_4_5,
+            LenswakeDatabase.MIGRATION_5_6,
         )
         migrated.query(
             "SELECT id FROM automation_profiles WHERE id = 'profile-migration'",
@@ -55,6 +56,7 @@ class LenswakeDatabaseMigrationTest {
                 LenswakeDatabase.MIGRATION_2_3,
                 LenswakeDatabase.MIGRATION_3_4,
                 LenswakeDatabase.MIGRATION_4_5,
+                LenswakeDatabase.MIGRATION_5_6,
             )
             .build()
         val (rawProfile, schedule) = runBlocking {
@@ -130,7 +132,11 @@ class LenswakeDatabaseMigrationTest {
 
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.databaseBuilder(context, LenswakeDatabase::class.java, DATABASE_NAME)
-            .addMigrations(LenswakeDatabase.MIGRATION_3_4, LenswakeDatabase.MIGRATION_4_5)
+            .addMigrations(
+                LenswakeDatabase.MIGRATION_3_4,
+                LenswakeDatabase.MIGRATION_4_5,
+                LenswakeDatabase.MIGRATION_5_6,
+            )
             .build()
         val (profile, schemaOneProfile) = runBlocking {
             val repository = RoomAutomationProfileRepository(database)
@@ -198,6 +204,46 @@ class LenswakeDatabaseMigrationTest {
         ).use { cursor ->
             assertEquals(true, cursor.moveToFirst())
             assertEquals(0, cursor.getInt(0))
+        }
+        migrated.close()
+    }
+
+    @Test
+    fun migratesVersionFiveWithNullableRehearsalVerificationReceipt() {
+        migrationHelper.createDatabase(DATABASE_NAME, 5).apply {
+            execSQL(
+                """
+                INSERT INTO execution_sessions (
+                    id, execution_key, kind, profile_id, capture_type,
+                    time_lapse_speed, lens_selection,
+                    expected_start_at_epoch_ms, expected_stop_at_epoch_ms,
+                    status, revision, created_at_epoch_ms, updated_at_epoch_ms
+                ) VALUES (
+                    'execution-rehearsal-migration', 'rehearsal/receipt-migration', 'REHEARSAL',
+                    'profile-migration', 'TIME_LAPSE', 'X120', 'REAR_MAIN',
+                    1000, 2000, 'COMPLETED', 3, 500, 1500
+                )
+                """.trimIndent(),
+            )
+            close()
+        }
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            DATABASE_NAME,
+            6,
+            true,
+            LenswakeDatabase.MIGRATION_5_6,
+        )
+        migrated.query(
+            """
+            SELECT status, rehearsal_verified_at_epoch_ms
+            FROM execution_sessions
+            WHERE id = 'execution-rehearsal-migration'
+            """.trimIndent(),
+        ).use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals("COMPLETED", cursor.getString(0))
+            assertEquals(true, cursor.isNull(1))
         }
         migrated.close()
     }

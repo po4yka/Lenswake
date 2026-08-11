@@ -24,7 +24,7 @@ import dev.po4yka.lenswake.data.internal.mapping.ProfileJsonMigration
         ExecutionEventEntity::class,
         EnvironmentSnapshotEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class LenswakeDatabase : RoomDatabase() {
@@ -154,12 +154,25 @@ abstract class LenswakeDatabase : RoomDatabase() {
             )
         }
 
+        val MIGRATION_5_6: Migration = Migration(5, 6) { database ->
+            database.execSQL(
+                "ALTER TABLE `execution_sessions` " +
+                    "ADD COLUMN `rehearsal_verified_at_epoch_ms` INTEGER DEFAULT NULL",
+            )
+        }
+
         fun create(context: Context): LenswakeDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
                 LenswakeDatabase::class.java,
                 DATABASE_NAME,
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+            ).addMigrations(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+            )
                 .build()
     }
 }

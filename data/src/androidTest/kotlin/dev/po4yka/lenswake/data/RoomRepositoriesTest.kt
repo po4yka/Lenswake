@@ -525,6 +525,7 @@ class RoomRepositoriesTest {
 
     @Test
     fun executionSessionRoundTripsMediaSaveProof() = runBlocking {
+        val rehearsalVerifiedAt = Instant.ofEpochMilli(18_600)
         val session = rehearsalSession(
             id = "media-save-round-trip",
             status = SessionStatus.COMPLETED,
@@ -535,11 +536,13 @@ class RoomRepositoriesTest {
             mediaStoreVersion = "version-1",
             mediaSavedVerifiedAt = Instant.ofEpochMilli(18_500),
             savedMediaGeneration = 42,
+            rehearsalVerifiedAt = rehearsalVerifiedAt,
         )
 
         insertExecutionFixture(session)
 
         assertEquals(session, executions.get(session.id))
+        assertEquals(rehearsalVerifiedAt, executions.get(session.id)?.rehearsalVerifiedAt)
     }
 
     @Test
@@ -853,6 +856,7 @@ class RoomRepositoriesTest {
         profileId: ProfileId = ProfileId("profile-1"),
         recordActionAt: Instant? = null,
         recordingVerifiedAt: Instant? = null,
+        rehearsalVerifiedAt: Instant? = null,
         mediaBaselineGeneration: Long? = null,
         mediaStoreVersion: String? = null,
         mediaSavedVerifiedAt: Instant? = null,
@@ -873,6 +877,7 @@ class RoomRepositoriesTest {
         status = status,
         recordActionAt = recordActionAt,
         recordingVerifiedAt = recordingVerifiedAt,
+        rehearsalVerifiedAt = rehearsalVerifiedAt,
         mediaBaselineGeneration = mediaBaselineGeneration,
         mediaStoreVersion = mediaStoreVersion,
         mediaSavedVerifiedAt = mediaSavedVerifiedAt,

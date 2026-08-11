@@ -128,6 +128,8 @@ internal data class ExecutionSessionEntity(
     val recordActionAtEpochMs: Long?,
     @ColumnInfo(name = "recording_verified_at_epoch_ms")
     val recordingVerifiedAtEpochMs: Long?,
+    @ColumnInfo(name = "rehearsal_verified_at_epoch_ms")
+    val rehearsalVerifiedAtEpochMs: Long?,
     @ColumnInfo(name = "media_baseline_generation")
     val mediaBaselineGeneration: Long?,
     @ColumnInfo(name = "media_store_version")
