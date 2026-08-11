@@ -324,13 +324,14 @@ private fun ScheduleEditor(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+            val activationLabel = stringResource(R.string.schedule_activate_label)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.schedule_activate_label), style = MaterialTheme.typography.titleSmall)
+                    Text(activationLabel, style = MaterialTheme.typography.titleSmall)
                     Text(
                         text = if (form.enabled) {
                             stringResource(R.string.schedule_activate_detail)
@@ -342,6 +343,7 @@ private fun ScheduleEditor(
                     )
                 }
                 Switch(
+                    modifier = Modifier.semantics { contentDescription = activationLabel },
                     checked = form.enabled,
                     onCheckedChange = { onUpdateForm(form.copy(enabled = it)) },
                     enabled = !busy,

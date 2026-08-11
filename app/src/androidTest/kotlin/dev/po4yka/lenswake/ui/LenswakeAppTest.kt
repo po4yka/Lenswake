@@ -426,6 +426,7 @@ class LenswakeAppTest {
             onSubmitSchedule = { submitRequests += 1 },
         )
 
+        composeRule.onNodeWithContentDescription("Activate schedule").performScrollTo().assertExists()
         composeRule.onNodeWithText("Save schedule").performScrollTo().assertIsEnabled().performClick()
         composeRule.runOnIdle { assertEquals(1, submitRequests) }
         composeRule.onNodeWithText("120×", substring = true).assertExists()
