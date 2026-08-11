@@ -17,7 +17,6 @@ import dev.po4yka.lenswake.core.LenswakeClock
 import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.privileged.PrivilegedBridge
 import dev.po4yka.lenswake.privileged.PrivilegedResult
-import java.util.concurrent.CancellationException
 
 /** Android implementation that persists operational facts only, never Accessibility node data. */
 class AndroidEnvironmentSnapshotCollector(
@@ -35,61 +34,58 @@ class AndroidEnvironmentSnapshotCollector(
     override suspend fun collect(
         snapshotId: EnvironmentSnapshotId,
         sessionId: SessionId,
-    ): Result<EnvironmentSnapshot> = try {
+    ): Result<EnvironmentSnapshot> = runSuspendCatchingPreservingCancellation {
         val cameraEnvironment = when (val result = cameraEnvironmentProbe.inspect()) {
             is PortResult.Observed -> result.value
             is PortResult.Unavailable -> error(result.failure.message)
         }
-        Result.success(
-            EnvironmentSnapshot(
-                id = snapshotId,
-                sessionId = sessionId,
-                capturedAt = clock.now(),
-                lenswakeVersion = BuildConfig.VERSION_NAME,
-                cameraEnvironment = cameraEnvironment,
-                accessibilityStatus = accessibilityStatus(),
-                privilegedBridgeStatus = privilegedStatus(),
-                screenInteractive = powerManager.isInteractive,
-                keyguardLocked = keyguardManager.isKeyguardLocked,
-                batteryPercent = batteryPercent(),
-                charging = runCatching { batteryManager.isCharging }.getOrNull(),
-                availableStorageBytes = runCatching {
-                    storageManager.getAllocatableBytes(StorageManager.UUID_DEFAULT)
-                }
-                    .getOrNull()
-                    ?.takeIf { it >= 0 },
-            ),
+        EnvironmentSnapshot(
+            id = snapshotId,
+            sessionId = sessionId,
+            capturedAt = clock.now(),
+            lenswakeVersion = BuildConfig.VERSION_NAME,
+            cameraEnvironment = cameraEnvironment,
+            accessibilityStatus = accessibilityStatus(),
+            privilegedBridgeStatus = privilegedStatus(),
+            screenInteractive = powerManager.isInteractive,
+            keyguardLocked = keyguardManager.isKeyguardLocked,
+            batteryPercent = batteryPercent(),
+            charging = runCatching { batteryManager.isCharging }.getOrNull(),
+            availableStorageBytes = runCatching {
+                storageManager.getAllocatableBytes(StorageManager.UUID_DEFAULT)
+            }
+                .getOrNull()
+                ?.takeIf { it >= 0 },
         )
-    } catch (error: Exception) {
-        if (error is CancellationException) throw error
-        Result.failure(error)
     }
 
-    private suspend fun accessibilityStatus(): EnvironmentCapabilityStatus = try {
-        when (PixelCameraAccessibilityRuntime.snapshot()) {
-            AccessibilitySnapshotResult.ServiceDisconnected -> EnvironmentCapabilityStatus.UNAVAILABLE
-            AccessibilitySnapshotResult.RefreshFailed -> EnvironmentCapabilityStatus.UNKNOWN
-            is AccessibilitySnapshotResult.Available,
-            AccessibilitySnapshotResult.NoActiveWindow,
-            AccessibilitySnapshotResult.PixelCameraNotForeground,
-            -> EnvironmentCapabilityStatus.AVAILABLE
-        }
-    } catch (error: Exception) {
-        if (error is CancellationException) throw error
-        EnvironmentCapabilityStatus.UNKNOWN
-    }
+    private suspend fun accessibilityStatus(): EnvironmentCapabilityStatus =
+        runSuspendCatchingPreservingCancellation {
+            when (PixelCameraAccessibilityRuntime.snapshot()) {
+                AccessibilitySnapshotResult.ServiceDisconnected ->
+                    EnvironmentCapabilityStatus.UNAVAILABLE
+                AccessibilitySnapshotResult.RefreshFailed -> EnvironmentCapabilityStatus.UNKNOWN
+                is AccessibilitySnapshotResult.Available,
+                AccessibilitySnapshotResult.NoActiveWindow,
+                AccessibilitySnapshotResult.PixelCameraNotForeground,
+                -> EnvironmentCapabilityStatus.AVAILABLE
+            }
+        }.getOrDefault(EnvironmentCapabilityStatus.UNKNOWN)
 
-    private suspend fun privilegedStatus(): EnvironmentCapabilityStatus = try {
-        when (privilegedBridge.availability()) {
-            PrivilegedResult.Dispatched -> EnvironmentCapabilityStatus.AVAILABLE
-            is PrivilegedResult.Unavailable -> EnvironmentCapabilityStatus.UNAVAILABLE
-        }
-    } catch (error: Exception) {
-        if (error is CancellationException) throw error
-        EnvironmentCapabilityStatus.UNKNOWN
-    }
+    private suspend fun privilegedStatus(): EnvironmentCapabilityStatus =
+        runSuspendCatchingPreservingCancellation {
+            when (privilegedBridge.availability()) {
+                PrivilegedResult.Dispatched -> EnvironmentCapabilityStatus.AVAILABLE
+                is PrivilegedResult.Unavailable -> EnvironmentCapabilityStatus.UNAVAILABLE
+            }
+        }.getOrDefault(EnvironmentCapabilityStatus.UNKNOWN)
 
     private fun batteryPercent(): Int? = runCatching {
         batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-    }.getOrNull()?.takeIf { it in 0..100 }
+    }.getOrNull()?.takeIf { it in MINIMUM_PERCENT..MAXIMUM_PERCENT }
+
+    private companion object {
+        const val MINIMUM_PERCENT = 0
+        const val MAXIMUM_PERCENT = 100
+    }
 }
