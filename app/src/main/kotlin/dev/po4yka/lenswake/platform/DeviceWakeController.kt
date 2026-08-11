@@ -9,6 +9,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.PowerManager
+import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.alarm.AlarmWakeGatewayContract
 import kotlinx.coroutines.delay
 
@@ -68,7 +69,7 @@ class AndroidDeviceWakeController(context: Context) : DeviceWakeController {
             )
 
             else -> {
-                DeviceWakeNotificationContract.ensureChannel(notificationManager)
+                DeviceWakeNotificationContract.ensureChannel(applicationContext, notificationManager)
                 val channel = notificationManager.getNotificationChannel(
                     DeviceWakeNotificationContract.CHANNEL_ID,
                 )
@@ -156,14 +157,17 @@ internal object DeviceWakeNotificationContract {
     const val MAX_NOTIFICATION_LIFETIME_MILLIS = 10_000L
     private const val PENDING_INTENT_REQUEST_CODE = 30_001
 
-    fun ensureChannel(notificationManager: NotificationManager) {
+    fun ensureChannel(
+        context: Context,
+        notificationManager: NotificationManager,
+    ) {
         notificationManager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
-                "Scheduled camera wake",
+                context.getString(R.string.wake_channel_name),
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply {
-                description = "Turns on the locked display for scheduled Pixel Camera automation"
+                description = context.getString(R.string.wake_channel_description)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
                 setSound(null, null)
                 enableVibration(false)
@@ -186,8 +190,8 @@ internal object DeviceWakeNotificationContract {
         )
         return Notification.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-            .setContentTitle("Lenswake scheduled camera wake")
-            .setContentText("Preparing the locked device for Pixel Camera automation")
+            .setContentTitle(context.getString(R.string.wake_notification_title))
+            .setContentText(context.getString(R.string.wake_notification_preparing))
             .setCategory(Notification.CATEGORY_ALARM)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOngoing(true)

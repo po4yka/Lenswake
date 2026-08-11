@@ -8,12 +8,14 @@ import android.content.pm.PackageManager
 import android.os.BatteryManager
 import android.os.StatFs
 import android.provider.Settings
+import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.accessibility.PixelCameraAccessibilityRuntime
 import dev.po4yka.lenswake.accessibility.PixelCameraAccessibilityService
 import dev.po4yka.lenswake.application.RuntimeCapabilityObservation
 import dev.po4yka.lenswake.application.RuntimePreflightEvaluator
 import dev.po4yka.lenswake.application.RuntimePreflightObservation
 import dev.po4yka.lenswake.application.RuntimePreflightProbe
+import dev.po4yka.lenswake.application.localizedText
 import dev.po4yka.lenswake.automation.PortResult
 import dev.po4yka.lenswake.core.ExecutionRepository
 import dev.po4yka.lenswake.core.PixelCameraProfile
@@ -24,6 +26,7 @@ import dev.po4yka.lenswake.platform.PlatformCapability
 import dev.po4yka.lenswake.platform.AndroidDeviceWakeController
 import dev.po4yka.lenswake.platform.DeviceWakeController
 import dev.po4yka.lenswake.platform.SecurePixelCameraResolver
+import dev.po4yka.lenswake.ui.AndroidUiStringProvider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -34,7 +37,9 @@ class AndroidRuntimePreflightProbe(
     private val executionRepository: ExecutionRepository,
     private val deviceWakeController: DeviceWakeController = AndroidDeviceWakeController(context),
     private val secureCameraResolver: SecurePixelCameraResolver = SecurePixelCameraResolver(context),
-    private val evaluator: RuntimePreflightEvaluator = RuntimePreflightEvaluator(),
+    private val evaluator: RuntimePreflightEvaluator = RuntimePreflightEvaluator(
+        AndroidUiStringProvider(context),
+    ),
 ) : RuntimePreflightProbe {
     private val applicationContext = context.applicationContext
     private val alarmManager = applicationContext.getSystemService(AlarmManager::class.java)
@@ -77,10 +82,16 @@ class AndroidRuntimePreflightProbe(
                 pixelCameraInstalled = RuntimeCapabilityObservation(
                     status = cameraStatus,
                     message = currentEnvironment?.let {
-                        "Pixel Camera ${it.cameraVersionCode} is installed on ${it.deviceModel}."
-                    } ?: cameraFailure?.message ?: environmentInspection.exceptionOrNull()?.let {
-                        "Pixel Camera availability could not be checked: ${it.javaClass.simpleName}."
-                    } ?: "Pixel Camera availability could not be determined.",
+                        localizedText(
+                            R.string.preflight_pixel_camera_installed,
+                            it.cameraVersionCode,
+                            it.deviceModel,
+                        )
+                    } ?: if (cameraFailure != null || environmentInspection.isFailure) {
+                        localizedText(R.string.preflight_pixel_camera_check_failed)
+                    } else {
+                        localizedText(R.string.preflight_pixel_camera_unknown)
+                    },
                 ),
                 cameraEnvironment = currentEnvironment,
                 secureCameraResolves = secureCameraObservation(),
@@ -99,8 +110,8 @@ class AndroidRuntimePreflightProbe(
                 ),
                 storage = storageObservation(),
                 successfulRehearsals = rehearsalEvidence.getOrDefault(emptyMap()),
-                rehearsalEvidenceFailure = rehearsalEvidence.exceptionOrNull()?.let { error ->
-                    "Successful rehearsal evidence could not be loaded: ${error.javaClass.simpleName}."
+                rehearsalEvidenceFailure = rehearsalEvidence.exceptionOrNull()?.let {
+                    localizedText(R.string.preflight_rehearsal_evidence_load_failed)
                 },
             ),
             profiles = profiles,
@@ -111,17 +122,16 @@ class AndroidRuntimePreflightProbe(
         val available = alarmManager.canScheduleExactAlarms()
         RuntimeCapabilityObservation(
             status = if (available) PreflightStatus.PASSED else PreflightStatus.FAILED,
-            message = if (available) {
-                "Android currently allows Lenswake to schedule exact alarms."
-            } else {
-                "Exact-alarm access is not granted in system settings."
-            },
+            message = localizedText(
+                if (available) R.string.preflight_exact_alarms_available
+                else R.string.preflight_exact_alarms_unavailable,
+            ),
             remediation = if (available) null else SetupRemediationAction.OPEN_EXACT_ALARM_SETTINGS,
         )
-    }.getOrElse { error ->
+    }.getOrElse {
         RuntimeCapabilityObservation(
             status = PreflightStatus.UNKNOWN,
-            message = "Exact-alarm access could not be checked: ${error.javaClass.simpleName}.",
+            message = localizedText(R.string.preflight_exact_alarms_check_failed),
         )
     }
 
@@ -133,25 +143,25 @@ class AndroidRuntimePreflightProbe(
         when {
             !permissionGranted -> RuntimeCapabilityObservation(
                 status = PreflightStatus.FAILED,
-                message = "Lenswake does not have notification permission.",
+                message = localizedText(R.string.preflight_notifications_permission_missing),
                 remediation = SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION,
             )
 
             !notificationsEnabled -> RuntimeCapabilityObservation(
                 status = PreflightStatus.FAILED,
-                message = "Notifications are disabled for Lenswake in system settings.",
+                message = localizedText(R.string.preflight_notifications_disabled),
                 remediation = SetupRemediationAction.OPEN_NOTIFICATION_SETTINGS,
             )
 
             else -> RuntimeCapabilityObservation(
                 status = PreflightStatus.PASSED,
-                message = "Notification permission is granted and notifications are enabled for Lenswake.",
+                message = localizedText(R.string.preflight_notifications_available),
             )
         }
-    }.getOrElse { error ->
+    }.getOrElse {
         RuntimeCapabilityObservation(
             status = PreflightStatus.UNKNOWN,
-            message = "Notification capability could not be checked: ${error.javaClass.simpleName}.",
+            message = localizedText(R.string.preflight_notifications_check_failed),
         )
     }
 
@@ -165,19 +175,19 @@ class AndroidRuntimePreflightProbe(
             ) == PackageManager.PERMISSION_GRANTED
         RuntimeCapabilityObservation(
             status = if (fullAccess) PreflightStatus.PASSED else PreflightStatus.FAILED,
-            message = if (fullAccess) {
-                "Lenswake can read saved Pixel Camera videos for recording verification."
-            } else if (partialAccess) {
-                "Selected-video access is insufficient for unattended verification of future Pixel Camera recordings."
-            } else {
-                "Lenswake needs full video-library access to verify saved Pixel Camera recordings."
-            },
+            message = localizedText(
+                when {
+                    fullAccess -> R.string.preflight_media_video_access_available
+                    partialAccess -> R.string.preflight_media_video_access_partial
+                    else -> R.string.preflight_media_video_access_unavailable
+                },
+            ),
             remediation = if (fullAccess) null else SetupRemediationAction.REQUEST_MEDIA_VIDEO_PERMISSION,
         )
-    }.getOrElse { error ->
+    }.getOrElse {
         RuntimeCapabilityObservation(
             status = PreflightStatus.UNKNOWN,
-            message = "Saved-video access could not be checked: ${error.javaClass.simpleName}.",
+            message = localizedText(R.string.preflight_media_video_access_check_failed),
         )
     }
 
@@ -185,17 +195,16 @@ class AndroidRuntimePreflightProbe(
         val available = notificationManager.canUseFullScreenIntent()
         RuntimeCapabilityObservation(
             status = if (available) PreflightStatus.PASSED else PreflightStatus.FAILED,
-            message = if (available) {
-                "Lenswake may use full-screen intents for alarm wake handling."
-            } else {
-                "Full-screen intent access is not granted in system settings."
-            },
+            message = localizedText(
+                if (available) R.string.preflight_full_screen_intent_available
+                else R.string.preflight_full_screen_intent_unavailable,
+            ),
             remediation = if (available) null else SetupRemediationAction.OPEN_FULL_SCREEN_INTENT_SETTINGS,
         )
-    }.getOrElse { error ->
+    }.getOrElse {
         RuntimeCapabilityObservation(
             status = PreflightStatus.UNKNOWN,
-            message = "Full-screen intent capability could not be checked: ${error.javaClass.simpleName}.",
+            message = localizedText(R.string.preflight_full_screen_intent_check_failed),
         )
     }
 
@@ -206,19 +215,22 @@ class AndroidRuntimePreflightProbe(
                     when (result) {
                         is PlatformCapability.Available -> RuntimeCapabilityObservation(
                             status = PreflightStatus.PASSED,
-                            message = "Secure camera resolves to ${result.value.component.flattenToShortString()}.",
+                            message = localizedText(
+                                R.string.preflight_secure_camera_available,
+                                result.value.component.flattenToShortString(),
+                            ),
                         )
 
                         is PlatformCapability.Unavailable -> RuntimeCapabilityObservation(
                             status = PreflightStatus.FAILED,
-                            message = result.detail,
+                            message = localizedText(R.string.preflight_secure_camera_unavailable),
                         )
                     }
                 },
-                onFailure = { error ->
+                onFailure = {
                     RuntimeCapabilityObservation(
                         status = PreflightStatus.UNKNOWN,
-                        message = "Secure camera resolution could not be checked: ${error.javaClass.simpleName}.",
+                        message = localizedText(R.string.preflight_secure_camera_check_failed),
                     )
                 },
             )
@@ -230,19 +242,19 @@ class AndroidRuntimePreflightProbe(
                     when (result) {
                         is PlatformCapability.Available -> RuntimeCapabilityObservation(
                             status = PreflightStatus.PASSED,
-                            message = "The full-screen alarm display-wake path is available.",
+                            message = localizedText(R.string.preflight_device_wake_available),
                         )
 
                         is PlatformCapability.Unavailable -> RuntimeCapabilityObservation(
                             status = PreflightStatus.FAILED,
-                            message = result.detail,
+                            message = localizedText(R.string.preflight_device_wake_unavailable),
                         )
                     }
                 },
-                onFailure = { error ->
+                onFailure = {
                     RuntimeCapabilityObservation(
                         status = PreflightStatus.UNKNOWN,
-                        message = "Display-wake capability could not be checked: ${error.javaClass.simpleName}.",
+                        message = localizedText(R.string.preflight_device_wake_check_failed),
                     )
                 },
             )
@@ -260,19 +272,18 @@ class AndroidRuntimePreflightProbe(
                 .split(':')
                 .mapNotNull(ComponentName::unflattenFromString)
                 .any { it == expectedComponent }
-        }.getOrElse { error ->
+        }.getOrElse {
             return RuntimeCapabilityObservation(
                 status = PreflightStatus.UNKNOWN,
-                message = "Accessibility status could not be checked: ${error.javaClass.simpleName}.",
+                message = localizedText(R.string.preflight_accessibility_check_failed),
             )
         }
         return RuntimeCapabilityObservation(
             status = if (enabled) PreflightStatus.PASSED else PreflightStatus.FAILED,
-            message = if (enabled) {
-                "Lenswake Accessibility Service is enabled in system settings."
-            } else {
-                "Lenswake Accessibility Service is not enabled in system settings."
-            },
+            message = localizedText(
+                if (enabled) R.string.preflight_accessibility_enabled
+                else R.string.preflight_accessibility_disabled,
+            ),
             remediation = if (enabled) null else SetupRemediationAction.OPEN_ACCESSIBILITY_SETTINGS,
         )
     }
@@ -281,11 +292,10 @@ class AndroidRuntimePreflightProbe(
         val connected = PixelCameraAccessibilityRuntime.isConnected
         return RuntimeCapabilityObservation(
             status = if (connected) PreflightStatus.PASSED else PreflightStatus.FAILED,
-            message = if (connected) {
-                "Lenswake Accessibility Service is connected to this process."
-            } else {
-                "Lenswake Accessibility Service is not connected to this process."
-            },
+            message = localizedText(
+                if (connected) R.string.preflight_accessibility_connected
+                else R.string.preflight_accessibility_disconnected,
+            ),
             remediation = if (connected) null else SetupRemediationAction.OPEN_ACCESSIBILITY_SETTINGS,
         )
     }
@@ -312,7 +322,7 @@ internal fun batteryObservation(percent: Int?): RuntimeCapabilityObservation {
     val validPercent = percent?.takeIf { it in 0..100 }
         ?: return RuntimeCapabilityObservation(
             status = PreflightStatus.UNKNOWN,
-            message = "Battery level could not be determined.",
+            message = localizedText(R.string.preflight_battery_unknown),
         )
     return RuntimeCapabilityObservation(
         status = if (validPercent >= MINIMUM_BATTERY_PERCENT) {
@@ -320,11 +330,12 @@ internal fun batteryObservation(percent: Int?): RuntimeCapabilityObservation {
         } else {
             PreflightStatus.FAILED
         },
-        message = if (validPercent >= MINIMUM_BATTERY_PERCENT) {
-            "Battery is at $validPercent%, meeting the $MINIMUM_BATTERY_PERCENT% minimum."
-        } else {
-            "Battery is at $validPercent%, below the $MINIMUM_BATTERY_PERCENT% minimum."
-        },
+        message = localizedText(
+            if (validPercent >= MINIMUM_BATTERY_PERCENT) R.string.preflight_battery_sufficient
+            else R.string.preflight_battery_low,
+            validPercent,
+            MINIMUM_BATTERY_PERCENT,
+        ),
     )
 }
 
@@ -333,19 +344,19 @@ internal fun chargingObservation(status: Int?): RuntimeCapabilityObservation = w
     BatteryManager.BATTERY_STATUS_FULL,
     -> RuntimeCapabilityObservation(
         status = PreflightStatus.PASSED,
-        message = "The device is charging.",
+        message = localizedText(R.string.preflight_charging),
     )
 
     BatteryManager.BATTERY_STATUS_DISCHARGING,
     BatteryManager.BATTERY_STATUS_NOT_CHARGING,
     -> RuntimeCapabilityObservation(
         status = PreflightStatus.FAILED,
-        message = "The device is not charging; external power is recommended for unattended sessions.",
+        message = localizedText(R.string.preflight_not_charging),
     )
 
     else -> RuntimeCapabilityObservation(
         status = PreflightStatus.UNKNOWN,
-        message = "Charging state could not be determined.",
+        message = localizedText(R.string.preflight_charging_unknown),
     )
 }
 
@@ -355,19 +366,17 @@ internal fun storageObservation(
     if (availableBytes == null || availableBytes < 0L) {
         return RuntimeCapabilityObservation(
             status = PreflightStatus.UNKNOWN,
-            message = "Available primary storage could not be determined.",
+            message = localizedText(R.string.preflight_storage_unknown),
         )
     }
     val sufficient = availableBytes >= MINIMUM_AVAILABLE_STORAGE_BYTES
     return RuntimeCapabilityObservation(
         status = if (sufficient) PreflightStatus.PASSED else PreflightStatus.FAILED,
-        message = if (sufficient) {
-            "Primary storage has ${availableBytes.toReadableMiB()} MiB available, meeting the " +
-                "${MINIMUM_AVAILABLE_STORAGE_BYTES.toReadableMiB()} MiB safety floor."
-        } else {
-            "Primary storage has ${availableBytes.toReadableMiB()} MiB available, below the " +
-                "${MINIMUM_AVAILABLE_STORAGE_BYTES.toReadableMiB()} MiB safety floor."
-        },
+        message = localizedText(
+            if (sufficient) R.string.preflight_storage_sufficient else R.string.preflight_storage_low,
+            availableBytes.toReadableMiB(),
+            MINIMUM_AVAILABLE_STORAGE_BYTES.toReadableMiB(),
+        ),
     )
 }
 

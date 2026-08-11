@@ -1,5 +1,6 @@
 package dev.po4yka.lenswake.application
 
+import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
@@ -26,11 +27,11 @@ fun interface RuntimePreflightProbe {
 
 data class RuntimeCapabilityObservation(
     val status: PreflightStatus,
-    val message: String,
+    val message: LocalizedText,
     val remediation: SetupRemediationAction? = null,
 ) {
     init {
-        require(message.isNotBlank()) { "Runtime capability message must not be blank" }
+        require(message.resourceId != 0) { "Runtime capability message resource must be valid" }
     }
 }
 
@@ -49,11 +50,13 @@ data class RuntimePreflightObservation(
     val charging: RuntimeCapabilityObservation,
     val storage: RuntimeCapabilityObservation,
     val successfulRehearsals: Map<ProfileId, ExecutionSession> = emptyMap(),
-    val rehearsalEvidenceFailure: String? = null,
+    val rehearsalEvidenceFailure: LocalizedText? = null,
 )
 
 /** Pure policy that converts observed platform facts and persisted profiles into readiness. */
-class RuntimePreflightEvaluator {
+class RuntimePreflightEvaluator(
+    private val strings: LocalizedTextResolver,
+) {
     fun evaluate(
         observation: RuntimePreflightObservation,
         profiles: List<PixelCameraProfile>,
@@ -84,7 +87,7 @@ class RuntimePreflightEvaluator {
                 type = PreflightCheckType.PRIVILEGED_FALLBACK,
                 severity = PreflightSeverity.WARNING,
                 status = PreflightStatus.UNKNOWN,
-                message = "Optional privileged fallback has not been configured or verified.",
+                message = strings.get(R.string.preflight_privileged_fallback_unchecked),
             ),
         ),
     )
@@ -94,7 +97,7 @@ class RuntimePreflightEvaluator {
             type = type,
             severity = PreflightSeverity.BLOCKING,
             status = status,
-            message = message,
+            message = message.resolve(strings),
             remediation = remediation,
         )
 
@@ -110,7 +113,7 @@ class RuntimePreflightEvaluator {
             knownFailureSeverity
         },
         status = status,
-        message = message,
+        message = message.resolve(strings),
         remediation = remediation,
     )
 
@@ -120,9 +123,13 @@ class RuntimePreflightEvaluator {
             severity = PreflightSeverity.BLOCKING,
             status = if (profiles.isNotEmpty()) PreflightStatus.PASSED else PreflightStatus.FAILED,
             message = if (profiles.isEmpty()) {
-                "No Pixel Camera profile is persisted."
+                strings.get(R.string.preflight_profile_none)
             } else {
-                "${profiles.size} Pixel Camera profile(s) are persisted."
+                strings.quantity(
+                    R.plurals.preflight_profile_count,
+                    profiles.size,
+                    profiles.size,
+                )
             },
         )
 
@@ -135,7 +142,7 @@ class RuntimePreflightEvaluator {
                 type = PreflightCheckType.PROFILE_COMPATIBILITY,
                 severity = PreflightSeverity.BLOCKING,
                 status = PreflightStatus.UNKNOWN,
-                message = "Profile compatibility cannot be checked without the current camera environment.",
+                message = strings.get(R.string.preflight_profile_environment_unknown),
             )
         }
         val best = profiles
@@ -151,11 +158,15 @@ class RuntimePreflightEvaluator {
                 PreflightStatus.FAILED
             },
             message = when (best) {
-                ProfileCompatibility.VERIFIED -> "A profile is verified for the current environment."
-                ProfileCompatibility.PROBABLY_COMPATIBLE -> "The closest profile requires a current-device rehearsal."
-                ProfileCompatibility.NEEDS_REHEARSAL -> "The Pixel Camera environment changed; rehearsal is required."
-                ProfileCompatibility.INCOMPATIBLE -> "Available profiles are incompatible with the current environment."
-                null -> "No compatible profile is available for the current environment."
+                ProfileCompatibility.VERIFIED -> strings.get(R.string.preflight_profile_verified)
+                ProfileCompatibility.PROBABLY_COMPATIBLE -> strings.get(
+                    R.string.preflight_profile_probably_compatible,
+                )
+                ProfileCompatibility.NEEDS_REHEARSAL -> strings.get(
+                    R.string.preflight_profile_needs_rehearsal,
+                )
+                ProfileCompatibility.INCOMPATIBLE -> strings.get(R.string.preflight_profile_incompatible)
+                null -> strings.get(R.string.preflight_profile_unavailable)
             },
         )
     }
@@ -169,14 +180,14 @@ class RuntimePreflightEvaluator {
                 type = PreflightCheckType.REHEARSAL_CURRENT,
                 severity = PreflightSeverity.BLOCKING,
                 status = PreflightStatus.UNKNOWN,
-                message = "Rehearsal evidence cannot be checked without the current camera environment.",
+                message = strings.get(R.string.preflight_rehearsal_environment_unknown),
             )
         observation.rehearsalEvidenceFailure?.let { failure ->
             return PreflightCheck(
                 type = PreflightCheckType.REHEARSAL_CURRENT,
                 severity = PreflightSeverity.BLOCKING,
                 status = PreflightStatus.UNKNOWN,
-                message = failure,
+                message = failure.resolve(strings),
             )
         }
 
@@ -203,11 +214,11 @@ class RuntimePreflightEvaluator {
             severity = PreflightSeverity.BLOCKING,
             status = if (qualifying != null) PreflightStatus.PASSED else PreflightStatus.FAILED,
             message = if (qualifying != null) {
-                "A successful start-and-stop rehearsal with saved media verifies the current Pixel Camera profile."
+                strings.get(R.string.preflight_rehearsal_verified)
             } else if (exactVerifiedProfiles.isEmpty()) {
-                "No exactly matching verified profile exists for the current Pixel Camera environment."
+                strings.get(R.string.preflight_rehearsal_profile_missing)
             } else {
-                "The current verified profile is not linked to its latest successful rehearsal with saved media."
+                strings.get(R.string.preflight_rehearsal_unlinked)
             },
         )
     }

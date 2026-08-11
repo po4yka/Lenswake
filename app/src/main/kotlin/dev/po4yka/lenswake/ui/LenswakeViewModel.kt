@@ -12,11 +12,14 @@ import dev.po4yka.lenswake.application.AlarmTransportIncidentSource
 import dev.po4yka.lenswake.application.EmptyAlarmTransportIncidentSource
 import dev.po4yka.lenswake.application.RehearsalCoordinator
 import dev.po4yka.lenswake.application.RehearsalResult
+import dev.po4yka.lenswake.application.RehearsalResultCode
 import dev.po4yka.lenswake.application.RuntimePreflightProbe
 import dev.po4yka.lenswake.application.ScheduleCommand
 import dev.po4yka.lenswake.application.ScheduleOperation
 import dev.po4yka.lenswake.application.ScheduleWorkflow
+import dev.po4yka.lenswake.application.ScheduleWorkflowFailureCode
 import dev.po4yka.lenswake.application.ScheduleWorkflowResult
+import dev.po4yka.lenswake.alarm.AlarmTransportFailureCode
 import dev.po4yka.lenswake.core.AutomationEvent
 import dev.po4yka.lenswake.core.AutomationProfileRepository
 import dev.po4yka.lenswake.core.CaptureConfiguration
@@ -526,12 +529,16 @@ private fun ScheduleWorkflowResult.toUiState(strings: UiStringProvider): Schedul
     )
 
     is ScheduleWorkflowResult.Rejected -> ScheduleActionUiState.Failed(
-        message = message,
+        message = strings.get(code.messageResource()),
     )
 
     is ScheduleWorkflowResult.Failed -> ScheduleActionUiState.Failed(
-        message = message,
-        rollbackFailures = rollbackFailures,
+        message = strings.get(code.messageResource()),
+        rollbackFailures = if (rollbackFailures.isEmpty()) {
+            emptyList()
+        } else {
+            listOf(strings.get(R.string.schedule_error_rollback_incomplete))
+        },
     )
 }
 
@@ -543,11 +550,11 @@ private fun RehearsalResult.toUiState(strings: UiStringProvider): RehearsalActio
         strings.get(R.string.rehearsal_busy),
     )
     is RehearsalResult.Rejected -> RehearsalActionUiState.Failed(
-        message,
+        strings.get(code.messageResource()),
     )
     is RehearsalResult.SafetyStopPending -> RehearsalActionUiState.SafetyStopPending(
         sessionId = sessionId.value,
-        message = strings.get(R.string.rehearsal_safety_stop_pending, message),
+        message = strings.get(R.string.rehearsal_safety_stop_pending_generic),
     )
 }
 
@@ -571,12 +578,43 @@ private fun InstallKnownPixelCameraProfileResult.toUiState(
     )
 
     is InstallKnownPixelCameraProfileResult.EnvironmentUnavailable -> ProfileInstallUiState.Failed(
-        message = strings.get(R.string.profile_environment_unavailable, failure.message),
+        message = strings.get(R.string.profile_environment_unavailable),
     )
 
     is InstallKnownPixelCameraProfileResult.PersistenceFailure -> ProfileInstallUiState.Failed(
-        message = strings.get(R.string.profile_persistence_failure, detail),
+        message = strings.get(R.string.profile_persistence_failure),
     )
+}
+
+private fun ScheduleWorkflowFailureCode.messageResource(): Int = when (this) {
+    ScheduleWorkflowFailureCode.SCHEDULE_NOT_FOUND -> R.string.schedule_error_not_found
+    ScheduleWorkflowFailureCode.PROFILE_NOT_FOUND -> R.string.schedule_error_profile_not_found
+    ScheduleWorkflowFailureCode.PROFILE_NOT_VERIFIED -> R.string.schedule_error_profile_not_verified
+    ScheduleWorkflowFailureCode.RUNTIME_NOT_READY -> R.string.schedule_error_runtime_not_ready
+    ScheduleWorkflowFailureCode.PREFLIGHT_FAILED -> R.string.schedule_error_preflight_failed
+    ScheduleWorkflowFailureCode.INVALID_SCHEDULE -> R.string.schedule_error_invalid
+    ScheduleWorkflowFailureCode.SCHEDULE_EXECUTION_ACTIVE -> R.string.schedule_error_execution_active
+    ScheduleWorkflowFailureCode.EXECUTION_STATE_UNAVAILABLE -> R.string.schedule_error_execution_unavailable
+    ScheduleWorkflowFailureCode.CANCEL_FAILED -> R.string.schedule_error_cancel_failed
+    ScheduleWorkflowFailureCode.PERSIST_FAILED -> R.string.schedule_error_persist_failed
+    ScheduleWorkflowFailureCode.START_ALARM_FAILED -> R.string.schedule_error_start_alarm_failed
+    ScheduleWorkflowFailureCode.STOP_ALARM_FAILED -> R.string.schedule_error_stop_alarm_failed
+    ScheduleWorkflowFailureCode.DELETE_FAILED -> R.string.schedule_error_delete_failed
+}
+
+private fun RehearsalResultCode.messageResource(): Int = when (this) {
+    RehearsalResultCode.PROFILE_NOT_FOUND -> R.string.rehearsal_error_profile_not_found
+    RehearsalResultCode.ENVIRONMENT_UNAVAILABLE -> R.string.rehearsal_error_environment_unavailable
+    RehearsalResultCode.ENVIRONMENT_MISMATCH -> R.string.rehearsal_error_environment_mismatch
+    RehearsalResultCode.ACTIVE_REHEARSAL_EXISTS -> R.string.rehearsal_error_active
+    RehearsalResultCode.SESSION_PERSISTENCE_FAILED -> R.string.rehearsal_error_session_persistence
+    RehearsalResultCode.SNAPSHOT_CAPTURE_FAILED -> R.string.rehearsal_error_snapshot
+    RehearsalResultCode.BACKSTOP_UNAVAILABLE -> R.string.rehearsal_error_backstop
+    RehearsalResultCode.START_FAILED -> R.string.rehearsal_error_start
+    RehearsalResultCode.STOP_FAILED -> R.string.rehearsal_error_stop
+    RehearsalResultCode.PROMOTION_PROOF_MISSING -> R.string.rehearsal_error_proof_missing
+    RehearsalResultCode.PROFILE_PROMOTION_FAILED -> R.string.rehearsal_error_promotion
+    RehearsalResultCode.INVALID_STOP_TRIGGER -> R.string.rehearsal_error_invalid_stop
 }
 
 internal object LenswakeUiStateMapper {
@@ -622,8 +660,8 @@ internal object LenswakeUiStateMapper {
             .sortedWith(compareBy({ it.environment.deviceModel }, { it.id.value }))
             .map { profileSummary(it, strings) },
         capabilities = preflight.checks.map { capability(it, strings) },
-        diagnosticEvents = events.map(::eventSummary),
-        alarmTransportIncidents = incidents.map(::incidentSummary),
+        diagnosticEvents = events.map { eventSummary(it, strings) },
+        alarmTransportIncidents = incidents.map { incidentSummary(it, strings) },
         profilePersistenceIssues = profileIssues.map { profilePersistenceIssueSummary(it, strings) },
         profileInstall = profileInstall,
         rehearsal = rehearsal.takeUnless {
@@ -868,26 +906,54 @@ internal object LenswakeUiStateMapper {
         )
     }
 
-    private fun eventSummary(event: AutomationEvent): DiagnosticEventUiState {
-        val details = buildList {
-            add(event.state.name)
-            add(event.outcome.name)
-            event.operation?.let { add(it.name) }
-            event.failure?.let { add("${it.code.name}: ${it.message}") }
+    private fun eventSummary(
+        event: AutomationEvent,
+        strings: UiStringProvider,
+    ): DiagnosticEventUiState {
+        val operation = event.operation
+        val failure = event.failure
+        val detail = when {
+            operation != null && failure != null -> strings.get(
+                R.string.diagnostics_event_operation_failure_detail,
+                event.state.name,
+                event.outcome.name,
+                operation.name,
+                failure.code.name,
+            )
+            operation != null -> strings.get(
+                R.string.diagnostics_event_operation_detail,
+                event.state.name,
+                event.outcome.name,
+                operation.name,
+            )
+            failure != null -> strings.get(
+                R.string.diagnostics_event_failure_detail,
+                event.state.name,
+                event.outcome.name,
+                failure.code.name,
+            )
+            else -> strings.get(
+                R.string.diagnostics_event_detail,
+                event.state.name,
+                event.outcome.name,
+            )
         }
         return DiagnosticEventUiState(
             id = event.id.value,
-            title = event.name,
-            detail = details.joinToString(" - "),
+            title = strings.get(R.string.diagnostics_event_title, event.name),
+            detail = detail,
             occurredAt = event.timestamp.atOffset(ZoneOffset.UTC).format(eventTimeFormatter),
         )
     }
 
-    private fun incidentSummary(incident: AlarmTransportIncident): AlarmTransportIncidentUiState =
+    private fun incidentSummary(
+        incident: AlarmTransportIncident,
+        strings: UiStringProvider,
+    ): AlarmTransportIncidentUiState =
         AlarmTransportIncidentUiState(
             id = incident.id,
-            title = incident.title,
-            detail = incident.detail,
+            title = strings.get(incident.titleResource()),
+            detail = strings.get(incident.detailResource()),
             occurredAt = java.time.Instant.ofEpochMilli(incident.recordedAtEpochMillis)
                 .atOffset(ZoneOffset.UTC)
                 .format(eventTimeFormatter),
@@ -896,6 +962,26 @@ internal object LenswakeUiStateMapper {
                 null -> null
             },
         )
+
+    private fun AlarmTransportIncident.titleResource(): Int = when {
+        code == AlarmTransportFailureCode.JOURNAL_ENTRY_CORRUPT -> R.string.alarm_journal_failure_title
+        code in RECOVERY_FAILURE_CODES -> R.string.alarm_recovery_failure_title
+        action == AlarmTransportIncidentAction.OPEN_PIXEL_CAMERA -> R.string.alarm_stop_failure_title
+        else -> R.string.alarm_start_failure_title
+    }
+
+    private fun AlarmTransportIncident.detailResource(): Int = when {
+        code == AlarmTransportFailureCode.JOURNAL_ENTRY_CORRUPT -> R.string.alarm_journal_failure_message
+        code in RECOVERY_FAILURE_CODES -> R.string.alarm_recovery_failure_message
+        action == AlarmTransportIncidentAction.OPEN_PIXEL_CAMERA -> R.string.alarm_stop_failure_message
+        else -> R.string.alarm_start_failure_message
+    }
+
+    private val RECOVERY_FAILURE_CODES = setOf(
+        AlarmTransportFailureCode.RECOVERY_ATTEMPTS_EXHAUSTED,
+        AlarmTransportFailureCode.RECOVERY_REQUEUE_FAILED,
+        AlarmTransportFailureCode.RECOVERY_CAPABILITY_UNAVAILABLE,
+    )
 
     private fun profilePersistenceIssueSummary(
         issue: ProfilePersistenceIssue,

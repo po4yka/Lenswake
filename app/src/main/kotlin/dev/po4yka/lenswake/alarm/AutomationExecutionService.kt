@@ -9,7 +9,9 @@ import android.content.pm.ServiceInfo
 import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
+import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.core.ScheduleId
+import dev.po4yka.lenswake.ui.AndroidUiStringProvider
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -55,6 +57,7 @@ class AutomationExecutionService : Service() {
         val escalator = AlarmTransportEscalator(
             persistence = SharedPreferencesAlarmTransportFailurePersistence(this),
             notifier = AndroidAlarmTransportFailureNotifier(this),
+            strings = AndroidUiStringProvider(this),
         )
         retryCoordinator = AlarmDeliveryRetryCoordinator(
             backend = AndroidAlarmDeliveryRetryBackend(this, journal),
@@ -80,7 +83,7 @@ class AutomationExecutionService : Service() {
         createNotificationChannel()
         startForeground(
             NOTIFICATION_ID,
-            notification("Preparing scheduled Pixel Camera automation"),
+            notification(getString(R.string.automation_notification_preparing)),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED,
         )
     }
@@ -300,10 +303,10 @@ class AutomationExecutionService : Service() {
         notificationManager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
-                "Scheduled camera automation",
+                getString(R.string.automation_channel_name),
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
-                description = "Shows while Lenswake handles an exact recording alarm"
+                description = getString(R.string.automation_channel_description)
                 setShowBadge(false)
             },
         )
@@ -311,7 +314,7 @@ class AutomationExecutionService : Service() {
 
     private fun notification(message: String): Notification = Notification.Builder(this, CHANNEL_ID)
         .setSmallIcon(android.R.drawable.ic_menu_camera)
-        .setContentTitle("Lenswake scheduled automation")
+        .setContentTitle(getString(R.string.automation_notification_title))
         .setContentText(message)
         .setCategory(Notification.CATEGORY_SERVICE)
         .setOnlyAlertOnce(true)

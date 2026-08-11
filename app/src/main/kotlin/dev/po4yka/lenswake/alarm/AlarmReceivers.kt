@@ -9,6 +9,7 @@ import android.content.Intent
 import android.os.PersistableBundle
 import android.os.UserManager
 import android.util.Log
+import dev.po4yka.lenswake.ui.AndroidUiStringProvider
 
 internal fun interface AlarmRecoveryJobScheduler {
     fun schedule(action: String): Result<Unit>
@@ -168,6 +169,7 @@ class AlarmRecoveryReceiver : BroadcastReceiver() {
         val escalator = AlarmTransportEscalator(
             persistence = SharedPreferencesAlarmTransportFailurePersistence(deviceProtectedContext),
             notifier = AndroidAlarmTransportFailureNotifier(context),
+            strings = AndroidUiStringProvider(context),
         )
         val retryCoordinator = AlarmRecoveryRetryCoordinator(
             persistence = persistence,

@@ -1,5 +1,6 @@
 package dev.po4yka.lenswake.application
 
+import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
@@ -16,13 +17,14 @@ import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.TimeLapseSpeed
+import dev.po4yka.lenswake.ui.TestUiStringProvider
 import java.time.Instant
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Test
 
 class RuntimePreflightEvaluatorTest {
-    private val evaluator = RuntimePreflightEvaluator()
+    private val evaluator = RuntimePreflightEvaluator(TestUiStringProvider)
 
     @Test
     fun preservesPlatformFailureAndUnknownStatesFailClosed() {
@@ -73,12 +75,12 @@ class RuntimePreflightEvaluatorTest {
             observation = observation(
                 notifications = RuntimeCapabilityObservation(
                     PreflightStatus.FAILED,
-                    "Notification permission denied.",
+                    localizedText(R.string.status_failed),
                     SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION,
                 ),
                 fullScreenIntent = RuntimeCapabilityObservation(
                     PreflightStatus.FAILED,
-                    "Full-screen intent denied.",
+                    localizedText(R.string.status_failed),
                     SetupRemediationAction.OPEN_FULL_SCREEN_INTENT_SETTINGS,
                 ),
             ),
@@ -102,7 +104,7 @@ class RuntimePreflightEvaluatorTest {
             observation = observation(
                 mediaVideoAccess = RuntimeCapabilityObservation(
                     PreflightStatus.FAILED,
-                    "Saved video access denied.",
+                    localizedText(R.string.status_failed),
                     SetupRemediationAction.REQUEST_MEDIA_VIDEO_PERMISSION,
                 ),
             ),
@@ -349,7 +351,18 @@ class RuntimePreflightEvaluatorTest {
         densityDpi = 360,
     )
 
-    private fun passed(message: String) = RuntimeCapabilityObservation(PreflightStatus.PASSED, message)
-    private fun failed(message: String) = RuntimeCapabilityObservation(PreflightStatus.FAILED, message)
-    private fun unknown(message: String) = RuntimeCapabilityObservation(PreflightStatus.UNKNOWN, message)
+    private fun passed(@Suppress("UNUSED_PARAMETER") message: String) = RuntimeCapabilityObservation(
+        PreflightStatus.PASSED,
+        localizedText(R.string.status_passed),
+    )
+
+    private fun failed(@Suppress("UNUSED_PARAMETER") message: String) = RuntimeCapabilityObservation(
+        PreflightStatus.FAILED,
+        localizedText(R.string.status_failed),
+    )
+
+    private fun unknown(@Suppress("UNUSED_PARAMETER") message: String) = RuntimeCapabilityObservation(
+        PreflightStatus.UNKNOWN,
+        localizedText(R.string.status_unknown),
+    )
 }

@@ -1,5 +1,6 @@
 package dev.po4yka.lenswake.alarm
 
+import dev.po4yka.lenswake.ui.TestUiStringProvider
 import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.SessionId
 import java.time.Instant
@@ -16,6 +17,7 @@ class AlarmTransportEscalationTest {
         val escalator = AlarmTransportEscalator(
             persistence = persistence,
             notifier = FakeFailureNotifier(),
+            strings = TestUiStringProvider,
             nowEpochMillis = { 5_000L },
         )
         val corruptEntry = AlarmDeliveryJournal.CorruptEntry(
@@ -45,6 +47,7 @@ class AlarmTransportEscalationTest {
         val escalator = AlarmTransportEscalator(
             persistence = failurePersistence,
             notifier = FakeFailureNotifier(),
+            strings = TestUiStringProvider,
             nowEpochMillis = { 5_000L },
         )
         val handler = AlarmJournalCorruptionDeliveryHandler(
@@ -283,7 +286,7 @@ class AlarmTransportEscalationTest {
         backend: FakeDeliveryRetryBackend,
     ) = AlarmDeliveryRetryCoordinator(
         backend = backend,
-        escalator = AlarmTransportEscalator(persistence, notifier) { 5_000L },
+        escalator = AlarmTransportEscalator(persistence, notifier, TestUiStringProvider) { 5_000L },
         nowEpochMillis = { 1_000L },
     )
 }
@@ -400,7 +403,7 @@ class AlarmRecoveryRetryCoordinatorTest {
         val coordinator = AlarmRecoveryRetryCoordinator(
             persistence = checkpoint,
             backend = backend,
-            escalator = AlarmTransportEscalator(failures, notifier) { 5_000L },
+            escalator = AlarmTransportEscalator(failures, notifier, TestUiStringProvider) { 5_000L },
             nowEpochMillis = { 1_000L },
         )
         coordinator.retry("Exact alarms unavailable.", capabilityUnavailable = true)
@@ -434,7 +437,11 @@ class AlarmRecoveryRetryCoordinatorTest {
     ) = AlarmRecoveryRetryCoordinator(
         persistence = checkpoint,
         backend = backend,
-        escalator = AlarmTransportEscalator(failures, FakeFailureNotifier()) { 5_000L },
+        escalator = AlarmTransportEscalator(
+            failures,
+            FakeFailureNotifier(),
+            TestUiStringProvider,
+        ) { 5_000L },
         nowEpochMillis = { 1_000L },
     )
 }

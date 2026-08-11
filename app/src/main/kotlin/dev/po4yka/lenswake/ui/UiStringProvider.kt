@@ -3,14 +3,15 @@ package dev.po4yka.lenswake.ui
 import android.content.Context
 import androidx.annotation.PluralsRes
 import androidx.annotation.StringRes
+import dev.po4yka.lenswake.application.LocalizedTextResolver
 
-interface UiStringProvider {
-    fun get(
+interface UiStringProvider : LocalizedTextResolver {
+    override fun get(
         @StringRes resourceId: Int,
         vararg formatArgs: Any,
     ): String
 
-    fun quantity(
+    override fun quantity(
         @PluralsRes resourceId: Int,
         quantity: Int,
         vararg formatArgs: Any,

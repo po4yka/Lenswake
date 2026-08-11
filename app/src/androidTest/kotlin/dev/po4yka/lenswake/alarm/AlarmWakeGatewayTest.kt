@@ -75,7 +75,7 @@ class AlarmWakeGatewayTest {
 
     @Test
     fun wakeNotificationIsUrgentAlarmWithImmutableFullScreenIntent() {
-        DeviceWakeNotificationContract.ensureChannel(notificationManager)
+        DeviceWakeNotificationContract.ensureChannel(context, notificationManager)
 
         val notification = DeviceWakeNotificationContract.notification(context)
         val channel = requireNotNull(
@@ -99,7 +99,7 @@ class AlarmWakeGatewayTest {
 
     @Test
     fun productionAvailabilityFailsClosedAgainstLiveNotificationState() {
-        DeviceWakeNotificationContract.ensureChannel(notificationManager)
+        DeviceWakeNotificationContract.ensureChannel(context, notificationManager)
         val channel = notificationManager.getNotificationChannel(
             DeviceWakeNotificationContract.CHANNEL_ID,
         )

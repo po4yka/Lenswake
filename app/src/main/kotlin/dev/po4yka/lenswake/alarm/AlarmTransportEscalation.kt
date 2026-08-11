@@ -12,6 +12,8 @@ import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
 import android.util.Base64
 import dev.po4yka.lenswake.MainActivity
+import dev.po4yka.lenswake.R
+import dev.po4yka.lenswake.application.LocalizedTextResolver
 import java.nio.charset.StandardCharsets
 
 internal enum class AlarmTransportFailureCode {
@@ -89,27 +91,30 @@ internal class AlarmJournalCorruptionDeliveryHandler(
 internal class AlarmTransportEscalator(
     private val persistence: AlarmTransportFailurePersistence,
     private val notifier: AlarmTransportFailureNotifier,
+    private val strings: LocalizedTextResolver,
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
 ) {
     fun escalateDelivery(
         work: AlarmDeliveryWork,
         code: AlarmTransportFailureCode,
-        detail: String,
+        @Suppress("UNUSED_PARAMETER") detail: String,
     ): AlarmTransportEscalationResult {
         val marker = AlarmTransportFailureMarker(
             id = work.markerId,
             code = code,
             title = if (work.isStop) {
-                "Scheduled STOP needs manual action"
+                strings.get(R.string.alarm_stop_failure_title)
             } else {
-                "Scheduled recording did not start"
+                strings.get(R.string.alarm_start_failure_title)
             },
             message = if (work.isStop) {
-                "Lenswake could not deliver STOP. Pixel Camera may still be recording; open Pixel Camera and stop it manually. $detail"
+                strings.get(R.string.alarm_stop_failure_message)
             } else {
-                "Lenswake could not deliver START. The recording may not have started; open Lenswake and review the schedule. $detail"
+                strings.get(R.string.alarm_start_failure_message)
             },
-            actionLabel = if (work.isStop) "Open Pixel Camera" else "Open Lenswake",
+            actionLabel = strings.get(
+                if (work.isStop) R.string.action_open_pixel_camera else R.string.action_open_lenswake,
+            ),
             cameraAction = work.isStop,
             recordedAtEpochMillis = nowEpochMillis(),
         )
@@ -118,14 +123,14 @@ internal class AlarmTransportEscalator(
 
     fun escalateRecovery(
         code: AlarmTransportFailureCode,
-        detail: String,
+        @Suppress("UNUSED_PARAMETER") detail: String,
     ): AlarmTransportEscalationResult = escalate(
         AlarmTransportFailureMarker(
             id = RECOVERY_MARKER_ID,
             code = code,
-            title = "Scheduled alarms need attention",
-            message = "Lenswake could not restore scheduled alarms. Open Lenswake and verify exact-alarm access before relying on schedules. $detail",
-            actionLabel = "Open Lenswake",
+            title = strings.get(R.string.alarm_recovery_failure_title),
+            message = strings.get(R.string.alarm_recovery_failure_message),
+            actionLabel = strings.get(R.string.action_open_lenswake),
             cameraAction = false,
             recordedAtEpochMillis = nowEpochMillis(),
         ),
@@ -137,11 +142,9 @@ internal class AlarmTransportEscalator(
         AlarmTransportFailureMarker(
             id = journalCorruptionMarkerId(entry.key),
             code = AlarmTransportFailureCode.JOURNAL_ENTRY_CORRUPT,
-            title = "Scheduled camera action could not be restored",
-            message = "Lenswake found a corrupt durable alarm entry. An unknown START or STOP " +
-                "could not be restored; Pixel Camera may still be recording. Open Pixel Camera " +
-                "and verify its recording state.",
-            actionLabel = "Open Pixel Camera",
+            title = strings.get(R.string.alarm_journal_failure_title),
+            message = strings.get(R.string.alarm_journal_failure_message),
+            actionLabel = strings.get(R.string.action_open_pixel_camera),
             cameraAction = true,
             recordedAtEpochMillis = nowEpochMillis(),
         ),
@@ -270,10 +273,10 @@ internal class AndroidAlarmTransportFailureNotifier(
         notificationManager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
-                "Scheduled alarm failures",
+                context.getString(R.string.alarm_failure_channel_name),
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply {
-                description = "Requires attention when scheduled camera automation cannot be delivered"
+                description = context.getString(R.string.alarm_failure_channel_description)
                 setShowBadge(true)
             },
         )

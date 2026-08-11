@@ -9,10 +9,38 @@ internal object TestUiStringProvider : UiStringProvider {
         R.string.action_rehearsal_stopping to "Wait while Lenswake confirms that Pixel Camera has stopped.",
         R.string.action_rehearsal_active_session to
             "Recording session %1\$s owns Pixel Camera. STOP deadline: %2\$s.",
+        R.string.action_open_pixel_camera to "Open Pixel Camera",
+        R.string.action_open_lenswake to "Open Lenswake",
+        R.string.alarm_stop_failure_title to "Scheduled STOP needs manual action",
+        R.string.alarm_stop_failure_message to
+            "Lenswake could not deliver STOP. Pixel Camera may still be recording; open Pixel Camera and stop it manually.",
+        R.string.alarm_start_failure_title to "Scheduled recording did not start",
+        R.string.alarm_start_failure_message to
+            "Lenswake could not deliver START. The recording may not have started; open Lenswake and review the schedule.",
+        R.string.alarm_recovery_failure_title to "Scheduled alarms need attention",
+        R.string.alarm_recovery_failure_message to
+            "Lenswake could not restore scheduled alarms. Open Lenswake and verify exact-alarm access before relying on schedules.",
+        R.string.alarm_journal_failure_title to "Scheduled camera action could not be restored",
+        R.string.alarm_journal_failure_message to
+            "Lenswake found a corrupt durable alarm entry. An unknown START or STOP could not be restored; Pixel Camera may still be recording. Open Pixel Camera and verify its recording state.",
         R.string.capability_accessibility_service to "Lenswake Accessibility Service",
         R.string.default_schedule_name to "Time Lapse",
+        R.string.diagnostics_event_title to "%1\$s",
+        R.string.diagnostics_event_detail to "%1\$s - %2\$s",
+        R.string.diagnostics_event_operation_detail to "%1\$s - %2\$s - %3\$s",
+        R.string.diagnostics_event_failure_detail to "%1\$s - %2\$s - Failure: %3\$s",
+        R.string.diagnostics_event_operation_failure_detail to
+            "%1\$s - %2\$s - %3\$s - Failure: %4\$s",
         R.string.profile_compatibility_needs_test to "Needs test",
         R.string.profile_compatibility_verified to "Verified for scheduling",
+        R.string.preflight_profile_probably_compatible to
+            "The closest profile requires a current-device rehearsal.",
+        R.string.preflight_profile_needs_rehearsal to
+            "The Pixel Camera environment changed; rehearsal is required.",
+        R.string.preflight_profile_incompatible to
+            "Available profiles are incompatible with the current environment.",
+        R.string.preflight_profile_unavailable to
+            "No compatible profile is available for the current environment.",
         R.string.active_session_detail to "Session %1\$s · STOP deadline %2\$s",
         R.string.profiles_active_rehearsal_title to "Active test recording",
         R.string.schedules_active_session_title to "Active scheduled recording",

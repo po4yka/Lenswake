@@ -3,6 +3,7 @@ package dev.po4yka.lenswake.alarm
 import android.app.job.JobParameters
 import android.app.job.JobService
 import android.util.Log
+import dev.po4yka.lenswake.ui.AndroidUiStringProvider
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineName
@@ -43,6 +44,7 @@ class AlarmRecoveryService : JobService() {
         escalator = AlarmTransportEscalator(
             persistence = SharedPreferencesAlarmTransportFailurePersistence(this),
             notifier = AndroidAlarmTransportFailureNotifier(this),
+            strings = AndroidUiStringProvider(this),
         )
         checkpointPersistence = SharedPreferencesAlarmRecoveryCheckpointPersistence(this)
         retryCoordinator = AlarmRecoveryRetryCoordinator(
