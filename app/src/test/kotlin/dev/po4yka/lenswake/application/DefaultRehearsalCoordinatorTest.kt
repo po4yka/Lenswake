@@ -399,30 +399,37 @@ private class FakeRehearsalRepository : ExecutionRepository, EnvironmentSnapshot
         .filter { it.kind == SessionKind.REHEARSAL && it.status !in TERMINAL }
         .take(limit)
     override suspend fun reservePixelCamera(session: ExecutionSession): ExecutionReservationResult {
-        sessions.values.firstOrNull {
+        val existing = sessions.values.firstOrNull {
             it.id == session.id && it.executionKey == session.executionKey
-        }?.let { return ExecutionReservationResult.Reserved(it, newlyCreated = false) }
-        sessions.values.firstOrNull(ExecutionSession::ownsPixelCamera)?.let {
-            return ExecutionReservationResult.CameraBusy(it)
         }
-        check(sessions.putIfAbsent(session.id, session) == null)
-        return ExecutionReservationResult.Reserved(session, newlyCreated = true)
+        val owner = sessions.values.firstOrNull(ExecutionSession::ownsPixelCamera)
+        return when {
+            existing != null -> ExecutionReservationResult.Reserved(existing, newlyCreated = false)
+            owner != null -> ExecutionReservationResult.CameraBusy(owner)
+            else -> {
+                check(sessions.putIfAbsent(session.id, session) == null)
+                ExecutionReservationResult.Reserved(session, newlyCreated = true)
+            }
+        }
     }
     override suspend fun apply(change: ExecutionChange, event: AutomationEvent): ExecutionApplyResult {
         val current = sessions[change.updatedSession.id]
-        if (
+        val forcedConflict =
             event.name == "automation.rehearsal.closed_without_recording" &&
-            closeWithoutRecordingConflictsRemaining > 0
-        ) {
-            closeWithoutRecordingConflictsRemaining -= 1
-            return ExecutionApplyResult.RevisionConflict(change.expectedRevision, current?.revision)
+                closeWithoutRecordingConflictsRemaining > 0
+        return when {
+            forcedConflict -> {
+                closeWithoutRecordingConflictsRemaining -= 1
+                ExecutionApplyResult.RevisionConflict(change.expectedRevision, current?.revision)
+            }
+            current?.revision != change.expectedRevision ->
+                ExecutionApplyResult.RevisionConflict(change.expectedRevision, current?.revision)
+            else -> {
+                sessions[change.updatedSession.id] = change.updatedSession
+                events += event
+                ExecutionApplyResult.Applied(change.updatedSession)
+            }
         }
-        if (current?.revision != change.expectedRevision) {
-            return ExecutionApplyResult.RevisionConflict(change.expectedRevision, current?.revision)
-        }
-        sessions[change.updatedSession.id] = change.updatedSession
-        events += event
-        return ExecutionApplyResult.Applied(change.updatedSession)
     }
     override suspend fun capture(snapshot: EnvironmentSnapshot): EnvironmentSnapshotCaptureResult {
         val existing = snapshots[snapshot.sessionId]
