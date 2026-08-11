@@ -4,6 +4,7 @@ import android.app.KeyguardManager
 import android.content.Context
 import android.os.BatteryManager
 import android.os.PowerManager
+import android.os.storage.StorageManager
 import dev.po4yka.lenswake.BuildConfig
 import dev.po4yka.lenswake.accessibility.AccessibilitySnapshotResult
 import dev.po4yka.lenswake.accessibility.PixelCameraAccessibilityRuntime
@@ -29,6 +30,7 @@ class AndroidEnvironmentSnapshotCollector(
     private val powerManager = applicationContext.getSystemService(PowerManager::class.java)
     private val keyguardManager = applicationContext.getSystemService(KeyguardManager::class.java)
     private val batteryManager = applicationContext.getSystemService(BatteryManager::class.java)
+    private val storageManager = applicationContext.getSystemService(StorageManager::class.java)
 
     override suspend fun collect(
         snapshotId: EnvironmentSnapshotId,
@@ -51,7 +53,9 @@ class AndroidEnvironmentSnapshotCollector(
                 keyguardLocked = keyguardManager.isKeyguardLocked,
                 batteryPercent = batteryPercent(),
                 charging = runCatching { batteryManager.isCharging }.getOrNull(),
-                availableStorageBytes = runCatching { applicationContext.filesDir.usableSpace }
+                availableStorageBytes = runCatching {
+                    storageManager.getAllocatableBytes(StorageManager.UUID_DEFAULT)
+                }
                     .getOrNull()
                     ?.takeIf { it >= 0 },
             ),

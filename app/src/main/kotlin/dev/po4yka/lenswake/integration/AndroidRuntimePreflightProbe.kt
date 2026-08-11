@@ -6,7 +6,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.BatteryManager
-import android.os.StatFs
+import android.os.storage.StorageManager
 import android.provider.Settings
 import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.accessibility.PixelCameraAccessibilityRuntime
@@ -45,6 +45,7 @@ class AndroidRuntimePreflightProbe(
     private val alarmManager = applicationContext.getSystemService(AlarmManager::class.java)
     private val notificationManager = applicationContext.getSystemService(NotificationManager::class.java)
     private val batteryManager = applicationContext.getSystemService(BatteryManager::class.java)
+    private val storageManager = applicationContext.getSystemService(StorageManager::class.java)
 
     override val invalidations: Flow<Unit> = PixelCameraAccessibilityRuntime.connectionState
         .map { }
@@ -169,10 +170,9 @@ class AndroidRuntimePreflightProbe(
         val fullAccess = applicationContext.checkSelfPermission(
             android.Manifest.permission.READ_MEDIA_VIDEO,
         ) == PackageManager.PERMISSION_GRANTED
-        val partialAccess = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
-            applicationContext.checkSelfPermission(
-                android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
-            ) == PackageManager.PERMISSION_GRANTED
+        val partialAccess = applicationContext.checkSelfPermission(
+            android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+        ) == PackageManager.PERMISSION_GRANTED
         RuntimeCapabilityObservation(
             status = if (fullAccess) PreflightStatus.PASSED else PreflightStatus.FAILED,
             message = localizedText(
@@ -301,12 +301,8 @@ class AndroidRuntimePreflightProbe(
     }
 
     private fun storageObservation(): RuntimeCapabilityObservation = runCatching {
-        val primarySharedStorage = applicationContext.getExternalFilesDir(null)
-            ?: return@runCatching storageObservation(
-                availableBytes = null,
-            )
         storageObservation(
-            availableBytes = StatFs(primarySharedStorage.absolutePath).availableBytes,
+            availableBytes = storageManager.getAllocatableBytes(StorageManager.UUID_DEFAULT),
         )
     }.getOrElse {
         storageObservation(
