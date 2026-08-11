@@ -166,8 +166,8 @@ fun ReadinessCard(
 @Composable
 fun CapabilityRow(
     capability: CapabilityUiState,
-    onRemediate: (SetupRemediationAction) -> Unit = {},
     modifier: Modifier = Modifier,
+    onRemediate: (SetupRemediationAction) -> Unit = {},
 ) {
     val statusLabel = when (capability.status) {
         CapabilityStatus.UNKNOWN -> stringResource(R.string.status_unknown)
@@ -222,10 +222,10 @@ fun ActionSection(
     detail: String,
     actionLabel: String,
     actionEnabled: Boolean,
-    actionInProgress: Boolean = false,
     unavailableReason: String,
     onAction: () -> Unit,
     modifier: Modifier = Modifier,
+    actionInProgress: Boolean = false,
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -309,9 +309,9 @@ fun SummaryCard(
     title: String,
     detail: String,
     status: String,
+    modifier: Modifier = Modifier,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
 ) {
     val visuals = statusVisuals(status)
     Card(
