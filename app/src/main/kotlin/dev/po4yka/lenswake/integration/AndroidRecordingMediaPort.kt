@@ -13,7 +13,6 @@ import dev.po4yka.lenswake.automation.SavedRecordingEvidence
 import dev.po4yka.lenswake.core.AutomationFailure
 import dev.po4yka.lenswake.core.AutomationFailureCode
 import dev.po4yka.lenswake.platform.PIXEL_CAMERA_PACKAGE
-import kotlinx.coroutines.CancellationException
 
 /** Correlates a recording with published, Pixel Camera-owned video media without exposing paths. */
 class AndroidRecordingMediaPort internal constructor(
@@ -32,58 +31,69 @@ class AndroidRecordingMediaPort internal constructor(
         },
     )
 
-    override suspend fun captureBaseline(): PortResult<RecordingMediaBaseline> = try {
-        requireVideoReadPermission()?.let { return it }
-        val version = currentVersion()
-        val generation = MediaStore.getGeneration(
-            applicationContext,
-            MediaStore.VOLUME_EXTERNAL_PRIMARY,
-        )
-        if (currentVersion() != version) {
-            return PortResult.Unavailable(
-                AutomationFailure(
-                    code = AutomationFailureCode.MEDIA_BASELINE_UNAVAILABLE,
-                    message = "MediaStore changed while the recording baseline was captured",
-                ),
+    override suspend fun captureBaseline(): PortResult<RecordingMediaBaseline> = mediaBoundary(
+        failureCode = AutomationFailureCode.MEDIA_BASELINE_UNAVAILABLE,
+        failureMessage = "MediaStore generation could not be read",
+    ) {
+        val permissionFailure = requireVideoReadPermission()
+        if (permissionFailure != null) {
+            permissionFailure
+        } else {
+            val version = currentVersion()
+            val generation = MediaStore.getGeneration(
+                applicationContext,
+                MediaStore.VOLUME_EXTERNAL_PRIMARY,
             )
+            if (currentVersion() != version) {
+                PortResult.Unavailable(
+                    AutomationFailure(
+                        code = AutomationFailureCode.MEDIA_BASELINE_UNAVAILABLE,
+                        message = "MediaStore changed while the recording baseline was captured",
+                    ),
+                )
+            } else {
+                PortResult.Observed(
+                    RecordingMediaBaseline(
+                        generation = generation,
+                        version = version,
+                    ),
+                )
+            }
         }
-        PortResult.Observed(
-            RecordingMediaBaseline(
-                generation = generation,
-                version = version,
-            ),
-        )
-    } catch (error: CancellationException) {
-        throw error
-    } catch (error: SecurityException) {
-        missingReadPermission(error)
-    } catch (error: Exception) {
-        PortResult.Unavailable(
-            AutomationFailure(
-                code = AutomationFailureCode.MEDIA_BASELINE_UNAVAILABLE,
-                message = "MediaStore generation could not be read",
-                context = mapOf("exception" to error.javaClass.simpleName),
-            ),
-        )
     }
 
     override suspend fun findSavedRecording(
         baseline: RecordingMediaBaseline,
-    ): PortResult<SavedRecordingEvidence?> = try {
-        requireVideoReadPermission()?.let { return it }
-        val versionBeforeQuery = currentVersion()
-        if (versionBeforeQuery != baseline.version) {
-            return PortResult.Unavailable(
-                AutomationFailure(
-                    code = AutomationFailureCode.MEDIA_BASELINE_UNAVAILABLE,
-                    message = "MediaStore changed after the recording baseline was captured",
-                    context = mapOf(
-                        "baselineVersion" to baseline.version,
-                        "currentVersion" to versionBeforeQuery,
+    ): PortResult<SavedRecordingEvidence?> = mediaBoundary(
+        failureCode = AutomationFailureCode.MEDIA_SAVE_NOT_CONFIRMED,
+        failureMessage = "Saved recording could not be queried from MediaStore",
+    ) {
+        val permissionFailure = requireVideoReadPermission()
+        if (permissionFailure != null) {
+            permissionFailure
+        } else {
+            val versionBeforeQuery = currentVersion()
+            if (versionBeforeQuery != baseline.version) {
+                PortResult.Unavailable(
+                    AutomationFailure(
+                        code = AutomationFailureCode.MEDIA_BASELINE_UNAVAILABLE,
+                        message = "MediaStore changed after the recording baseline was captured",
+                        context = mapOf(
+                            "baselineVersion" to baseline.version,
+                            "currentVersion" to versionBeforeQuery,
+                        ),
                     ),
-                ),
-            )
+                )
+            } else {
+                querySavedRecording(baseline, versionBeforeQuery)
+            }
         }
+    }
+
+    private fun querySavedRecording(
+        baseline: RecordingMediaBaseline,
+        versionBeforeQuery: String,
+    ): PortResult<SavedRecordingEvidence?> {
         val projection = arrayOf(
             MediaStore.MediaColumns.GENERATION_ADDED,
             MediaStore.MediaColumns.SIZE,
@@ -96,37 +106,43 @@ class AndroidRecordingMediaPort internal constructor(
             "${MediaStore.MediaColumns.SIZE} > 0",
             "${MediaStore.Video.VideoColumns.DURATION} > 0",
         ).joinToString(separator = " AND ")
-        val selectionArgs = arrayOf(PIXEL_CAMERA_PACKAGE, baseline.generation.toString())
-        val uri = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         val result = applicationContext.contentResolver.query(
-            uri,
+            MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY),
             projection,
             selection,
-            selectionArgs,
+            arrayOf(PIXEL_CAMERA_PACKAGE, baseline.generation.toString()),
             "${MediaStore.MediaColumns.GENERATION_ADDED} ASC",
         )?.use(::uniqueSavedRecording) ?: PortResult.Observed(null)
-        if (currentVersion() != versionBeforeQuery) {
+        return if (currentVersion() == versionBeforeQuery) {
+            result
+        } else {
             PortResult.Unavailable(
                 AutomationFailure(
                     code = AutomationFailureCode.MEDIA_BASELINE_UNAVAILABLE,
                     message = "MediaStore changed while saved recording evidence was queried",
                 ),
             )
-        } else {
-            result
         }
-    } catch (error: CancellationException) {
-        throw error
-    } catch (error: SecurityException) {
-        missingReadPermission(error)
-    } catch (error: Exception) {
-        PortResult.Unavailable(
-            AutomationFailure(
-                code = AutomationFailureCode.MEDIA_SAVE_NOT_CONFIRMED,
-                message = "Saved recording could not be queried from MediaStore",
-                context = mapOf("exception" to error.javaClass.simpleName),
-            ),
-        )
+    }
+
+    private suspend fun <T> mediaBoundary(
+        failureCode: AutomationFailureCode,
+        failureMessage: String,
+        operation: suspend () -> PortResult<T>,
+    ): PortResult<T> {
+        val attempt = runSuspendCatchingPreservingCancellation(operation)
+        val failure = attempt.exceptionOrNull()
+        return when (failure) {
+            null -> attempt.getOrThrow()
+            is SecurityException -> missingReadPermission(failure)
+            else -> PortResult.Unavailable(
+                AutomationFailure(
+                    code = failureCode,
+                    message = failureMessage,
+                    context = mapOf("exception" to failure.javaClass.simpleName),
+                ),
+            )
+        }
     }
 
     private fun requireVideoReadPermission(): PortResult.Unavailable? =
