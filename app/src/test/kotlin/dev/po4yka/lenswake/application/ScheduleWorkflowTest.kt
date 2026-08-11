@@ -32,6 +32,7 @@ import dev.po4yka.lenswake.core.UiSelectorSet
 import dev.po4yka.lenswake.core.supports
 import java.time.Instant
 import java.time.ZoneId
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
@@ -373,7 +374,10 @@ class ScheduleWorkflowTest {
     @Test
     fun terminalAndReleasedExecutionsDoNotBlockExpiredScheduleMutation() = runTest {
         val previous = schedule().copy(startAt = now.minusSeconds(60), stopAt = now.minusSeconds(1))
-        val terminal = owningSession(previous).copy(status = dev.po4yka.lenswake.core.SessionStatus.FAILED, recordActionAt = null)
+        val terminal = owningSession(previous).copy(
+            status = dev.po4yka.lenswake.core.SessionStatus.FAILED,
+            recordActionAt = null,
+        )
         val released = owningSession(previous).copy(cameraOwnershipReleasedAt = now)
 
         listOf(terminal, released).forEach { execution ->
@@ -386,12 +390,30 @@ class ScheduleWorkflowTest {
     @Test
     fun unavailableExecutionStateFailsClosedBeforeSchedulerOrPersistenceChanges() = runTest {
         val previous = schedule()
-        val fixture = fixture(schedules = listOf(previous), ownerQueryFailure = IllegalStateException("database unavailable"))
+        val fixture = fixture(
+            schedules = listOf(previous),
+            ownerQueryFailure = IllegalStateException("database unavailable"),
+        )
 
         val result = fixture.workflow.setEnabled(previous.id, enabled = false)
 
         val failed = assertInstanceOf(ScheduleWorkflowResult.Failed::class.java, result)
         assertEquals(ScheduleWorkflowFailureCode.EXECUTION_STATE_UNAVAILABLE, failed.code)
+        assertTrue(fixture.events.isEmpty())
+    }
+
+    @Test
+    fun cancellationFromExecutionStateLookupPropagatesWithoutMutation() = runTest {
+        val cancellation = CancellationException("cancel schedule mutation")
+        val previous = schedule()
+        val fixture = fixture(
+            schedules = listOf(previous),
+            ownerQueryFailure = cancellation,
+        )
+
+        val failure = runCatching { fixture.workflow.delete(previous.id) }.exceptionOrNull()
+
+        assertEquals(cancellation, failure)
         assertTrue(fixture.events.isEmpty())
     }
 
