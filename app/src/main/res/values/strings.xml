@@ -55,7 +55,7 @@
 
     <string name="screen_schedules_summary">Plan unattended Time Lapse sessions in the native Pixel Camera.</string>
     <string name="screen_profiles_summary">Set up and test the Pixel Camera controls used for scheduled recordings.</string>
-    <string name="screen_diagnostics_summary">Review device setup, recent issues, and recording activity.</string>
+    <string name="screen_diagnostics_summary">Review issues and recent Pixel Camera automation activity.</string>
     <string name="screen_setup_title">Setup</string>
     <string name="screen_setup_summary">Finish the device settings Lenswake needs before it can run a schedule.</string>
     <string name="section_readiness_checks">Readiness checks</string>

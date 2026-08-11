@@ -77,12 +77,59 @@ class LenswakeAppTest {
         composeRule.onNodeWithText("Camera profile").assertExists()
 
         composeRule.onNodeWithText("Diagnostics").performClick()
-        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(9)
         composeRule.onNodeWithText("No activity yet").assertExists()
 
         composeRule.onNodeWithText("Schedules").performClick()
         composeRule.onNodeWithText("Review setup").performClick()
         composeRule.onNodeWithText("Readiness checks").assertExists()
+    }
+
+    @Test
+    fun diagnosticsPrioritizesAttentionAndActivityOverSetupChecks() {
+        setContent(
+            state = LenswakeUiState(
+                capabilities = listOf(
+                    CapabilityUiState(
+                        name = "Hidden setup check",
+                        status = CapabilityStatus.BLOCKED,
+                        detail = "This belongs in Setup.",
+                        required = true,
+                    ),
+                ),
+                alarmTransportIncidents = listOf(
+                    AlarmTransportIncidentUiState(
+                        id = "alarm-1",
+                        title = "Scheduled STOP needs manual action",
+                        detail = "Open Pixel Camera and stop recording.",
+                        occurredAt = "08:30",
+                    ),
+                ),
+                profilePersistenceIssues = listOf(
+                    ProfilePersistenceIssueUiState(
+                        id = "profile-1",
+                        title = "Camera profile storage issue",
+                        detail = "A stored profile could not be read.",
+                    ),
+                ),
+                diagnosticEvents = listOf(
+                    DiagnosticEventUiState(
+                        id = "event-1",
+                        title = "automation.record.stop_verified",
+                        detail = "Completed",
+                        occurredAt = "08:31",
+                    ),
+                ),
+            ),
+        )
+
+        composeRule.onNodeWithText("Diagnostics").performClick()
+
+        composeRule.onNodeWithText("Needs attention").assertExists()
+        composeRule.onNodeWithText("Hidden setup check").assertDoesNotExist()
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(4)
+        composeRule.onNodeWithText("Activity").assertExists()
+        composeRule.onNodeWithText("automation.record.stop_verified").assertExists()
+        composeRule.onNodeWithText("Recorded event").assertDoesNotExist()
     }
 
     @Test
