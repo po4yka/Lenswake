@@ -110,6 +110,11 @@ class AlarmManagerRehearsalStopScheduler internal constructor(
     }
 }
 
+/**
+ * Converts the heterogeneous failures produced by repository and Android alarm boundaries into
+ * [Result], while preserving structured-concurrency cancellation as control flow.
+ */
+@Suppress("TooGenericExceptionCaught")
 private suspend inline fun cancellationTransparentResult(
     block: suspend () -> Unit,
 ): Result<Unit> = try {
