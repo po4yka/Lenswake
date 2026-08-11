@@ -61,8 +61,18 @@ data class AutomationConfig(
             return AutomationConfig(
                 retryPolicies = AutomationOperation.entries.associateWith { operation ->
                     when (operation) {
-                        AutomationOperation.WAKE_DEVICE -> RetryPolicy(3, 250.milliseconds, 1.seconds, 2.0)
-                        AutomationOperation.LAUNCH_CAMERA -> RetryPolicy(3, 500.milliseconds, 2.seconds, 2.0)
+                        AutomationOperation.WAKE_DEVICE -> RetryPolicy(
+                            SYSTEM_OPERATION_MAX_ATTEMPTS,
+                            250.milliseconds,
+                            1.seconds,
+                            2.0,
+                        )
+                        AutomationOperation.LAUNCH_CAMERA -> RetryPolicy(
+                            SYSTEM_OPERATION_MAX_ATTEMPTS,
+                            500.milliseconds,
+                            2.seconds,
+                            2.0,
+                        )
                         AutomationOperation.INSPECT_CAMERA,
                         AutomationOperation.VERIFY_STOPPED,
                         -> inspection
@@ -85,5 +95,7 @@ data class AutomationConfig(
                 maxConvergenceSteps = 12,
             )
         }
+
+        private const val SYSTEM_OPERATION_MAX_ATTEMPTS = 3
     }
 }
