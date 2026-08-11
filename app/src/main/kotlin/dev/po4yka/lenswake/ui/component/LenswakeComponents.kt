@@ -43,29 +43,6 @@ import dev.po4yka.lenswake.ui.CapabilityStatus
 import dev.po4yka.lenswake.ui.CapabilityUiState
 import dev.po4yka.lenswake.ui.ReadinessUiState
 
-internal enum class StatusVisualState {
-    ERROR,
-    WARNING,
-    SUCCESS,
-    IN_PROGRESS,
-    NEUTRAL,
-}
-
-internal fun statusVisualState(statusLabel: String): StatusVisualState {
-    val normalizedStatus = statusLabel.lowercase()
-    return when {
-        listOf("blocked", "failed", "error", "incompatible", "unavailable", "cancelled")
-            .any(normalizedStatus::contains) -> StatusVisualState.ERROR
-        listOf("warning", "attention", "needs", "safety", "pending", "degraded", "stale")
-            .any(normalizedStatus::contains) -> StatusVisualState.WARNING
-        listOf("ready", "available", "verified", "completed", "passed", "enabled", "succeeded")
-            .any(normalizedStatus::contains) -> StatusVisualState.SUCCESS
-        listOf("checking", "installing", "running", "working", "in progress")
-            .any(normalizedStatus::contains) -> StatusVisualState.IN_PROGRESS
-        else -> StatusVisualState.NEUTRAL
-    }
-}
-
 private data class StatusVisuals(
     val state: StatusVisualState,
     @param:DrawableRes val iconResource: Int,
@@ -74,30 +51,6 @@ private data class StatusVisuals(
     val indicatorContainerColor: Color,
     val indicatorContentColor: Color,
 )
-
-@Composable
-fun ScreenHeader(
-    title: String,
-    summary: String,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(
-            modifier = Modifier.semantics { heading() },
-            text = title,
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Text(
-            text = summary,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
 
 @Composable
 fun ReadinessCard(

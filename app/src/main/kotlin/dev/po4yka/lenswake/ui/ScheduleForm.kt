@@ -9,16 +9,6 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
 
-internal data class ScheduleFormValidation(
-    val nameError: String? = null,
-    val timingError: String? = null,
-    val profileError: String? = null,
-    val captureError: String? = null,
-) {
-    val canSubmit: Boolean
-        get() = nameError == null && timingError == null && profileError == null && captureError == null
-}
-
 internal fun defaultScheduleStart(
     now: Instant,
     zoneId: ZoneId,
