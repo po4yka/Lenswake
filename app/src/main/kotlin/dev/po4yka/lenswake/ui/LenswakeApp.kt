@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -20,6 +21,7 @@ import androidx.compose.material3.PermanentDrawerSheet
 import androidx.compose.material3.PermanentNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -125,12 +127,29 @@ fun LenswakeApp(
     }
     val backStack = navigation.activeBackStack
     val activeTopLevelDestination = navigation.activeTopLevelDestination
+    val showSetupTopAppBar = navigation.currentDestination == SetupRoute
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val navigationLayout = adaptiveNavigationLayout(maxWidth)
         val appContent: @Composable (Modifier) -> Unit = { modifier ->
             Scaffold(
                 modifier = modifier,
+                topBar = {
+                    if (showSetupTopAppBar) {
+                        TopAppBar(
+                            title = { Text(stringResource(R.string.screen_setup_title)) },
+                            navigationIcon = {
+                                IconButton(onClick = navigation::navigateBack) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_arrow_back_24),
+                                        contentDescription = stringResource(R.string.action_back),
+                                    )
+                                }
+                            },
+                            modifier = Modifier.testTag(SETUP_TOP_APP_BAR_TAG),
+                        )
+                    }
+                },
                 bottomBar = {
                     if (navigationLayout == AdaptiveNavigationLayout.BOTTOM_BAR) {
                         NavigationBar(modifier = Modifier.testTag(NAVIGATION_BAR_TAG)) {
@@ -187,7 +206,6 @@ fun LenswakeApp(
                             SetupScreen(
                                 state = state,
                                 contentPadding = contentPadding,
-                                onBack = navigation::navigateBack,
                                 onRemediate = onRemediate,
                                 onClearRemediationMessage = onClearRemediationMessage,
                             )
@@ -267,6 +285,7 @@ internal fun adaptiveNavigationLayout(width: Dp): AdaptiveNavigationLayout = whe
 internal const val NAVIGATION_BAR_TAG = "lenswake-navigation-bar"
 internal const val NAVIGATION_RAIL_TAG = "lenswake-navigation-rail"
 internal const val NAVIGATION_DRAWER_TAG = "lenswake-navigation-drawer"
+internal const val SETUP_TOP_APP_BAR_TAG = "lenswake-setup-top-app-bar"
 
 private val MediumWindowMinWidth = 600.dp
 private val ExpandedWindowMinWidth = 840.dp

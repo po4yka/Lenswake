@@ -8,6 +8,7 @@ import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
@@ -85,6 +86,18 @@ class LenswakeAppTest {
     }
 
     @Test
+    fun setupUsesTopAppBarBackNavigation() {
+        setContent()
+
+        composeRule.onNodeWithText("Review setup").performClick()
+
+        composeRule.onNodeWithTag(SETUP_TOP_APP_BAR_TAG).assertExists()
+        composeRule.onNodeWithContentDescription("Back").performClick()
+        composeRule.onNodeWithTag(SETUP_TOP_APP_BAR_TAG).assertDoesNotExist()
+        composeRule.onNodeWithText("No schedules").assertExists()
+    }
+
+    @Test
     fun readinessSummaryAppearsOnlyWhereItIsActionable() {
         setContent()
         composeRule.onNodeWithText("Setup required").assertExists()
@@ -128,7 +141,7 @@ class LenswakeAppTest {
         composeRule.onNodeWithText("Readiness checks").assertExists()
         schedulesNavigation.assertIsSelected()
 
-        composeRule.onNodeWithText("Back").performClick()
+        composeRule.onNodeWithContentDescription("Back").performClick()
         composeRule.onNodeWithText("No schedules").assertExists()
     }
 
