@@ -6,6 +6,15 @@ import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.UiSelector
 import dev.po4yka.lenswake.core.UiSelectorSet
 
+private const val RESOURCE_ID_SCORE = 100
+private const val CONTENT_DESCRIPTION_SCORE = 60
+private const val TEXT_SCORE = 30
+private const val ROLE_SCORE = 20
+private const val STATE_SCORE = 10
+private const val SELECTED_STATE_SCORE = 15
+private const val CHECKED_STATE_SCORE = 15
+private const val REGION_SCORE = 10
+
 data class UiNodeSnapshot(
     val id: String,
     val packageName: String?,
@@ -33,15 +42,18 @@ data class SelectorCandidate(
     val matchedSignals: Set<SelectorSignal>,
 )
 
-enum class SelectorSignal {
-    RESOURCE_ID,
-    CONTENT_DESCRIPTION,
-    TEXT,
-    ROLE,
-    CLICKABLE_STATE,
-    SELECTED_STATE,
-    CHECKED_STATE,
-    EXPECTED_REGION,
+enum class SelectorSignal(
+    internal val score: Int,
+    internal val isMeaningfulDiscriminant: Boolean,
+) {
+    RESOURCE_ID(RESOURCE_ID_SCORE, isMeaningfulDiscriminant = true),
+    CONTENT_DESCRIPTION(CONTENT_DESCRIPTION_SCORE, isMeaningfulDiscriminant = true),
+    TEXT(TEXT_SCORE, isMeaningfulDiscriminant = true),
+    ROLE(ROLE_SCORE, isMeaningfulDiscriminant = true),
+    CLICKABLE_STATE(STATE_SCORE, isMeaningfulDiscriminant = false),
+    SELECTED_STATE(SELECTED_STATE_SCORE, isMeaningfulDiscriminant = false),
+    CHECKED_STATE(CHECKED_STATE_SCORE, isMeaningfulDiscriminant = false),
+    EXPECTED_REGION(REGION_SCORE, isMeaningfulDiscriminant = true),
 }
 
 sealed interface SelectorMatchResult {
@@ -73,10 +85,9 @@ class SelectorMatcher {
         action: AutomationAction,
         profile: PixelCameraProfile,
         nodes: List<UiNodeSnapshot>,
-    ): SelectorMatchResult {
-        val selectorSet = profile.targets[action] ?: return SelectorMatchResult.TargetNotConfigured
-        return match(selectorSet, profile, nodes)
-    }
+    ): SelectorMatchResult = profile.targets[action]
+        ?.let { selectorSet -> match(selectorSet, profile, nodes) }
+        ?: SelectorMatchResult.TargetNotConfigured
 
     fun match(
         selectorSet: UiSelectorSet,
@@ -95,28 +106,29 @@ class SelectorMatcher {
             }
         }.values.toList()
 
-        if (candidatesByNode.isEmpty()) return SelectorMatchResult.NoEligibleNodes
+        return if (candidatesByNode.isEmpty()) {
+            SelectorMatchResult.NoEligibleNodes
+        } else {
+            resultForCandidates(candidatesByNode, selectorSet.minimumScore)
+        }
+    }
 
-        val bestScore = candidatesByNode.maxOf(SelectorCandidate::score)
-        val bestCandidates = candidatesByNode.filter { it.score == bestScore }
-        if (bestScore < selectorSet.minimumScore) {
-            return SelectorMatchResult.BelowThreshold(
+    private fun resultForCandidates(
+        candidates: List<SelectorCandidate>,
+        minimumScore: Int,
+    ): SelectorMatchResult {
+        val bestScore = candidates.maxOf(SelectorCandidate::score)
+        val bestCandidates = candidates.filter { it.score == bestScore }
+        return when {
+            bestScore < minimumScore -> SelectorMatchResult.BelowThreshold(
                 bestScore = bestScore,
-                minimumScore = selectorSet.minimumScore,
+                minimumScore = minimumScore,
                 candidates = bestCandidates,
             )
-        }
-        if (bestCandidates.size > 1) {
-            return SelectorMatchResult.Ambiguous(bestCandidates, bestScore)
-        }
 
-        val best = bestCandidates.single()
-        return SelectorMatchResult.Match(
-            node = best.node,
-            score = best.score,
-            selectorIndex = best.selectorIndex,
-            matchedSignals = best.matchedSignals,
-        )
+            bestCandidates.size > 1 -> SelectorMatchResult.Ambiguous(bestCandidates, bestScore)
+            else -> bestCandidates.single().toMatchResult()
+        }
     }
 
     private fun score(
@@ -125,89 +137,87 @@ class SelectorMatcher {
         selectorIndex: Int,
         profile: PixelCameraProfile,
     ): SelectorCandidate? {
-        if (!node.visible || !node.enabled) return null
-        if (node.packageName != selector.packageName || node.packageName != profile.environment.cameraPackage) return null
-        if (selector.requiresClickable && !node.clickable) return null
-        if (selector.expectedSelected != null && node.selected != selector.expectedSelected) return null
-        if (
-            selector.expectedChecked != null &&
-            (!node.checkable || node.checked != selector.expectedChecked)
-        ) {
-            return null
+        val signals = if (node.isEligibleFor(selector, profile.environment.cameraPackage)) {
+            matchingSignals(node, selector)
+        } else {
+            emptySet()
         }
-
-        var score = 0
-        val signals = buildSet {
-            if (!selector.resourceId.isNullOrBlank() && selector.resourceId == node.resourceId) {
-                score += RESOURCE_ID_SCORE
-                add(SelectorSignal.RESOURCE_ID)
+        return signals
+            .takeIf { matchedSignals ->
+                matchedSignals.any { signal -> signal.isMeaningfulDiscriminant }
             }
-            if (
-                !selector.contentDescription.isNullOrBlank() &&
-                selector.contentDescription == node.contentDescription
-            ) {
-                score += CONTENT_DESCRIPTION_SCORE
-                add(SelectorSignal.CONTENT_DESCRIPTION)
+            ?.let { matchedSignals ->
+                SelectorCandidate(
+                    node = node,
+                    score = matchedSignals.sumOf { signal -> signal.score },
+                    selectorIndex = selectorIndex,
+                    matchedSignals = matchedSignals,
+                )
             }
-            if (!selector.text.isNullOrBlank() && selector.text == node.text) {
-                score += TEXT_SCORE
-                add(SelectorSignal.TEXT)
-            }
-            if (!selector.role.isNullOrBlank() && selector.role == node.role) {
-                score += ROLE_SCORE
-                add(SelectorSignal.ROLE)
-            }
-            if (selector.requiresClickable && node.clickable) {
-                score += STATE_SCORE
-                add(SelectorSignal.CLICKABLE_STATE)
-            }
-            if (selector.expectedSelected != null && node.selected == selector.expectedSelected) {
-                score += SELECTED_STATE_SCORE
-                add(SelectorSignal.SELECTED_STATE)
-            }
-            if (selector.expectedChecked != null && node.checked == selector.expectedChecked) {
-                score += CHECKED_STATE_SCORE
-                add(SelectorSignal.CHECKED_STATE)
-            }
-            val expectedRegion = selector.expectedRegion
-            if (expectedRegion != null && node.bounds?.centerIsInside(expectedRegion) == true) {
-                score += REGION_SCORE
-                add(SelectorSignal.EXPECTED_REGION)
-            }
-        }
-        if (signals.none { it.isMeaningfulDiscriminant }) return null
-        return SelectorCandidate(node, score, selectorIndex, signals)
     }
+
+    private fun UiNodeSnapshot.isEligibleFor(
+        selector: UiSelector,
+        cameraPackage: String,
+    ): Boolean =
+        visible &&
+            enabled &&
+            packageName == selector.packageName &&
+            packageName == cameraPackage &&
+            (!selector.requiresClickable || clickable) &&
+            (selector.expectedSelected == null || selected == selector.expectedSelected) &&
+            (
+                selector.expectedChecked == null ||
+                    (checkable && checked == selector.expectedChecked)
+            )
+
+    private fun matchingSignals(
+        node: UiNodeSnapshot,
+        selector: UiSelector,
+    ): Set<SelectorSignal> = buildSet {
+        if (configuredStringMatches(selector.resourceId, node.resourceId)) {
+            add(SelectorSignal.RESOURCE_ID)
+        }
+        if (configuredStringMatches(selector.contentDescription, node.contentDescription)) {
+            add(SelectorSignal.CONTENT_DESCRIPTION)
+        }
+        if (configuredStringMatches(selector.text, node.text)) {
+            add(SelectorSignal.TEXT)
+        }
+        if (configuredStringMatches(selector.role, node.role)) {
+            add(SelectorSignal.ROLE)
+        }
+        if (selector.requiresClickable && node.clickable) {
+            add(SelectorSignal.CLICKABLE_STATE)
+        }
+        if (configuredStateMatches(selector.expectedSelected, node.selected)) {
+            add(SelectorSignal.SELECTED_STATE)
+        }
+        if (configuredStateMatches(selector.expectedChecked, node.checked)) {
+            add(SelectorSignal.CHECKED_STATE)
+        }
+        val expectedRegion = selector.expectedRegion
+        if (expectedRegion != null && node.bounds?.centerIsInside(expectedRegion) == true) {
+            add(SelectorSignal.EXPECTED_REGION)
+        }
+    }
+
+    private fun configuredStringMatches(expected: String?, actual: String?): Boolean =
+        !expected.isNullOrBlank() && expected == actual
+
+    private fun configuredStateMatches(expected: Boolean?, actual: Boolean?): Boolean =
+        expected != null && expected == actual
+
+    private fun SelectorCandidate.toMatchResult() = SelectorMatchResult.Match(
+        node = node,
+        score = score,
+        selectorIndex = selectorIndex,
+        matchedSignals = matchedSignals,
+    )
 
     private fun NormalizedBounds.centerIsInside(region: NormalizedBounds): Boolean {
         val centerX = (left + right) / 2f
         val centerY = (top + bottom) / 2f
         return centerX in region.left..region.right && centerY in region.top..region.bottom
     }
-
-    private companion object {
-        const val RESOURCE_ID_SCORE = 100
-        const val CONTENT_DESCRIPTION_SCORE = 60
-        const val TEXT_SCORE = 30
-        const val ROLE_SCORE = 20
-        const val STATE_SCORE = 10
-        const val SELECTED_STATE_SCORE = 15
-        const val CHECKED_STATE_SCORE = 15
-        const val REGION_SCORE = 10
-    }
 }
-
-private val SelectorSignal.isMeaningfulDiscriminant: Boolean
-    get() = when (this) {
-        SelectorSignal.RESOURCE_ID,
-        SelectorSignal.CONTENT_DESCRIPTION,
-        SelectorSignal.TEXT,
-        SelectorSignal.ROLE,
-        SelectorSignal.EXPECTED_REGION,
-        -> true
-
-        SelectorSignal.CLICKABLE_STATE,
-        SelectorSignal.SELECTED_STATE,
-        SelectorSignal.CHECKED_STATE,
-        -> false
-    }
