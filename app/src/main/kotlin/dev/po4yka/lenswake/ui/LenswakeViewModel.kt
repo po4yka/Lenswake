@@ -103,7 +103,6 @@ class LenswakeViewModel internal constructor(
     private val preflightRefresh = actionState.preflightRefresh
     private val profileInstall = actionState.profileInstall
     private val rehearsal = actionState.rehearsal
-    private val rehearsalTarget = actionState.rehearsalTarget
     private val scheduleEditor = actionState.scheduleEditor
     private val scheduleAction = actionState.scheduleAction
     private val pendingDeleteScheduleId = actionState.pendingDeleteScheduleId
@@ -170,7 +169,6 @@ class LenswakeViewModel internal constructor(
     private val transientUiState = combine(
         profileInstall,
         rehearsal,
-        rehearsalTarget,
         combine(
             scheduleEditor,
             scheduleAction,
@@ -179,8 +177,13 @@ class LenswakeViewModel internal constructor(
         ) { editor, action, pendingDelete, remediationMessage ->
             ScheduleTransientUiState(editor, action, pendingDelete, remediationMessage)
         },
-    ) { install, rehearsalAction, target, scheduleTransient ->
-        TransientUiState(install, rehearsalAction, target, scheduleTransient)
+    ) { install, rehearsalSnapshot, scheduleTransient ->
+        TransientUiState(
+            profileInstall = install,
+            rehearsal = rehearsalSnapshot.action,
+            rehearsalTarget = rehearsalSnapshot.target,
+            schedule = scheduleTransient,
+        )
     }
 
     val state: StateFlow<LenswakeUiState> = combine(

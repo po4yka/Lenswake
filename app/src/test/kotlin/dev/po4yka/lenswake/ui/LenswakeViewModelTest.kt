@@ -593,6 +593,67 @@ class LenswakeViewModelProfileActionsTest : LenswakeViewModelTestSupport() {
     }
 
     @Test
+    fun secondRehearsalNeverPairsItsTargetWithThePreviousOutcome() = runTest {
+        val firstSchedule = schedule().copy(id = ScheduleId("schedule-first"))
+        val secondSchedule = schedule().copy(id = ScheduleId("schedule-second"))
+        val schedules = FakeScheduleRepository().also {
+            it.save(firstSchedule)
+            it.save(secondSchedule)
+        }
+        val profiles = FakeProfileRepository().also { it.save(profile()) }
+        var calls = 0
+        val viewModel = LenswakeViewModel(
+            schedules,
+            profiles,
+            FakeExecutionRepository(),
+            RuntimePreflightProbe { rehearsalEligiblePreflight() },
+            installUseCase(profiles),
+            RehearsalCoordinator {
+                calls += 1
+                val code = if (calls == 1) {
+                    RehearsalResultCode.START_FAILED
+                } else {
+                    RehearsalResultCode.STOP_FAILED
+                }
+                RehearsalResult.Rejected(code, "Expected test outcome")
+            },
+            scheduleWorkflow(schedules, profiles),
+            TestUiStringProvider,
+        )
+        val emitted = mutableListOf<LenswakeUiState>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.state.collect(emitted::add)
+        }
+
+        viewModel.state.first { it.actions.canRunRehearsal }
+        viewModel.runScheduleRehearsal(firstSchedule.id.value)
+        val firstOutcome = viewModel.state.first {
+            it.rehearsalTarget == RehearsalTargetUiState.Schedule(firstSchedule.id.value) &&
+                it.rehearsal is RehearsalActionUiState.Failed
+        }.rehearsal
+        emitted.clear()
+
+        viewModel.runScheduleRehearsal(secondSchedule.id.value)
+        viewModel.state.first {
+            it.rehearsalTarget == RehearsalTargetUiState.Schedule(secondSchedule.id.value) &&
+                it.rehearsal is RehearsalActionUiState.Failed
+        }
+
+        assertTrue(
+            emitted.any {
+                it.rehearsalTarget == RehearsalTargetUiState.Schedule(secondSchedule.id.value) &&
+                    it.rehearsal == RehearsalActionUiState.Running
+            },
+        )
+        assertFalse(
+            emitted.any {
+                it.rehearsalTarget == RehearsalTargetUiState.Schedule(secondSchedule.id.value) &&
+                    it.rehearsal == firstOutcome
+            },
+        )
+    }
+
+    @Test
     fun recreatedViewModelRestoresActiveSessionAndStopDeadline() = runTest {
         val profiles = FakeProfileRepository().also { it.save(profile()) }
         val schedules = FakeScheduleRepository()

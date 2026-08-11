@@ -62,8 +62,7 @@ interface LenswakeScheduleActions {
 internal class LenswakeViewModelActionState {
     val preflightRefresh = MutableStateFlow(0L)
     val profileInstall = MutableStateFlow<ProfileInstallUiState>(ProfileInstallUiState.Idle)
-    val rehearsal = MutableStateFlow<RehearsalActionUiState>(RehearsalActionUiState.Idle)
-    val rehearsalTarget = MutableStateFlow<RehearsalTargetUiState?>(null)
+    val rehearsal = MutableStateFlow(RehearsalActionSnapshot())
     val scheduleEditor = MutableStateFlow<ScheduleEditorUiState>(ScheduleEditorUiState.Closed)
     val scheduleAction = MutableStateFlow<ScheduleActionUiState>(ScheduleActionUiState.Idle)
     val pendingDeleteScheduleId = MutableStateFlow<String?>(null)
@@ -153,13 +152,15 @@ internal class LenswakeProfileActionsImpl(
     ) {
         if (
             !actionState.state.value.actions.canRunRehearsal ||
-            actionState.rehearsal.value == RehearsalActionUiState.Running
+            actionState.rehearsal.value.action == RehearsalActionUiState.Running
         ) {
             return
         }
 
-        actionState.rehearsalTarget.value = target
-        actionState.rehearsal.value = RehearsalActionUiState.Running
+        actionState.rehearsal.value = RehearsalActionSnapshot(
+            action = RehearsalActionUiState.Running,
+            target = target,
+        )
         actionState.scope.launch {
             val attempt = runCatching {
                 when (val preparation = prepare()) {
@@ -172,12 +173,16 @@ internal class LenswakeProfileActionsImpl(
             val failure = attempt.exceptionOrNull()
             when (failure) {
                 is CancellationException -> throw failure
-                null -> actionState.rehearsal.value = checkNotNull(attempt.getOrNull())
+                null -> actionState.rehearsal.value = actionState.rehearsal.value.copy(
+                    action = checkNotNull(attempt.getOrNull()),
+                )
                 !is Exception -> throw failure
                 else -> {
                     Log.e(TAG, "Unexpected rehearsal action failure", failure)
-                    actionState.rehearsal.value = RehearsalActionUiState.Failed(
-                        strings.get(R.string.rehearsal_unexpected_failure),
+                    actionState.rehearsal.value = actionState.rehearsal.value.copy(
+                        action = RehearsalActionUiState.Failed(
+                            strings.get(R.string.rehearsal_unexpected_failure),
+                        ),
                     )
                 }
             }
@@ -185,6 +190,11 @@ internal class LenswakeProfileActionsImpl(
         }
     }
 }
+
+internal data class RehearsalActionSnapshot(
+    val action: RehearsalActionUiState = RehearsalActionUiState.Idle,
+    val target: RehearsalTargetUiState? = null,
+)
 
 internal class LenswakeScheduleActionsImpl(
     private val actionState: LenswakeViewModelActionState,
