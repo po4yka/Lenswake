@@ -2,10 +2,19 @@ package dev.po4yka.lenswake.ui
 
 import androidx.compose.runtime.mutableStateOf
 import androidx.navigation3.runtime.NavKey
+import androidx.compose.ui.unit.dp
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
 class LenswakeNavigationStateTest {
+    @Test
+    fun navigationLayoutFollowsMaterialWindowBreakpoints() {
+        assertEquals(AdaptiveNavigationLayout.BOTTOM_BAR, adaptiveNavigationLayout(599.dp))
+        assertEquals(AdaptiveNavigationLayout.RAIL, adaptiveNavigationLayout(600.dp))
+        assertEquals(AdaptiveNavigationLayout.RAIL, adaptiveNavigationLayout(839.dp))
+        assertEquals(AdaptiveNavigationLayout.DRAWER, adaptiveNavigationLayout(840.dp))
+    }
+
     @Test
     fun nestedDestinationKeepsItsTopLevelParentActive() {
         val (navigation, backStacks) = navigationState(LenswakeTopLevel.PROFILES)

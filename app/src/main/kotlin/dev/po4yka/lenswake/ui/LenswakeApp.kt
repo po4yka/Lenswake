@@ -4,13 +4,20 @@ import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.PermanentDrawerSheet
+import androidx.compose.material3.PermanentNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,8 +26,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -118,27 +127,13 @@ fun LenswakeApp(
     val activeTopLevelDestination = navigation.activeTopLevelDestination
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val useNavigationRail = maxWidth >= NavigationRailMinWidth
-
-        Row(modifier = Modifier.fillMaxSize()) {
-            if (useNavigationRail) {
-                NavigationRail {
-                    topLevelDestinations.forEach { destination ->
-                        NavigationRailItem(
-                            selected = activeTopLevelDestination == destination.key,
-                            onClick = { navigation.navigateToTopLevel(destination.topLevel) },
-                            icon = { TopLevelIcon(destination) },
-                            label = { Text(stringResource(destination.labelResource)) },
-                        )
-                    }
-                }
-            }
-
+        val navigationLayout = adaptiveNavigationLayout(maxWidth)
+        val appContent: @Composable (Modifier) -> Unit = { modifier ->
             Scaffold(
-                modifier = Modifier.weight(1f),
+                modifier = modifier,
                 bottomBar = {
-                    if (!useNavigationRail) {
-                        NavigationBar {
+                    if (navigationLayout == AdaptiveNavigationLayout.BOTTOM_BAR) {
+                        NavigationBar(modifier = Modifier.testTag(NAVIGATION_BAR_TAG)) {
                             topLevelDestinations.forEach { destination ->
                                 NavigationBarItem(
                                     selected = activeTopLevelDestination == destination.key,
@@ -201,6 +196,51 @@ fun LenswakeApp(
                 )
             }
         }
+
+        when (navigationLayout) {
+            AdaptiveNavigationLayout.BOTTOM_BAR -> appContent(Modifier.fillMaxSize())
+
+            AdaptiveNavigationLayout.RAIL -> Row(modifier = Modifier.fillMaxSize()) {
+                NavigationRail(modifier = Modifier.testTag(NAVIGATION_RAIL_TAG)) {
+                    topLevelDestinations.forEach { destination ->
+                        NavigationRailItem(
+                            selected = activeTopLevelDestination == destination.key,
+                            onClick = { navigation.navigateToTopLevel(destination.topLevel) },
+                            icon = { TopLevelIcon(destination) },
+                            label = { Text(stringResource(destination.labelResource)) },
+                        )
+                    }
+                }
+                appContent(Modifier.weight(1f))
+            }
+
+            AdaptiveNavigationLayout.DRAWER -> PermanentNavigationDrawer(
+                drawerContent = {
+                    PermanentDrawerSheet(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(ExpandedDrawerWidth)
+                            .testTag(NAVIGATION_DRAWER_TAG),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.app_name),
+                            modifier = Modifier.padding(horizontal = 28.dp, vertical = 24.dp),
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                        topLevelDestinations.forEach { destination ->
+                            NavigationDrawerItem(
+                                selected = activeTopLevelDestination == destination.key,
+                                onClick = { navigation.navigateToTopLevel(destination.topLevel) },
+                                icon = { TopLevelIcon(destination) },
+                                label = { Text(stringResource(destination.labelResource)) },
+                                modifier = Modifier.padding(horizontal = 12.dp),
+                            )
+                        }
+                    }
+                },
+                content = { appContent(Modifier.fillMaxSize()) },
+            )
+        }
     }
 }
 
@@ -212,4 +252,22 @@ private fun TopLevelIcon(destination: TopLevelDestination) {
     )
 }
 
-private val NavigationRailMinWidth = 600.dp
+internal enum class AdaptiveNavigationLayout {
+    BOTTOM_BAR,
+    RAIL,
+    DRAWER,
+}
+
+internal fun adaptiveNavigationLayout(width: Dp): AdaptiveNavigationLayout = when {
+    width < MediumWindowMinWidth -> AdaptiveNavigationLayout.BOTTOM_BAR
+    width < ExpandedWindowMinWidth -> AdaptiveNavigationLayout.RAIL
+    else -> AdaptiveNavigationLayout.DRAWER
+}
+
+internal const val NAVIGATION_BAR_TAG = "lenswake-navigation-bar"
+internal const val NAVIGATION_RAIL_TAG = "lenswake-navigation-rail"
+internal const val NAVIGATION_DRAWER_TAG = "lenswake-navigation-drawer"
+
+private val MediumWindowMinWidth = 600.dp
+private val ExpandedWindowMinWidth = 840.dp
+private val ExpandedDrawerWidth = 360.dp

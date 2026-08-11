@@ -22,19 +22,40 @@ class AdaptiveNavigationTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun wideWindowPlacesPrimaryNavigationAtTheStartEdge() {
+    fun expandedWindowUsesPermanentDrawerAtTheStartEdge() {
         val (root, schedules) = renderApp(width = 900.dp, height = 500.dp)
 
+        composeRule.onNodeWithTag(NAVIGATION_DRAWER_TAG).assertExists()
+        composeRule.onNodeWithTag(NAVIGATION_RAIL_TAG).assertDoesNotExist()
+        composeRule.onNodeWithTag(NAVIGATION_BAR_TAG).assertDoesNotExist()
+
         assertTrue(
-            "Wide-window navigation remained at the bottom: $schedules",
-            schedules.centerX < (root.left + 100.dp).value &&
-                schedules.centerY < (root.bottom - 100.dp).value,
+            "Expanded-window navigation was not placed at the start edge: $schedules",
+            schedules.centerX < root.centerX,
         )
     }
 
     @Test
-    fun compactWindowPlacesPrimaryNavigationAtTheBottomEdge() {
+    fun mediumWindowUsesNavigationRailAtTheStartEdge() {
+        val (root, schedules) = renderApp(width = 700.dp, height = 500.dp)
+
+        composeRule.onNodeWithTag(NAVIGATION_RAIL_TAG).assertExists()
+        composeRule.onNodeWithTag(NAVIGATION_DRAWER_TAG).assertDoesNotExist()
+        composeRule.onNodeWithTag(NAVIGATION_BAR_TAG).assertDoesNotExist()
+
+        assertTrue(
+            "Medium-window navigation was not placed at the start edge: $schedules",
+            schedules.centerX < (root.left + 100.dp).value,
+        )
+    }
+
+    @Test
+    fun compactWindowUsesNavigationBarAtTheBottomEdge() {
         val (root, schedules) = renderApp(width = 400.dp, height = 800.dp)
+
+        composeRule.onNodeWithTag(NAVIGATION_BAR_TAG).assertExists()
+        composeRule.onNodeWithTag(NAVIGATION_RAIL_TAG).assertDoesNotExist()
+        composeRule.onNodeWithTag(NAVIGATION_DRAWER_TAG).assertDoesNotExist()
 
         assertTrue(
             "Compact-window navigation did not remain at the bottom: $schedules",
