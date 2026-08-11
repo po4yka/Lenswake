@@ -15,16 +15,20 @@ internal object TestUiStringProvider : UiStringProvider {
         R.string.action_open_lenswake to "Open Lenswake",
         R.string.alarm_stop_failure_title to "Scheduled STOP needs manual action",
         R.string.alarm_stop_failure_message to
-            "Lenswake could not deliver STOP. Pixel Camera may still be recording; open Pixel Camera and stop it manually.",
+            "Lenswake could not deliver STOP. Pixel Camera may still be recording; " +
+            "open Pixel Camera and stop it manually.",
         R.string.alarm_start_failure_title to "Scheduled recording did not start",
         R.string.alarm_start_failure_message to
-            "Lenswake could not deliver START. The recording may not have started; open Lenswake and review the schedule.",
+            "Lenswake could not deliver START. The recording may not have started; " +
+            "open Lenswake and review the schedule.",
         R.string.alarm_recovery_failure_title to "Scheduled alarms need attention",
         R.string.alarm_recovery_failure_message to
-            "Lenswake could not restore scheduled alarms. Open Lenswake and verify exact-alarm access before relying on schedules.",
+            "Lenswake could not restore scheduled alarms. Open Lenswake and verify exact-alarm access " +
+            "before relying on schedules.",
         R.string.alarm_journal_failure_title to "Scheduled camera action could not be restored",
         R.string.alarm_journal_failure_message to
-            "Lenswake found a corrupt durable alarm entry. An unknown START or STOP could not be restored; Pixel Camera may still be recording. Open Pixel Camera and verify its recording state.",
+            "Lenswake found a corrupt durable alarm entry. An unknown START or STOP could not be restored; " +
+            "Pixel Camera may still be recording. Open Pixel Camera and verify its recording state.",
         R.string.capability_accessibility_service to "Lenswake Accessibility Service",
         R.string.default_schedule_name to "Time Lapse",
         R.string.diagnostics_event_title to "%1\$s",

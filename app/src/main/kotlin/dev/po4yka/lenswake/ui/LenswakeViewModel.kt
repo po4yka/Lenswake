@@ -81,14 +81,32 @@ class LenswakeViewModel internal constructor(
     private val strings: UiStringProvider,
     alarmTransportIncidentSource: AlarmTransportIncidentSource = EmptyAlarmTransportIncidentSource,
     private val clock: LenswakeClock = SystemLenswakeClock(),
-) : ViewModel() {
-    private val preflightRefresh = MutableStateFlow(0L)
-    private val profileInstall = MutableStateFlow<ProfileInstallUiState>(ProfileInstallUiState.Idle)
-    private val rehearsal = MutableStateFlow<RehearsalActionUiState>(RehearsalActionUiState.Idle)
-    private val scheduleEditor = MutableStateFlow<ScheduleEditorUiState>(ScheduleEditorUiState.Closed)
-    private val scheduleAction = MutableStateFlow<ScheduleActionUiState>(ScheduleActionUiState.Idle)
-    private val pendingDeleteScheduleId = MutableStateFlow<String?>(null)
-    private val setupRemediationMessage = MutableStateFlow<String?>(null)
+    private val actionState: LenswakeViewModelActionState = LenswakeViewModelActionState(),
+    profileActions: LenswakeProfileActions = LenswakeProfileActionsImpl(
+        actionState = actionState,
+        profileRepository = profileRepository,
+        scheduleRepository = scheduleRepository,
+        executions = executionRepository,
+        installKnownPixelCameraProfile = installKnownPixelCameraProfile,
+        rehearsalCoordinator = rehearsalCoordinator,
+        strings = strings,
+    ),
+    scheduleActions: LenswakeScheduleActions = LenswakeScheduleActionsImpl(
+        actionState = actionState,
+        scheduleWorkflow = scheduleWorkflow,
+        strings = strings,
+        clock = clock,
+    ),
+) : ViewModel(),
+    LenswakeProfileActions by profileActions,
+    LenswakeScheduleActions by scheduleActions {
+    private val preflightRefresh = actionState.preflightRefresh
+    private val profileInstall = actionState.profileInstall
+    private val rehearsal = actionState.rehearsal
+    private val scheduleEditor = actionState.scheduleEditor
+    private val scheduleAction = actionState.scheduleAction
+    private val pendingDeleteScheduleId = actionState.pendingDeleteScheduleId
+    private val setupRemediationMessage = actionState.setupRemediationMessage
     private val profiles = profileRepository.observeProfiles()
     private val executions = executionRepository.observeExecutions()
     private val activeSession = executions.map { sessions ->
@@ -151,7 +169,12 @@ class LenswakeViewModel internal constructor(
     private val transientUiState = combine(
         profileInstall,
         rehearsal,
-        combine(scheduleEditor, scheduleAction, pendingDeleteScheduleId, setupRemediationMessage) { editor, action, pendingDelete, remediationMessage ->
+        combine(
+            scheduleEditor,
+            scheduleAction,
+            pendingDeleteScheduleId,
+            setupRemediationMessage,
+        ) { editor, action, pendingDelete, remediationMessage ->
             ScheduleTransientUiState(editor, action, pendingDelete, remediationMessage)
         },
     ) { install, rehearsalAction, scheduleTransient ->
@@ -198,8 +221,12 @@ class LenswakeViewModel internal constructor(
         initialValue = LenswakeUiStateMapper.initial(strings),
     )
 
+    init {
+        actionState.bind(state, viewModelScope)
+    }
+
     fun refreshPreflight() {
-        preflightRefresh.value += 1
+        actionState.refreshPreflight()
     }
 
     fun diagnosticsExport(): String? = DiagnosticsExportFormatter.format(state.value, strings)
@@ -214,231 +241,6 @@ class LenswakeViewModel internal constructor(
 
     fun clearSetupRemediationMessage() {
         setupRemediationMessage.value = null
-    }
-
-    fun installCandidateProfile() {
-        if (profileInstall.value == ProfileInstallUiState.Installing) return
-
-        profileInstall.value = ProfileInstallUiState.Installing
-        viewModelScope.launch {
-            profileInstall.value = installKnownPixelCameraProfile().toUiState(strings)
-        }
-    }
-
-    fun runProfileRehearsal(profileId: String) {
-        launchRehearsal {
-            val profile = profileRepository.get(ProfileId(profileId))
-                ?: return@launchRehearsal RehearsalPreparation.Failed(
-                    strings.get(R.string.rehearsal_profile_required),
-                )
-            val supportedCaptures = profile.supportedCaptureConfigurations()
-                .sortedWith(capturePreferenceComparator)
-            val completedRehearsals = executions.first()
-            val capture = supportedCaptures.firstOrNull { candidate ->
-                completedRehearsals.none { it.qualifiesRehearsal(profile, candidate) }
-            } ?: supportedCaptures.firstOrNull()
-                ?: return@launchRehearsal RehearsalPreparation.Failed(
-                    strings.get(R.string.schedule_error_capture_not_supported),
-                )
-            RehearsalPreparation.Ready(
-                RehearsalRequest(
-                    profileId = profile.id,
-                    capture = capture,
-                    recordingDuration = Duration.ofSeconds(REHEARSAL_DURATION_SECONDS),
-                ),
-            )
-        }
-    }
-
-    fun runScheduleRehearsal(scheduleId: String) {
-        launchRehearsal {
-            val schedule = scheduleRepository.get(ScheduleId(scheduleId))
-                ?: return@launchRehearsal RehearsalPreparation.Failed(
-                    strings.get(R.string.rehearsal_schedule_missing),
-                )
-            RehearsalPreparation.Ready(
-                RehearsalRequest(
-                    profileId = schedule.profileId,
-                    capture = schedule.capture,
-                    recordingDuration = Duration.ofSeconds(REHEARSAL_DURATION_SECONDS),
-                    scheduleId = schedule.id,
-                ),
-            )
-        }
-    }
-
-    private fun launchRehearsal(
-        prepare: suspend () -> RehearsalPreparation,
-    ) {
-        if (!state.value.actions.canRunRehearsal || rehearsal.value == RehearsalActionUiState.Running) return
-
-        rehearsal.value = RehearsalActionUiState.Running
-        viewModelScope.launch {
-            try {
-                rehearsal.value = when (val preparation = prepare()) {
-                    is RehearsalPreparation.Failed ->
-                        RehearsalActionUiState.Failed(preparation.message)
-                    is RehearsalPreparation.Ready ->
-                        rehearsalCoordinator.run(preparation.request).toUiState(strings)
-                }
-                refreshPreflight()
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                rehearsal.value = RehearsalActionUiState.Failed(
-                    strings.get(R.string.rehearsal_unexpected_failure),
-                )
-                refreshPreflight()
-            }
-        }
-    }
-
-    fun beginCreateSchedule() {
-        if (!state.value.actions.canCreateSchedule) {
-            scheduleAction.value = ScheduleActionUiState.Failed(
-                state.value.actions.createScheduleUnavailableReason,
-            )
-            return
-        }
-        val profile = state.value.profiles.firstOrNull { it.verifiedForScheduling }
-        if (profile == null) {
-            scheduleAction.value = ScheduleActionUiState.Failed(
-                strings.get(R.string.action_create_profile_required),
-            )
-            return
-        }
-        scheduleAction.value = ScheduleActionUiState.Idle
-        val zoneId = ZoneId.systemDefault()
-        val startLocal = defaultScheduleStart(clock.now(), zoneId)
-        val defaultCapture = profile.supportedCaptures.sortedWith(capturePreferenceComparator).firstOrNull() ?: run {
-            scheduleAction.value = ScheduleActionUiState.Failed(
-                strings.get(R.string.schedule_error_capture_not_supported),
-            )
-            return
-        }
-        scheduleEditor.value = ScheduleEditorUiState.Open(
-            mode = ScheduleEditorMode.Create,
-            form = ScheduleFormUiState(
-                name = strings.get(R.string.default_schedule_name),
-                startLocal = startLocal,
-                stopLocal = startLocal.plusHours(DEFAULT_RECORDING_DURATION_HOURS),
-                captureMode = defaultCapture.mode,
-                timeLapseSpeed = defaultCapture.timeLapseSpeed ?: TimeLapseSpeed.X120,
-                lens = defaultCapture.lens,
-                profileId = profile.id,
-                zoneId = zoneId,
-            ),
-        )
-    }
-
-    fun beginEditSchedule(scheduleId: String) {
-        val schedule = state.value.schedules.firstOrNull { it.id == scheduleId }
-        if (schedule == null) {
-            scheduleAction.value = ScheduleActionUiState.Failed(
-                strings.get(R.string.schedule_selected_missing),
-            )
-            return
-        }
-        scheduleAction.value = ScheduleActionUiState.Idle
-        scheduleEditor.value = ScheduleEditorUiState.Open(
-            mode = ScheduleEditorMode.Edit(scheduleId),
-            form = ScheduleFormUiState(
-                name = schedule.title,
-                startLocal = schedule.startLocal,
-                stopLocal = schedule.stopLocal,
-                zoneId = schedule.zoneId,
-                captureMode = schedule.capture.mode,
-                timeLapseSpeed = schedule.capture.timeLapseSpeed ?: TimeLapseSpeed.X120,
-                lens = schedule.capture.lens,
-                profileId = schedule.profileId,
-                enabled = schedule.enabled,
-            ),
-        )
-    }
-
-    fun updateScheduleForm(form: ScheduleFormUiState) {
-        val editor = scheduleEditor.value as? ScheduleEditorUiState.Open ?: return
-        scheduleEditor.value = editor.copy(form = form, error = null)
-    }
-
-    fun cancelScheduleEditor() {
-        if (scheduleAction.value is ScheduleActionUiState.Working) return
-        scheduleEditor.value = ScheduleEditorUiState.Closed
-    }
-
-    fun submitSchedule() {
-        val editor = scheduleEditor.value as? ScheduleEditorUiState.Open ?: return
-        if (scheduleAction.value is ScheduleActionUiState.Working) return
-        val command = editor.form.toCommandOrNull()
-        if (command == null) {
-            scheduleEditor.value = editor.copy(
-                error = strings.get(R.string.validation_schedule_form_invalid),
-            )
-            return
-        }
-        launchScheduleMutation(strings.get(R.string.schedule_saving)) {
-            when (val mode = editor.mode) {
-                ScheduleEditorMode.Create -> scheduleWorkflow.create(command)
-                is ScheduleEditorMode.Edit -> scheduleWorkflow.edit(ScheduleId(mode.scheduleId), command)
-            }
-        }
-    }
-
-    fun setScheduleEnabled(scheduleId: String, enabled: Boolean) {
-        launchScheduleMutation(
-            strings.get(if (enabled) R.string.schedule_enabling else R.string.schedule_disabling),
-        ) {
-            scheduleWorkflow.setEnabled(ScheduleId(scheduleId), enabled)
-        }
-    }
-
-    fun requestDeleteSchedule(scheduleId: String) {
-        if (scheduleAction.value is ScheduleActionUiState.Working) return
-        pendingDeleteScheduleId.value = scheduleId
-    }
-
-    fun cancelDeleteSchedule() {
-        pendingDeleteScheduleId.value = null
-    }
-
-    fun confirmDeleteSchedule(scheduleId: String) {
-        if (pendingDeleteScheduleId.value != scheduleId) return
-        if (scheduleAction.value is ScheduleActionUiState.Working) return
-        pendingDeleteScheduleId.value = null
-        launchScheduleMutation(strings.get(R.string.schedule_deleting)) {
-            scheduleWorkflow.delete(ScheduleId(scheduleId))
-        }
-    }
-
-    fun clearScheduleOutcome() {
-        if (scheduleAction.value !is ScheduleActionUiState.Working) {
-            scheduleAction.value = ScheduleActionUiState.Idle
-        }
-    }
-
-    private fun launchScheduleMutation(
-        message: String,
-        operation: suspend () -> ScheduleWorkflowResult,
-    ) {
-        if (scheduleAction.value is ScheduleActionUiState.Working) return
-        scheduleAction.value = ScheduleActionUiState.Working(message)
-        viewModelScope.launch {
-            try {
-                val result = operation()
-                scheduleAction.value = result.toUiState(strings)
-                if (result is ScheduleWorkflowResult.Applied || result is ScheduleWorkflowResult.Deleted) {
-                    scheduleEditor.value = ScheduleEditorUiState.Closed
-                    pendingDeleteScheduleId.value = null
-                    refreshPreflight()
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                scheduleAction.value = ScheduleActionUiState.Failed(
-                    strings.get(R.string.schedule_change_failed),
-                )
-            }
-        }
     }
 
     class Factory internal constructor(
@@ -490,22 +292,9 @@ class LenswakeViewModel internal constructor(
     }
 
     private companion object {
-        val capturePreferenceComparator = compareBy<CaptureConfiguration>(
-            {
-                when (it.mode) {
-                    dev.po4yka.lenswake.core.CaptureMode.TIME_LAPSE -> 0
-                    dev.po4yka.lenswake.core.CaptureMode.VIDEO -> 1
-                    dev.po4yka.lenswake.core.CaptureMode.NIGHT_SIGHT_TIME_LAPSE -> 2
-                }
-            },
-            { it.lens.ordinal },
-            { it.timeLapseSpeed?.ordinal ?: -1 },
-        )
         const val MAX_OBSERVED_SESSIONS = 10
         const val MAX_VISIBLE_EVENTS = 50
         const val STOP_TIMEOUT_MILLIS = 5_000L
-        const val REHEARSAL_DURATION_SECONDS = 10L
-        const val DEFAULT_RECORDING_DURATION_HOURS = 1L
         const val DEADLINE_RECHECK_MILLIS = 30_000L
     }
 }
@@ -536,11 +325,6 @@ private data class ObservedActiveSession(
     val observedAt: java.time.Instant,
 )
 
-private sealed interface RehearsalPreparation {
-    data class Ready(val request: RehearsalRequest) : RehearsalPreparation
-    data class Failed(val message: String) : RehearsalPreparation
-}
-
 private fun SetupRemediationAction.remediationLabel(strings: UiStringProvider): String = strings.get(
     when (this) {
         SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION -> R.string.remediation_notification_permission
@@ -553,65 +337,7 @@ private fun SetupRemediationAction.remediationLabel(strings: UiStringProvider): 
     },
 )
 
-private fun ScheduleFormUiState.toCommandOrNull(): ScheduleCommand? = runCatching {
-    val start = requireNotNull(startLocal)
-    val stop = requireNotNull(stopLocal)
-    require(name.isNotBlank())
-    require(profileId.isNotBlank())
-    ScheduleCommand(
-        name = name.trim(),
-        startAt = start.toUnambiguousInstant(zoneId),
-        stopAt = stop.toUnambiguousInstant(zoneId),
-        zoneId = zoneId,
-        capture = captureConfiguration(),
-        profileId = dev.po4yka.lenswake.core.ProfileId(profileId.trim()),
-        enabled = enabled,
-    )
-}.getOrNull()
-
-private fun LocalDateTime.toUnambiguousInstant(zoneId: ZoneId): java.time.Instant {
-    val offsets = zoneId.rules.getValidOffsets(this)
-    require(offsets.size == 1) { "Local time must exist exactly once in its time zone" }
-    return toInstant(offsets.single())
-}
-
-private fun ScheduleWorkflowResult.toUiState(strings: UiStringProvider): ScheduleActionUiState = when (this) {
-    is ScheduleWorkflowResult.Applied -> ScheduleActionUiState.Succeeded(
-        when (operation) {
-            ScheduleOperation.CREATED -> if (schedule.enabled) {
-                strings.get(R.string.schedule_created)
-            } else {
-                strings.get(R.string.schedule_draft_created)
-            }
-            ScheduleOperation.UPDATED -> if (schedule.enabled) {
-                strings.get(R.string.schedule_updated)
-            } else {
-                strings.get(R.string.schedule_draft_updated)
-            }
-            ScheduleOperation.ENABLED -> strings.get(R.string.schedule_enabled)
-            ScheduleOperation.DISABLED -> strings.get(R.string.schedule_disabled)
-        },
-    )
-
-    is ScheduleWorkflowResult.Deleted -> ScheduleActionUiState.Succeeded(
-        strings.get(R.string.schedule_deleted),
-    )
-
-    is ScheduleWorkflowResult.Rejected -> ScheduleActionUiState.Failed(
-        message = strings.get(code.messageResource()),
-    )
-
-    is ScheduleWorkflowResult.Failed -> ScheduleActionUiState.Failed(
-        message = strings.get(code.messageResource()),
-        rollbackFailures = if (rollbackFailures.isEmpty()) {
-            emptyList()
-        } else {
-            listOf(strings.get(R.string.schedule_error_rollback_incomplete))
-        },
-    )
-}
-
-private fun RehearsalResult.toUiState(strings: UiStringProvider): RehearsalActionUiState = when (this) {
+internal fun RehearsalResult.toUiState(strings: UiStringProvider): RehearsalActionUiState = when (this) {
     is RehearsalResult.Completed -> RehearsalActionUiState.Passed(
         strings.get(R.string.rehearsal_passed),
     )
@@ -627,7 +353,7 @@ private fun RehearsalResult.toUiState(strings: UiStringProvider): RehearsalActio
     )
 }
 
-private fun InstallKnownPixelCameraProfileResult.toUiState(
+internal fun InstallKnownPixelCameraProfileResult.toUiState(
     strings: UiStringProvider,
 ): ProfileInstallUiState = when (this) {
     is InstallKnownPixelCameraProfileResult.Installed -> ProfileInstallUiState.Succeeded(
@@ -655,23 +381,6 @@ private fun InstallKnownPixelCameraProfileResult.toUiState(
     )
 }
 
-private fun ScheduleWorkflowFailureCode.messageResource(): Int = when (this) {
-    ScheduleWorkflowFailureCode.SCHEDULE_NOT_FOUND -> R.string.schedule_error_not_found
-    ScheduleWorkflowFailureCode.PROFILE_NOT_FOUND -> R.string.schedule_error_profile_not_found
-    ScheduleWorkflowFailureCode.PROFILE_NOT_VERIFIED -> R.string.schedule_error_profile_not_verified
-    ScheduleWorkflowFailureCode.CAPTURE_NOT_SUPPORTED -> R.string.schedule_error_capture_not_supported
-    ScheduleWorkflowFailureCode.RUNTIME_NOT_READY -> R.string.schedule_error_runtime_not_ready
-    ScheduleWorkflowFailureCode.PREFLIGHT_FAILED -> R.string.schedule_error_preflight_failed
-    ScheduleWorkflowFailureCode.INVALID_SCHEDULE -> R.string.schedule_error_invalid
-    ScheduleWorkflowFailureCode.SCHEDULE_EXECUTION_ACTIVE -> R.string.schedule_error_execution_active
-    ScheduleWorkflowFailureCode.EXECUTION_STATE_UNAVAILABLE -> R.string.schedule_error_execution_unavailable
-    ScheduleWorkflowFailureCode.CANCEL_FAILED -> R.string.schedule_error_cancel_failed
-    ScheduleWorkflowFailureCode.PERSIST_FAILED -> R.string.schedule_error_persist_failed
-    ScheduleWorkflowFailureCode.START_ALARM_FAILED -> R.string.schedule_error_start_alarm_failed
-    ScheduleWorkflowFailureCode.STOP_ALARM_FAILED -> R.string.schedule_error_stop_alarm_failed
-    ScheduleWorkflowFailureCode.DELETE_FAILED -> R.string.schedule_error_delete_failed
-}
-
 private fun RehearsalResultCode.messageResource(): Int = when (this) {
     RehearsalResultCode.PROFILE_NOT_FOUND -> R.string.rehearsal_error_profile_not_found
     RehearsalResultCode.ENVIRONMENT_UNAVAILABLE -> R.string.rehearsal_error_environment_unavailable
@@ -688,15 +397,12 @@ private fun RehearsalResultCode.messageResource(): Int = when (this) {
 }
 
 internal object LenswakeUiStateMapper {
-    private val eventTimeFormatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
-    private const val MAX_VISIBLE_PERSISTENCE_KEY_LENGTH = 64
-
     fun initial(strings: UiStringProvider): LenswakeUiState = LenswakeUiState(
         readiness = ReadinessUiState.Blocked(
             title = strings.get(R.string.readiness_setup_required_title),
             summary = strings.get(R.string.readiness_setup_required_summary),
         ),
-        capabilities = initialCapabilities(strings),
+        capabilities = LenswakeReadinessUiMapper.initialCapabilities(strings),
         actions = UiActionAvailability(
             createScheduleUnavailableReason = strings.get(R.string.action_create_unavailable_default),
             installCandidateProfileUnavailableReason = strings.get(R.string.action_profile_unchecked_default),
@@ -723,428 +429,42 @@ internal object LenswakeUiStateMapper {
         setupRemediationMessage: String? = null,
         strings: UiStringProvider,
     ): LenswakeUiState = LenswakeUiState(
-        readiness = readiness(preflight, strings),
+        readiness = LenswakeReadinessUiMapper.readiness(preflight, strings),
         schedules = schedules
             .sortedBy { it.startAt }
-            .map { scheduleSummary(it, strings) },
+            .map { LenswakeScheduleUiMapper.summary(it, strings) },
         profiles = profiles
             .sortedWith(compareBy({ it.environment.deviceModel }, { it.id.value }))
-            .map { profileSummary(it, executions, strings) },
-        capabilities = preflight.checks.map { capability(it, strings) },
-        diagnosticEvents = events.map { eventSummary(it, strings) },
-        alarmTransportIncidents = incidents.map { incidentSummary(it, strings) },
-        profilePersistenceIssues = profileIssues.map { profilePersistenceIssueSummary(it, strings) },
+            .map { LenswakeProfileUiMapper.summary(it, executions, strings) },
+        capabilities = preflight.checks.map { LenswakeReadinessUiMapper.capability(it, strings) },
+        diagnosticEvents = events.map { LenswakeDiagnosticsUiMapper.eventSummary(it, strings) },
+        alarmTransportIncidents = incidents.map { LenswakeDiagnosticsUiMapper.incidentSummary(it, strings) },
+        profilePersistenceIssues = profileIssues.map {
+            LenswakeDiagnosticsUiMapper.profilePersistenceIssueSummary(it, strings)
+        },
         profileInstall = profileInstall,
         rehearsal = rehearsal.takeUnless {
             it is RehearsalActionUiState.SafetyStopPending &&
                 activeSession?.id?.value != it.sessionId
         } ?: RehearsalActionUiState.Idle,
-        activeSession = activeSession?.toActiveSessionUiState(now, strings),
+        activeSession = activeSession?.let { LenswakeActiveSessionUiMapper.map(it, now, strings) },
         scheduleEditor = scheduleEditor,
         scheduleAction = scheduleAction,
         pendingDeleteScheduleId = pendingDeleteScheduleId,
         setupRemediationMessage = setupRemediationMessage,
-        actions = UiActionAvailability(
-            canCreateSchedule = preflight.hasAllScheduleChecksPassed() &&
-                profiles.any { profile -> verifiedCaptures(profile, executions).isNotEmpty() } &&
-                scheduleAction !is ScheduleActionUiState.Working,
-            createScheduleUnavailableReason = when {
-                !preflight.hasAllScheduleChecksPassed() ->
-                    strings.get(R.string.action_create_setup_required)
-                profiles.none { profile -> verifiedCaptures(profile, executions).isNotEmpty() } ->
-                    strings.get(R.string.action_create_profile_required)
-                scheduleAction is ScheduleActionUiState.Working -> strings.get(R.string.action_create_busy)
-                else -> strings.get(R.string.action_create_available)
-            },
-            canInstallCandidateProfile = profileInstall !is ProfileInstallUiState.Installing &&
-                profileInstall !is ProfileInstallUiState.Succeeded,
-            installCandidateProfileUnavailableReason = when {
-                profileInstall is ProfileInstallUiState.Installing -> strings.get(R.string.action_profile_installing)
-                profileInstall is ProfileInstallUiState.Succeeded -> strings.get(R.string.action_profile_installed)
-                profiles.isEmpty() -> strings.get(R.string.action_profile_retry)
-                else -> strings.get(R.string.action_profile_update_check)
-            },
-            canRunRehearsal = canRunRehearsal(profiles, preflight, rehearsal, activeSession),
-            rehearsalUnavailableReason = rehearsalUnavailableReason(
-                profiles,
-                preflight,
-                rehearsal,
-                activeSession,
-                strings,
-            ),
-            canExportDiagnostics = events.isNotEmpty() || incidents.isNotEmpty() || profileIssues.isNotEmpty(),
-            exportDiagnosticsUnavailableReason = if (
-                events.isEmpty() && incidents.isEmpty() && profileIssues.isEmpty()
-            ) {
-                strings.get(R.string.action_diagnostics_empty_default)
-            } else {
-                ""
-            },
+        actions = LenswakeActionAvailabilityMapper.map(
+            profiles = profiles,
+            executions = executions,
+            events = events,
+            incidents = incidents,
+            profileIssues = profileIssues,
+            preflight = preflight,
+            profileInstall = profileInstall,
+            rehearsal = rehearsal,
+            activeSession = activeSession,
+            scheduleAction = scheduleAction,
+            strings = strings,
         ),
-    )
-
-    private fun canRunRehearsal(
-        profiles: List<PixelCameraProfile>,
-        preflight: PreflightReport,
-        rehearsal: RehearsalActionUiState,
-        activeSession: ExecutionSession?,
-    ): Boolean = profiles.isNotEmpty() &&
-        activeSession == null &&
-        rehearsal !is RehearsalActionUiState.Running &&
-        rehearsalRequiredChecks.all { type ->
-            preflight.checks.singleOrNull { it.type == type }?.status == PreflightStatus.PASSED
-        }
-
-    private fun PreflightReport.hasAllScheduleChecksPassed(): Boolean =
-        scheduleRequiredChecks.all { type ->
-            checks.singleOrNull { it.type == type }?.let { check ->
-                check.severity != dev.po4yka.lenswake.core.PreflightSeverity.BLOCKING ||
-                    check.status == PreflightStatus.PASSED
-            } == true
-        }
-
-    private fun rehearsalUnavailableReason(
-        profiles: List<PixelCameraProfile>,
-        preflight: PreflightReport,
-        rehearsal: RehearsalActionUiState,
-        activeSession: ExecutionSession?,
-        strings: UiStringProvider,
-    ): String = when {
-        activeSession != null -> strings.get(
-            R.string.action_rehearsal_active_session,
-            activeSession.id.value,
-            formatStopDeadline(activeSession),
-        )
-        rehearsal is RehearsalActionUiState.Running -> strings.get(R.string.action_rehearsal_running)
-        profiles.isEmpty() -> strings.get(R.string.action_rehearsal_profile_required)
-        else -> rehearsalRequiredChecks.firstNotNullOfOrNull { type ->
-            preflight.checks.singleOrNull { it.type == type }
-                ?.takeIf { it.status != PreflightStatus.PASSED }
-                ?.message
-        } ?: strings.get(R.string.action_rehearsal_ready)
-    }
-
-    private fun ExecutionSession.toActiveSessionUiState(
-        now: java.time.Instant,
-        strings: UiStringProvider,
-    ): ActiveSessionUiState = ActiveSessionUiState(
-        sessionId = id.value,
-        kind = when (kind) {
-            SessionKind.SCHEDULED -> ActiveSessionKind.SCHEDULED
-            SessionKind.REHEARSAL -> ActiveSessionKind.REHEARSAL
-        },
-        stopDeadline = expectedStopAt,
-        title = when (kind) {
-            SessionKind.SCHEDULED -> scheduleName?.takeIf(String::isNotBlank)?.let { name ->
-                strings.get(R.string.schedules_active_session_named_title, name)
-            } ?: strings.get(R.string.schedules_active_session_title)
-            SessionKind.REHEARSAL -> strings.get(R.string.profiles_active_rehearsal_title)
-        },
-        detail = strings.get(
-            R.string.active_session_detail,
-            id.value,
-            formatStopDeadline(this),
-        ),
-        status = when {
-            !expectedStopAt.isAfter(now) -> strings.get(R.string.status_stop_overdue)
-            status == dev.po4yka.lenswake.core.SessionStatus.STOPPING ||
-                status == dev.po4yka.lenswake.core.SessionStatus.FAILED ||
-                stopActionAt != null ||
-                alarmStopDeliveredAt != null -> strings.get(R.string.status_stop_pending)
-            status == dev.po4yka.lenswake.core.SessionStatus.PENDING ||
-                status == dev.po4yka.lenswake.core.SessionStatus.STARTING ->
-                strings.get(R.string.status_preparing)
-            else -> strings.get(R.string.status_recording_expected)
-        },
-    )
-
-    private fun formatStopDeadline(session: ExecutionSession): String =
-        session.expectedStopAt.atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ISO_ZONED_DATE_TIME)
-
-    private fun readiness(
-        preflight: PreflightReport,
-        strings: UiStringProvider,
-    ): ReadinessUiState = when (
-        val readiness = preflight.readiness
-    ) {
-        ScheduleReadiness.Ready -> ReadinessUiState.Ready(
-            title = strings.get(R.string.readiness_ready_title),
-            summary = strings.get(R.string.readiness_ready_summary),
-        )
-
-        is ScheduleReadiness.ReadyWithWarnings -> ReadinessUiState.ReadyWithWarnings(
-            title = strings.get(R.string.status_ready_with_warnings),
-            summary = strings.get(R.string.readiness_warnings_summary),
-            warnings = readiness.warnings.map(PreflightCheck::message),
-        )
-
-        is ScheduleReadiness.Blocked -> ReadinessUiState.Blocked(
-            title = strings.get(R.string.readiness_setup_required_title),
-            summary = strings.quantity(
-                R.plurals.readiness_blocker_count,
-                readiness.blockers.size,
-                readiness.blockers.size,
-            ),
-        )
-    }
-
-    private fun capability(
-        check: PreflightCheck,
-        strings: UiStringProvider,
-    ): CapabilityUiState = CapabilityUiState(
-        name = check.type.displayName(strings),
-        status = when (check.status) {
-            PreflightStatus.PASSED -> CapabilityStatus.AVAILABLE
-            PreflightStatus.FAILED -> CapabilityStatus.BLOCKED
-            PreflightStatus.UNKNOWN -> CapabilityStatus.UNKNOWN
-        },
-        detail = check.message,
-        required = check.severity == PreflightSeverity.BLOCKING,
-        remediation = check.remediation,
-    )
-
-    private fun PreflightCheckType.displayName(strings: UiStringProvider): String = strings.get(
-        when (this) {
-            PreflightCheckType.EXACT_ALARMS -> R.string.capability_exact_alarms
-            PreflightCheckType.NOTIFICATIONS -> R.string.capability_notifications
-            PreflightCheckType.MEDIA_VIDEO_ACCESS -> R.string.capability_media_video_access
-            PreflightCheckType.FULL_SCREEN_INTENT -> R.string.capability_full_screen_intent
-            PreflightCheckType.PIXEL_CAMERA_INSTALLED -> R.string.capability_pixel_camera_installed
-            PreflightCheckType.SECURE_CAMERA_RESOLVES -> R.string.capability_secure_camera_launch
-            PreflightCheckType.DEVICE_WAKE -> R.string.capability_device_wake
-            PreflightCheckType.ACCESSIBILITY_ENABLED -> R.string.capability_accessibility_service
-            PreflightCheckType.ACCESSIBILITY_CONNECTED -> R.string.capability_accessibility_connection
-            PreflightCheckType.PROFILE_AVAILABLE -> R.string.capability_camera_profile
-            PreflightCheckType.PROFILE_COMPATIBILITY -> R.string.capability_profile_compatibility
-            PreflightCheckType.REHEARSAL_CURRENT -> R.string.capability_camera_test
-            PreflightCheckType.PRIVILEGED_FALLBACK -> R.string.capability_privileged_fallback
-            PreflightCheckType.BATTERY -> R.string.capability_battery
-            PreflightCheckType.CHARGING -> R.string.capability_charging
-            PreflightCheckType.STORAGE -> R.string.capability_storage
-        },
-    )
-
-    private fun scheduleSummary(
-        schedule: RecordingSchedule,
-        strings: UiStringProvider,
-    ): ScheduleSummaryUiState {
-        val scheduleTimeFormatter = DateTimeFormatter
-            .ofLocalizedDateTime(java.time.format.FormatStyle.MEDIUM, java.time.format.FormatStyle.SHORT)
-            .withLocale(Locale.getDefault())
-        val start = schedule.startAt.atZone(schedule.zoneId).format(scheduleTimeFormatter)
-        val stop = schedule.stopAt.atZone(schedule.zoneId).format(scheduleTimeFormatter)
-        val startLocal = schedule.startAt.atZone(schedule.zoneId).toLocalDateTime()
-        val stopLocal = schedule.stopAt.atZone(schedule.zoneId).toLocalDateTime()
-        return ScheduleSummaryUiState(
-            id = schedule.id.value,
-            title = schedule.name,
-            timing = strings.get(R.string.schedule_time_range, start, stop),
-            status = strings.get(if (schedule.enabled) R.string.status_enabled else R.string.status_disabled),
-            startLocal = startLocal,
-            stopLocal = stopLocal,
-            zoneId = schedule.zoneId,
-            capture = schedule.capture,
-            profileId = schedule.profileId.value,
-            enabled = schedule.enabled,
-        )
-    }
-
-    private fun profileSummary(
-        profile: PixelCameraProfile,
-        executions: List<ExecutionSession>,
-        strings: UiStringProvider,
-    ): ProfileSummaryUiState {
-        val environment = profile.environment
-        val title = if (
-            environment.deviceModel.startsWith(environment.deviceManufacturer, ignoreCase = true)
-        ) {
-            environment.deviceModel
-        } else {
-            "${environment.deviceManufacturer} ${environment.deviceModel}"
-        }
-        return ProfileSummaryUiState(
-            id = profile.id.value,
-            title = title,
-            environment = strings.get(
-                R.string.profile_environment_summary,
-                environment.androidSdk,
-                environment.cameraVersionCode,
-                Locale.forLanguageTag(environment.localeTag).getDisplayName(Locale.getDefault()),
-            ),
-            compatibility = when (profile.compatibility) {
-                ProfileCompatibility.VERIFIED -> strings.get(R.string.profile_compatibility_verified)
-                ProfileCompatibility.PROBABLY_COMPATIBLE -> strings.get(R.string.profile_compatibility_likely)
-                ProfileCompatibility.NEEDS_REHEARSAL -> strings.get(R.string.profile_compatibility_needs_test)
-                ProfileCompatibility.INCOMPATIBLE -> strings.get(R.string.profile_compatibility_incompatible)
-            },
-            verifiedForScheduling = verifiedCaptures(profile, executions).isNotEmpty(),
-            supportedCaptures = verifiedCaptures(profile, executions),
-        )
-    }
-
-    private fun verifiedCaptures(
-        profile: PixelCameraProfile,
-        executions: List<ExecutionSession>,
-    ): Set<CaptureConfiguration> =
-        if (profile.compatibility != ProfileCompatibility.VERIFIED || profile.verifiedAt == null) {
-            emptySet()
-        } else {
-            profile.supportedCaptureConfigurations().filterTo(linkedSetOf()) { capture ->
-                executions.any { it.qualifiesRehearsal(profile, capture) }
-            }
-        }
-
-    private fun eventSummary(
-        event: AutomationEvent,
-        strings: UiStringProvider,
-    ): DiagnosticEventUiState {
-        val operation = event.operation
-        val failure = event.failure
-        val detail = when {
-            operation != null && failure != null -> strings.get(
-                R.string.diagnostics_event_operation_failure_detail,
-                event.state.name,
-                event.outcome.name,
-                operation.name,
-                failure.code.name,
-            )
-            operation != null -> strings.get(
-                R.string.diagnostics_event_operation_detail,
-                event.state.name,
-                event.outcome.name,
-                operation.name,
-            )
-            failure != null -> strings.get(
-                R.string.diagnostics_event_failure_detail,
-                event.state.name,
-                event.outcome.name,
-                failure.code.name,
-            )
-            else -> strings.get(
-                R.string.diagnostics_event_detail,
-                event.state.name,
-                event.outcome.name,
-            )
-        }
-        return DiagnosticEventUiState(
-            id = event.id.value,
-            title = strings.get(R.string.diagnostics_event_title, event.name),
-            detail = detail,
-            occurredAt = event.timestamp.atOffset(ZoneOffset.UTC).format(eventTimeFormatter),
-        )
-    }
-
-    private fun incidentSummary(
-        incident: AlarmTransportIncident,
-        strings: UiStringProvider,
-    ): AlarmTransportIncidentUiState =
-        AlarmTransportIncidentUiState(
-            id = incident.id,
-            title = strings.get(incident.titleResource()),
-            detail = strings.get(incident.detailResource()),
-            occurredAt = java.time.Instant.ofEpochMilli(incident.recordedAtEpochMillis)
-                .atOffset(ZoneOffset.UTC)
-                .format(eventTimeFormatter),
-            action = when (incident.action) {
-                AlarmTransportIncidentAction.OPEN_PIXEL_CAMERA -> AlarmTransportIncidentUiAction.OPEN_PIXEL_CAMERA
-                null -> null
-            },
-        )
-
-    private fun AlarmTransportIncident.titleResource(): Int = when {
-        code == AlarmTransportFailureCode.JOURNAL_ENTRY_CORRUPT -> R.string.alarm_journal_failure_title
-        code in RECOVERY_FAILURE_CODES -> R.string.alarm_recovery_failure_title
-        action == AlarmTransportIncidentAction.OPEN_PIXEL_CAMERA -> R.string.alarm_stop_failure_title
-        else -> R.string.alarm_start_failure_title
-    }
-
-    private fun AlarmTransportIncident.detailResource(): Int = when {
-        code == AlarmTransportFailureCode.JOURNAL_ENTRY_CORRUPT -> R.string.alarm_journal_failure_message
-        code in RECOVERY_FAILURE_CODES -> R.string.alarm_recovery_failure_message
-        action == AlarmTransportIncidentAction.OPEN_PIXEL_CAMERA -> R.string.alarm_stop_failure_message
-        else -> R.string.alarm_start_failure_message
-    }
-
-    private val RECOVERY_FAILURE_CODES = setOf(
-        AlarmTransportFailureCode.RECOVERY_ATTEMPTS_EXHAUSTED,
-        AlarmTransportFailureCode.RECOVERY_REQUEUE_FAILED,
-        AlarmTransportFailureCode.RECOVERY_CAPABILITY_UNAVAILABLE,
-    )
-
-    private fun profilePersistenceIssueSummary(
-        issue: ProfilePersistenceIssue,
-        strings: UiStringProvider,
-    ): ProfilePersistenceIssueUiState {
-        val displayKey = issue.entryKey
-            .take(MAX_VISIBLE_PERSISTENCE_KEY_LENGTH)
-            .map { character -> if (character.isISOControl()) '\uFFFD' else character }
-            .joinToString("")
-            .ifBlank { strings.get(R.string.profile_storage_issue_blank_key) }
-        return ProfilePersistenceIssueUiState(
-            id = issue.entryKey,
-            title = strings.get(R.string.profile_storage_issue_title),
-            detail = strings.get(R.string.profile_storage_issue_detail, displayKey),
-        )
-    }
-
-    private fun initialCapabilities(strings: UiStringProvider): List<CapabilityUiState> = listOf(
-        CapabilityUiState(
-            name = strings.get(R.string.capability_exact_alarms),
-            status = CapabilityStatus.UNKNOWN,
-            detail = strings.get(R.string.capability_exact_alarms_unchecked),
-            required = true,
-        ),
-        CapabilityUiState(
-            name = strings.get(R.string.capability_device_wake),
-            status = CapabilityStatus.BLOCKED,
-            detail = strings.get(R.string.capability_device_wake_unavailable),
-            required = true,
-        ),
-        CapabilityUiState(
-            name = strings.get(R.string.capability_accessibility_service),
-            status = CapabilityStatus.BLOCKED,
-            detail = strings.get(R.string.capability_accessibility_unchecked),
-            required = true,
-        ),
-        CapabilityUiState(
-            name = strings.get(R.string.capability_camera_profile),
-            status = CapabilityStatus.BLOCKED,
-            detail = strings.get(R.string.capability_profile_unavailable),
-            required = true,
-        ),
-        CapabilityUiState(
-            name = strings.get(R.string.capability_camera_test),
-            status = CapabilityStatus.BLOCKED,
-            detail = strings.get(R.string.capability_test_required),
-            required = true,
-        ),
-        CapabilityUiState(
-            name = strings.get(R.string.capability_privileged_fallback),
-            status = CapabilityStatus.UNKNOWN,
-            detail = strings.get(R.string.capability_privileged_unchecked),
-            required = false,
-        ),
-    )
-
-    private val rehearsalRequiredChecks = setOf(
-        PreflightCheckType.EXACT_ALARMS,
-        PreflightCheckType.MEDIA_VIDEO_ACCESS,
-        PreflightCheckType.PIXEL_CAMERA_INSTALLED,
-        PreflightCheckType.SECURE_CAMERA_RESOLVES,
-        PreflightCheckType.ACCESSIBILITY_ENABLED,
-        PreflightCheckType.ACCESSIBILITY_CONNECTED,
-        PreflightCheckType.PROFILE_AVAILABLE,
-    )
-
-    private val scheduleRequiredChecks = rehearsalRequiredChecks + setOf(
-        PreflightCheckType.NOTIFICATIONS,
-        PreflightCheckType.FULL_SCREEN_INTENT,
-        PreflightCheckType.DEVICE_WAKE,
-        PreflightCheckType.PROFILE_COMPATIBILITY,
-        PreflightCheckType.REHEARSAL_CURRENT,
-        PreflightCheckType.BATTERY,
-        PreflightCheckType.CHARGING,
-        PreflightCheckType.STORAGE,
     )
 
 }
