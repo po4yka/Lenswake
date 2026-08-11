@@ -1,5 +1,6 @@
 package dev.po4yka.lenswake.alarm
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Base64
 import java.nio.charset.StandardCharsets
@@ -44,10 +45,14 @@ internal class SharedPreferencesAlarmRecoveryCheckpointPersistence(
         return decode(encoded)
     }
 
+    /** KTX edit returns Unit, but retry scheduling is gated on this synchronous commit result. */
+    @SuppressLint("UseKtx")
     override fun persist(checkpoint: AlarmRecoveryCheckpoint): Boolean = preferences.edit()
         .putString(KEY_CHECKPOINT, encode(checkpoint))
         .commit()
 
+    /** KTX edit returns Unit, but callers need to know whether durable checkpoint removal succeeded. */
+    @SuppressLint("UseKtx")
     override fun clear(): Boolean = preferences.edit().remove(KEY_CHECKPOINT).commit()
 
     private fun encode(checkpoint: AlarmRecoveryCheckpoint): String = listOf(

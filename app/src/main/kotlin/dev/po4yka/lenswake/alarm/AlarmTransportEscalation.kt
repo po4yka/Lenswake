@@ -1,6 +1,7 @@
 package dev.po4yka.lenswake.alarm
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
@@ -195,10 +196,14 @@ internal class SharedPreferencesAlarmTransportFailurePersistence(
     internal val isDeviceProtectedStorage: Boolean
         get() = storageContext.isDeviceProtectedStorage
 
+    /** KTX edit returns Unit, but escalation must observe the synchronous durability result. */
+    @SuppressLint("UseKtx")
     override fun persist(marker: AlarmTransportFailureMarker): Boolean = preferences.edit()
         .putString(marker.id, encode(marker))
         .commit()
 
+    /** KTX edit returns Unit, but resolution must report whether durable removal succeeded. */
+    @SuppressLint("UseKtx")
     override fun remove(id: String): Boolean = preferences.edit().remove(id).commit()
 
     override fun markers(): List<AlarmTransportFailureMarker> = preferences.all.mapNotNull { (id, value) ->

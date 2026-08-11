@@ -1,5 +1,6 @@
 package dev.po4yka.lenswake.alarm
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.util.Base64
@@ -16,6 +17,8 @@ internal class AlarmDeliveryJournal(
 ) {
     private val preferences = context.getSharedPreferences(preferenceName, Context.MODE_PRIVATE)
 
+    /** The journal must be durably updated before work is accepted or rollback completes. */
+    @SuppressLint("ApplySharedPref", "UseKtx")
     fun persist(intent: Intent): Entry? {
         val work = AlarmDeliveryWorkContract.parse(intent) ?: return null
         val encodedIntent = intent.toUri(Intent.URI_INTENT_SCHEME)
@@ -35,6 +38,8 @@ internal class AlarmDeliveryJournal(
         }
     }
 
+    /** Stale-entry cleanup must finish before the reconciled snapshot is returned. */
+    @SuppressLint("ApplySharedPref", "UseKtx")
     fun read(): Snapshot {
         val decoded = mutableListOf<Entry>()
         val corruptEntries = mutableListOf<CorruptEntry>()
@@ -89,8 +94,12 @@ internal class AlarmDeliveryJournal(
         )
     }
 
+    /** KTX edit returns Unit, but callers need the synchronous commit result. */
+    @SuppressLint("UseKtx")
     fun remove(key: String): Boolean = preferences.edit().remove(key).commit()
 
+    /** KTX edit returns Unit, but replacement success is determined by commit's Boolean result. */
+    @SuppressLint("UseKtx")
     fun replace(key: String, intent: Intent): Entry? {
         val work = AlarmDeliveryWorkContract.parse(intent) ?: return null
         val encodedIntent = intent.toUri(Intent.URI_INTENT_SCHEME)
