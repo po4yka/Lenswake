@@ -7,7 +7,6 @@ import dev.po4yka.lenswake.application.RehearsalResult
 import dev.po4yka.lenswake.application.RehearsalResultCode
 import dev.po4yka.lenswake.application.RuntimePreflightProbe
 import dev.po4yka.lenswake.application.ScheduleWorkflow
-import dev.po4yka.lenswake.application.definitionFingerprint
 import dev.po4yka.lenswake.automation.PortResult
 import dev.po4yka.lenswake.core.AutomationAction
 import dev.po4yka.lenswake.core.AutomationEvent
@@ -22,6 +21,7 @@ import dev.po4yka.lenswake.core.ExecutionChange
 import dev.po4yka.lenswake.core.ExecutionRepository
 import dev.po4yka.lenswake.core.ExecutionReservationResult
 import dev.po4yka.lenswake.core.ExecutionSession
+import dev.po4yka.lenswake.core.definitionFingerprint
 import dev.po4yka.lenswake.core.LenswakeClock
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile

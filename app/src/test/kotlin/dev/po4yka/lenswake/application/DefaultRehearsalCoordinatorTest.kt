@@ -29,6 +29,7 @@ import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.RehearsalRequest
+import dev.po4yka.lenswake.core.RehearsalVerificationPolicy
 import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
@@ -108,10 +109,15 @@ class DefaultRehearsalCoordinatorTest {
         )
 
         assertTrue(
-            completed.session.qualifiesRehearsal(completed.verifiedProfile, request.capture),
+            RehearsalVerificationPolicy.qualifies(
+                completed.session,
+                completed.verifiedProfile,
+                request.capture,
+            ),
         )
         assertTrue(
-            completed.session.qualifiesRehearsal(
+            RehearsalVerificationPolicy.qualifies(
+                completed.session,
                 completed.verifiedProfile.copy(
                     verifiedAt = checkNotNull(completed.verifiedProfile.verifiedAt).plusSeconds(1),
                 ),
@@ -119,13 +125,15 @@ class DefaultRehearsalCoordinatorTest {
             ),
         )
         assertFalse(
-            completed.session.qualifiesRehearsal(
+            RehearsalVerificationPolicy.qualifies(
+                completed.session,
                 completed.verifiedProfile,
                 CaptureConfiguration.Video(LensSelection.REAR_MAIN),
             ),
         )
         assertFalse(
-            completed.session.qualifiesRehearsal(
+            RehearsalVerificationPolicy.qualifies(
+                completed.session,
                 completed.verifiedProfile.copy(selectorSchemaVersion = 2),
                 request.capture,
             ),

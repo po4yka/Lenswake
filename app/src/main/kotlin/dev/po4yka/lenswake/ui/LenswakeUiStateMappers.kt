@@ -4,7 +4,6 @@ import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.alarm.AlarmTransportFailureCode
 import dev.po4yka.lenswake.application.AlarmTransportIncident
 import dev.po4yka.lenswake.application.AlarmTransportIncidentAction
-import dev.po4yka.lenswake.application.qualifiesRehearsal
 import dev.po4yka.lenswake.core.AutomationEvent
 import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.ExecutionSession
@@ -17,6 +16,7 @@ import dev.po4yka.lenswake.core.PreflightStatus
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfilePersistenceIssue
 import dev.po4yka.lenswake.core.RecordingSchedule
+import dev.po4yka.lenswake.core.RehearsalVerificationPolicy
 import dev.po4yka.lenswake.core.ScheduleReadiness
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
@@ -382,7 +382,9 @@ internal object LenswakeProfileUiMapper {
             emptySet()
         } else {
             profile.supportedCaptureConfigurations().filterTo(linkedSetOf()) { capture ->
-                executions.any { it.qualifiesRehearsal(profile, capture) }
+                executions.any { session ->
+                    RehearsalVerificationPolicy.qualifies(session, profile, capture)
+                }
             }
         }
 }

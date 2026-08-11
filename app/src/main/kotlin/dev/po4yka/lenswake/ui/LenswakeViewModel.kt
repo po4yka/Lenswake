@@ -11,7 +11,6 @@ import dev.po4yka.lenswake.application.AlarmTransportIncidentAction
 import dev.po4yka.lenswake.application.AlarmTransportIncidentSource
 import dev.po4yka.lenswake.application.EmptyAlarmTransportIncidentSource
 import dev.po4yka.lenswake.application.RehearsalCoordinator
-import dev.po4yka.lenswake.application.qualifiesRehearsal
 import dev.po4yka.lenswake.application.RehearsalResult
 import dev.po4yka.lenswake.application.RehearsalResultCode
 import dev.po4yka.lenswake.application.RuntimePreflightProbe

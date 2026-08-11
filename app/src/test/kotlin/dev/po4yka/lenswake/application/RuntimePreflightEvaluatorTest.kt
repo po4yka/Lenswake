@@ -17,6 +17,7 @@ import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.TimeLapseSpeed
+import dev.po4yka.lenswake.core.definitionFingerprint
 import dev.po4yka.lenswake.ui.TestUiStringProvider
 import java.time.Instant
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -201,7 +202,7 @@ class RuntimePreflightEvaluatorTest {
     }
 
     @Test
-    fun rehearsalProofMustMatchProfilePromotionTimestamp() {
+    fun rehearsalProofRemainsCurrentWhenAnotherCaptureAdvancesProfileTimestamp() {
         val environment = environment()
         val profile = profile(environment)
         val staleProof = successfulRehearsal(profile).copy(
@@ -211,6 +212,40 @@ class RuntimePreflightEvaluatorTest {
         val check = evaluator.evaluate(
             observation = observation(cameraEnvironment = environment).copy(
                 successfulRehearsals = mapOf(profile.id to staleProof),
+            ),
+            profiles = listOf(profile),
+        ).checks.single { it.type == PreflightCheckType.REHEARSAL_CURRENT }
+
+        assertEquals(PreflightStatus.PASSED, check.status)
+    }
+
+    @Test
+    fun rehearsalWithoutDurableReceiptDoesNotQualify() {
+        val environment = environment()
+        val profile = profile(environment)
+        val withoutReceipt = successfulRehearsal(profile).copy(rehearsalVerifiedAt = null)
+
+        val check = evaluator.evaluate(
+            observation = observation(cameraEnvironment = environment).copy(
+                successfulRehearsals = mapOf(profile.id to withoutReceipt),
+            ),
+            profiles = listOf(profile),
+        ).checks.single { it.type == PreflightCheckType.REHEARSAL_CURRENT }
+
+        assertEquals(PreflightStatus.FAILED, check.status)
+    }
+
+    @Test
+    fun rehearsalForChangedProfileDefinitionDoesNotQualify() {
+        val environment = environment()
+        val profile = profile(environment)
+        val staleDefinition = successfulRehearsal(profile).copy(
+            executionKey = "rehearsal/rehearsal-1/${"0".repeat(64)}",
+        )
+
+        val check = evaluator.evaluate(
+            observation = observation(cameraEnvironment = environment).copy(
+                successfulRehearsals = mapOf(profile.id to staleDefinition),
             ),
             profiles = listOf(profile),
         ).checks.single { it.type == PreflightCheckType.REHEARSAL_CURRENT }
@@ -319,7 +354,7 @@ class RuntimePreflightEvaluatorTest {
         val startedAt = stoppedAt.minusSeconds(10)
         return ExecutionSession(
             id = SessionId("rehearsal-1"),
-            executionKey = "rehearsal/rehearsal-1",
+            executionKey = "rehearsal/rehearsal-1/${profile.definitionFingerprint()}",
             kind = SessionKind.REHEARSAL,
             scheduleId = null,
             scheduleName = "Rehearsal",
@@ -333,6 +368,7 @@ class RuntimePreflightEvaluatorTest {
             stopActionAt = stoppedAt,
             stoppedVerifiedAt = stoppedAt,
             mediaSavedVerifiedAt = stoppedAt,
+            rehearsalVerifiedAt = stoppedAt,
             createdAt = startedAt.minusSeconds(60),
             updatedAt = stoppedAt,
         )

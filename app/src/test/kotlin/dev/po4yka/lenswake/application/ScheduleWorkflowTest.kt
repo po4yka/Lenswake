@@ -30,6 +30,7 @@ import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.core.UiSelector
 import dev.po4yka.lenswake.core.UiSelectorSet
 import dev.po4yka.lenswake.core.supports
+import dev.po4yka.lenswake.core.definitionFingerprint
 import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException

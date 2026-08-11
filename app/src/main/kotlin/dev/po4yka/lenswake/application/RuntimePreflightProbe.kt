@@ -11,8 +11,7 @@ import dev.po4yka.lenswake.core.PreflightSeverity
 import dev.po4yka.lenswake.core.PreflightStatus
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
-import dev.po4yka.lenswake.core.SessionKind
-import dev.po4yka.lenswake.core.SessionStatus
+import dev.po4yka.lenswake.core.RehearsalVerificationPolicy
 import dev.po4yka.lenswake.core.SetupRemediationAction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -197,7 +196,9 @@ class RuntimePreflightEvaluator(
         }
         val qualifying = exactVerifiedProfiles.firstNotNullOfOrNull { profile ->
             observation.successfulRehearsals[profile.id]
-                ?.takeIf { session -> session.qualifies(profile) }
+                ?.takeIf { session ->
+                    RehearsalVerificationPolicy.qualifies(session, profile, session.capture)
+                }
                 ?.let { profile to it }
         }
         return PreflightCheck(
@@ -213,16 +214,6 @@ class RuntimePreflightEvaluator(
             },
         )
     }
-
-    private fun ExecutionSession.qualifies(profile: PixelCameraProfile): Boolean =
-        kind == SessionKind.REHEARSAL &&
-            status == SessionStatus.COMPLETED &&
-            profileId == profile.id &&
-            recordingVerifiedAt != null &&
-            stopActionAt != null &&
-            stoppedVerifiedAt != null &&
-            mediaSavedVerifiedAt != null &&
-            profile.verifiedAt == mediaSavedVerifiedAt
 
     private fun PixelCameraProfile.targetsCurrentDeviceFamily(
         current: PixelCameraEnvironment,

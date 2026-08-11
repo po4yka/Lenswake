@@ -29,10 +29,12 @@ import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.RehearsalRequest
+import dev.po4yka.lenswake.core.RehearsalVerificationFailure
+import dev.po4yka.lenswake.core.RehearsalVerificationPolicy
 import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
-import dev.po4yka.lenswake.core.UiSelectorSet
+import dev.po4yka.lenswake.core.definitionFingerprint
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
@@ -41,10 +43,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import java.io.ByteArrayOutputStream
-import java.io.DataOutputStream
 import java.nio.charset.StandardCharsets
-import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
@@ -1049,20 +1048,21 @@ private class RehearsalPromotionWorkflow(
         report: ExecutionReport,
         profile: PixelCameraProfile,
     ): RehearsalStopOutcome =
-        when {
-            report.session.testedProfileFingerprint() != profile.definitionFingerprint() -> {
-                cancelSafelyStopped(
-                    backstop,
-                    report.session,
-                    "Rehearsal stopped safely, but the profile definition changed before promotion",
-                )
-            }
-
-            else -> {
+        when (val failure = RehearsalVerificationPolicy.receiptQualificationFailure(report.session, profile)) {
+            null -> {
                 when (val environment = verifyEnvironment(report, profile)) {
                     is StopStep.Outcome -> environment.value
                     is StopStep.Ready -> persistVerifiedProfile(report, profile)
                 }
+            }
+
+            else -> {
+                cancelSafelyStopped(
+                    backstop,
+                    report.session,
+                    "Rehearsal stopped safely but did not qualify for a verification receipt: " +
+                        failure.userMessage,
+                )
             }
         }
 
@@ -1118,7 +1118,7 @@ private class RehearsalPromotionWorkflow(
         session: ExecutionSession,
         verifiedProfile: PixelCameraProfile,
     ): RehearsalStopOutcome {
-        val verifiedSession = persistVerificationReceipt(session)
+        val verifiedSession = persistVerificationReceipt(session, verifiedProfile)
             ?: return RehearsalStopOutcome.Retryable("Could not persist rehearsal verification receipt")
         return when {
             backstop.cancel(verifiedSession.id).isFailure -> {
@@ -1133,10 +1133,13 @@ private class RehearsalPromotionWorkflow(
         }
     }
 
-    private suspend fun persistVerificationReceipt(initial: ExecutionSession): ExecutionSession? {
+    private suspend fun persistVerificationReceipt(
+        initial: ExecutionSession,
+        verifiedProfile: PixelCameraProfile,
+    ): ExecutionSession? {
         var current: ExecutionSession? = initial
         var attempts = 0
-        while (shouldPersistReceipt(current, attempts)) {
+        while (shouldPersistReceipt(current, verifiedProfile, attempts)) {
             val session = checkNotNull(current)
             val verifiedAt = maxOf(
                 clock.now(),
@@ -1173,17 +1176,21 @@ private class RehearsalPromotionWorkflow(
             }
             attempts += 1
         }
-        return current?.takeIf { it.rehearsalVerifiedAt != null }
+        return current?.takeIf { session ->
+            RehearsalVerificationPolicy.qualifies(session, verifiedProfile, session.capture)
+        }
     }
 
     private fun shouldPersistReceipt(
         session: ExecutionSession?,
+        profile: PixelCameraProfile,
         attempts: Int,
     ): Boolean =
         when {
             session == null -> false
             session.rehearsalVerifiedAt != null -> false
             session.revision == Long.MAX_VALUE -> false
+            RehearsalVerificationPolicy.receiptQualificationFailure(session, profile) != null -> false
             else -> attempts < RECEIPT_CAS_ATTEMPTS
         }
 }
@@ -1263,45 +1270,13 @@ private object RehearsalSupport {
     fun validatePromotionProof(report: ExecutionReport): String? {
         val session = report.session
         val snapshot = report.environmentSnapshot
-        return when {
-            session.kind != SessionKind.REHEARSAL -> {
-                "Execution is not a rehearsal"
-            }
-
-            session.status != SessionStatus.COMPLETED -> {
-                "Rehearsal is not completed"
-            }
-
-            session.failure != null -> {
-                "Rehearsal completed with a failure"
-            }
-
+        return RehearsalVerificationPolicy.fullProofFailure(session)?.userMessage ?: when {
             snapshot == null -> {
                 "Rehearsal environment snapshot is missing"
             }
 
             snapshot.sessionId != session.id || snapshot.id != session.environmentSnapshotId -> {
                 "Rehearsal environment snapshot linkage is invalid"
-            }
-
-            session.recordActionAt == null -> {
-                "Rehearsal record dispatch proof is missing"
-            }
-
-            session.recordingVerifiedAt == null -> {
-                "Rehearsal recording verification is missing"
-            }
-
-            session.stopActionAt == null -> {
-                "Rehearsal stop dispatch proof is missing"
-            }
-
-            session.stoppedVerifiedAt == null -> {
-                "Rehearsal stop verification is missing"
-            }
-
-            session.mediaSavedVerifiedAt == null -> {
-                "Rehearsal saved-media verification is missing"
             }
 
             else -> {
@@ -1380,104 +1355,20 @@ private fun AutomationRunResult.failureMessage(): String =
         is AutomationRunResult.Succeeded -> "Rehearsal result did not contain required ownership proof"
     }
 
-internal fun ExecutionSession.testedProfileFingerprint(): String? =
-    executionKey
-        .substringAfterLast('/', missingDelimiterValue = "")
-        .takeIf { it.length == SHA_256_HEX_LENGTH && it.all(Char::isHexDigit) }
-
-internal fun PixelCameraProfile.definitionFingerprint(): String {
-    val bytes = ByteArrayOutputStream()
-    DataOutputStream(bytes).use { output ->
-        fun writeString(value: String?) {
-            if (value == null) {
-                output.writeInt(-1)
-            } else {
-                val encoded = value.toByteArray(StandardCharsets.UTF_8)
-                output.writeInt(encoded.size)
-                output.write(encoded)
-            }
-        }
-
-        fun writeSelectorSet(set: UiSelectorSet) {
-            output.writeInt(set.minimumScore)
-            output.writeInt(set.selectors.size)
-            set.selectors.forEach { selector ->
-                writeString(selector.packageName)
-                writeString(selector.resourceId)
-                writeString(selector.role)
-                writeString(selector.contentDescription)
-                writeString(selector.text)
-                writeString(selector.expectedSelected?.toString())
-                writeString(selector.expectedChecked?.toString())
-                selector.expectedRegion?.let { bounds ->
-                    output.writeBoolean(true)
-                    output.writeInt(bounds.left.toRawBits())
-                    output.writeInt(bounds.top.toRawBits())
-                    output.writeInt(bounds.right.toRawBits())
-                    output.writeInt(bounds.bottom.toRawBits())
-                } ?: output.writeBoolean(false)
-                output.writeBoolean(selector.requiresClickable)
-                output.writeBoolean(selector.requiresVisible)
-            }
-        }
-
-        writeString(id.value)
-        with(environment) {
-            writeString(deviceManufacturer)
-            writeString(deviceModel)
-            output.writeInt(androidSdk)
-            writeString(androidBuildFingerprint)
-            writeString(cameraPackage)
-            output.writeLong(cameraVersionCode)
-            writeString(localeTag)
-            output.writeInt(displayWidthPx)
-            output.writeInt(displayHeightPx)
-            output.writeInt(densityDpi)
-        }
-        output.writeInt(selectorSchemaVersion)
-        targets.toSortedMap(compareBy { it.name }).forEach { (action, set) ->
-            writeString("action:${action.name}")
-            writeSelectorSet(set)
-        }
-        speedTargets.toSortedMap(compareBy { it.name }).forEach { (speed, set) ->
-            writeString("speed:${speed.name}")
-            writeSelectorSet(set)
-        }
-        stateSignals.toSortedMap(compareBy { it.name }).forEach { (signal, set) ->
-            writeString("signal:${signal.name}")
-            writeSelectorSet(set)
-        }
-        fallbackGestures.toSortedMap(compareBy { it.name }).forEach { (action, gesture) ->
-            writeString("gesture:${action.name}")
-            output.writeInt(gesture.point.x.toRawBits())
-            output.writeInt(gesture.point.y.toRawBits())
-        }
-    }
-    return MessageDigest
-        .getInstance("SHA-256")
-        .digest(bytes.toByteArray())
-        .joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and UNSIGNED_BYTE_MASK) }
-}
-
-internal fun ExecutionSession.qualifiesRehearsal(
-    profile: PixelCameraProfile,
-    capture: CaptureConfiguration,
-): Boolean =
-    kind == SessionKind.REHEARSAL &&
-        status == SessionStatus.COMPLETED &&
-        profileId == profile.id &&
-        this.capture == capture &&
-        failure == null &&
-        recordingVerifiedAt != null &&
-        recordActionAt != null &&
-        stopActionAt != null &&
-        stoppedVerifiedAt != null &&
-        mediaSavedVerifiedAt != null &&
-        rehearsalVerifiedAt != null &&
-        testedProfileFingerprint() == profile.definitionFingerprint()
-
-private fun Char.isHexDigit(): Boolean = this in '0'..'9' || this in 'a'..'f'
-
-private const val SHA_256_HEX_LENGTH = 64
-private const val UNSIGNED_BYTE_MASK = 0xFF
 private const val RECEIPT_CAS_ATTEMPTS = 3
+
+private val RehearsalVerificationFailure.userMessage: String
+    get() = when (this) {
+        RehearsalVerificationFailure.NOT_REHEARSAL -> "Execution is not a rehearsal"
+        RehearsalVerificationFailure.NOT_COMPLETED -> "Rehearsal is not completed"
+        RehearsalVerificationFailure.EXECUTION_FAILED -> "Rehearsal completed with a failure"
+        RehearsalVerificationFailure.PROFILE_MISMATCH -> "Rehearsal profile does not match"
+        RehearsalVerificationFailure.CAPTURE_MISMATCH -> "Rehearsal capture does not match"
+        RehearsalVerificationFailure.RECORD_ACTION_MISSING -> "Rehearsal record dispatch proof is missing"
+        RehearsalVerificationFailure.RECORDING_NOT_VERIFIED -> "Rehearsal recording verification is missing"
+        RehearsalVerificationFailure.STOP_ACTION_MISSING -> "Rehearsal stop dispatch proof is missing"
+        RehearsalVerificationFailure.STOP_NOT_VERIFIED -> "Rehearsal stop verification is missing"
+        RehearsalVerificationFailure.MEDIA_NOT_VERIFIED -> "Rehearsal saved-media verification is missing"
+        RehearsalVerificationFailure.RECEIPT_MISSING -> "Rehearsal verification receipt is missing"
+        RehearsalVerificationFailure.PROFILE_DEFINITION_CHANGED -> "Profile definition changed after rehearsal"
+    }

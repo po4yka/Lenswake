@@ -49,7 +49,7 @@ import dev.po4yka.lenswake.application.RehearsalCoordinator
 import dev.po4yka.lenswake.application.RehearsalResult
 import dev.po4yka.lenswake.application.RehearsalResultCode
 import dev.po4yka.lenswake.application.ScheduleWorkflow
-import dev.po4yka.lenswake.application.definitionFingerprint
+import dev.po4yka.lenswake.core.definitionFingerprint
 import dev.po4yka.lenswake.automation.PortResult
 import java.time.Instant
 import java.time.Duration

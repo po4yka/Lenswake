@@ -10,6 +10,7 @@ import dev.po4yka.lenswake.core.PreflightSeverity
 import dev.po4yka.lenswake.core.PreflightStatus
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.RecordingSchedule
+import dev.po4yka.lenswake.core.RehearsalVerificationPolicy
 import dev.po4yka.lenswake.core.ScheduleValidation
 import dev.po4yka.lenswake.core.ScheduleValidationError
 import dev.po4yka.lenswake.core.ScheduleValidator
@@ -101,7 +102,7 @@ private suspend fun ExecutionRepository.hasVerifiedRehearsal(
     profile: PixelCameraProfile,
     capture: CaptureConfiguration,
 ): Boolean = latestSuccessfulRehearsal(profile.id, capture)
-    ?.qualifiesRehearsal(profile, capture) == true
+    ?.let { session -> RehearsalVerificationPolicy.qualifies(session, profile, capture) } == true
 
 private fun PixelCameraProfile.readinessFailure(
     capture: CaptureConfiguration,

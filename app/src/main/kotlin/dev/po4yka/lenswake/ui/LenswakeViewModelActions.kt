@@ -8,13 +8,13 @@ import dev.po4yka.lenswake.application.ScheduleOperation
 import dev.po4yka.lenswake.application.ScheduleWorkflow
 import dev.po4yka.lenswake.application.ScheduleWorkflowFailureCode
 import dev.po4yka.lenswake.application.ScheduleWorkflowResult
-import dev.po4yka.lenswake.application.qualifiesRehearsal
 import dev.po4yka.lenswake.core.AutomationProfileRepository
 import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.ExecutionRepository
 import dev.po4yka.lenswake.core.LenswakeClock
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.RehearsalRequest
+import dev.po4yka.lenswake.core.RehearsalVerificationPolicy
 import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.ScheduleRepository
 import dev.po4yka.lenswake.core.TimeLapseSpeed
@@ -114,7 +114,9 @@ internal class LenswakeProfileActionsImpl(
                 .sortedWith(capturePreferenceComparator)
             val completedRehearsals = executions.observeExecutions().first()
             val capture = supportedCaptures.firstOrNull { candidate ->
-                completedRehearsals.none { it.qualifiesRehearsal(profile, candidate) }
+                completedRehearsals.none { session ->
+                    RehearsalVerificationPolicy.qualifies(session, profile, candidate)
+                }
             } ?: supportedCaptures.firstOrNull()
                 ?: return@launchRehearsal RehearsalPreparation.Failed(
                     strings.get(R.string.schedule_error_capture_not_supported),

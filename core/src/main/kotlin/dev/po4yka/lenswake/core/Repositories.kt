@@ -89,8 +89,8 @@ interface ExecutionRepository {
                 session.kind == SessionKind.REHEARSAL &&
                     (
                         session.ownsPixelCamera ||
-                            session.awaitsMediaSaveVerification ||
-                            session.awaitsRehearsalVerificationReceipt
+                        session.awaitsMediaSaveVerification ||
+                        RehearsalVerificationPolicy.awaitsDurableReceipt(session)
                     )
             }
             .sortedWith(compareBy(ExecutionSession::expectedStopAt, ExecutionSession::createdAt, { it.id.value }))
@@ -105,7 +105,7 @@ interface ExecutionRepository {
             .filter { session ->
                 session.kind == SessionKind.REHEARSAL &&
                     session.profileId == profileId &&
-                    session.hasDurableRehearsalVerificationReceipt
+                    RehearsalVerificationPolicy.hasDurableReceipt(session)
             }
             .maxWithOrNull(
                 compareBy<ExecutionSession>(
@@ -126,7 +126,7 @@ interface ExecutionRepository {
                 session.kind == SessionKind.REHEARSAL &&
                     session.profileId == profileId &&
                     session.capture == capture &&
-                    session.hasDurableRehearsalVerificationReceipt
+                    RehearsalVerificationPolicy.hasDurableReceipt(session)
             }
             .maxWithOrNull(
                 compareBy<ExecutionSession>(
@@ -141,24 +141,6 @@ interface ExecutionRepository {
 
     }
 }
-
-private val ExecutionSession.hasVerifiedRehearsalStart: Boolean
-    get() = recordActionAt != null && recordingVerifiedAt != null
-
-private val ExecutionSession.hasVerifiedRehearsalStop: Boolean
-    get() = stopActionAt != null && stoppedVerifiedAt != null
-
-private val ExecutionSession.hasFullRehearsalProof: Boolean
-    get() = status == SessionStatus.COMPLETED &&
-        hasVerifiedRehearsalStart &&
-        hasVerifiedRehearsalStop &&
-        mediaSavedVerifiedAt != null
-
-private val ExecutionSession.hasDurableRehearsalVerificationReceipt: Boolean
-    get() = hasFullRehearsalProof && rehearsalVerifiedAt != null
-
-private val ExecutionSession.awaitsRehearsalVerificationReceipt: Boolean
-    get() = hasFullRehearsalProof && rehearsalVerifiedAt == null
 
 /**
  * Persistence boundary for immutable execution diagnostics.
