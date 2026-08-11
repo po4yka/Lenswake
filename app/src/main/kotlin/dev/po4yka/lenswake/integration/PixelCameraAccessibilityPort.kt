@@ -71,13 +71,25 @@ class PixelCameraAccessibilityPort internal constructor(
             }
 
     override suspend fun selectVideo(profileUse: ProfileUse): ActionDispatch =
-        actionDispatcher.dispatchValidated(profileUse, profileValidator, videoAction)
+        actionDispatcher.dispatchValidated(
+            profileUse,
+            profileValidator,
+            CaptureMode.VIDEO.selectionAction,
+        )
 
     override suspend fun selectTimeLapse(profileUse: ProfileUse): ActionDispatch =
-        actionDispatcher.dispatchValidated(profileUse, profileValidator, timeLapseAction)
+        actionDispatcher.dispatchValidated(
+            profileUse,
+            profileValidator,
+            CaptureMode.TIME_LAPSE.selectionAction,
+        )
 
     override suspend fun selectNightSightTimeLapse(profileUse: ProfileUse): ActionDispatch =
-        actionDispatcher.dispatchValidated(profileUse, profileValidator, nightSightTimeLapseAction)
+        actionDispatcher.dispatchValidated(
+            profileUse,
+            profileValidator,
+            CaptureMode.NIGHT_SIGHT_TIME_LAPSE.selectionAction,
+        )
 
     override suspend fun openTimeLapseSpeedControl(profileUse: ProfileUse): ActionDispatch =
         actionDispatcher.dispatchValidated(profileUse, profileValidator, openSpeedControlAction)

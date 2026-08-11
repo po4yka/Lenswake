@@ -3,8 +3,21 @@ package dev.po4yka.lenswake.core
 import java.time.Instant
 
 object PixelCameraSelectorSchema {
-    const val CURRENT_VERSION: Int = 3
+    const val CURRENT_VERSION: Int = 4
 }
+
+enum class PixelCameraDialogKind {
+    VIDEO_DURATION_LIMIT_REACHED,
+    VIDEO_FILE_SIZE_LIMIT_REACHED,
+    VIDEO_STORAGE_EXHAUSTED,
+    CAMERA_DISABLED,
+    UNKNOWN,
+}
+
+data class PixelCameraDialogProfile(
+    val presence: UiSelectorSet,
+    val recoveryTarget: UiSelectorSet?,
+)
 
 data class PixelCameraEnvironment(
     val deviceManufacturer: String,
@@ -79,6 +92,7 @@ data class PixelCameraProfile(
     val targets: Map<AutomationAction, UiSelectorSet> = emptyMap(),
     val speedTargets: Map<TimeLapseSpeed, UiSelectorSet> = emptyMap(),
     val stateSignals: Map<PixelCameraStateSignal, UiSelectorSet> = emptyMap(),
+    val dialogProfiles: Map<PixelCameraDialogKind, PixelCameraDialogProfile> = emptyMap(),
     val fallbackGestures: Map<AutomationAction, GestureProfile> = emptyMap(),
     val compatibility: ProfileCompatibility,
     val verifiedAt: Instant?,
@@ -89,18 +103,31 @@ data class PixelCameraProfile(
             "A verified profile requires a verification timestamp"
         }
         require(
-            (targets.values + speedTargets.values + stateSignals.values)
+            (
+                targets.values +
+                    speedTargets.values +
+                    stateSignals.values +
+                    dialogProfiles.values.map(PixelCameraDialogProfile::presence) +
+                    dialogProfiles.values.mapNotNull(PixelCameraDialogProfile::recoveryTarget)
+                )
                 .flatMap(UiSelectorSet::selectors)
                 .all { it.packageName == environment.cameraPackage },
         ) {
             "Profile selectors must be scoped to the calibrated camera package"
         }
         require(
-            (targets.values + speedTargets.values)
+            (
+                targets.values +
+                    speedTargets.values +
+                    dialogProfiles.values.mapNotNull(PixelCameraDialogProfile::recoveryTarget)
+                )
                 .flatMap(UiSelectorSet::selectors)
                 .all { it.hasMeaningfulDiscriminant },
         ) {
             "Action selectors require a resource, description, text, role, or region discriminant"
+        }
+        require(dialogProfiles[PixelCameraDialogKind.UNKNOWN]?.recoveryTarget == null) {
+            "An unknown Pixel Camera dialog must never have an automatic recovery target"
         }
     }
 
@@ -128,87 +155,15 @@ fun PixelCameraProfile.supportedCaptureConfigurations(): Set<CaptureConfiguratio
 }
 
 fun PixelCameraProfile.supports(capture: CaptureConfiguration): Boolean {
-    if (!hasConfiguredActions(capture)) return false
-    val commonSignals = setOf(
-        PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
-        PixelCameraStateSignal.RECORDING_ACTIVE,
-        PixelCameraStateSignal.NOT_RECORDING,
-        capture.lens.stateSignal,
-    )
-    if (!stateSignals.keys.containsAll(commonSignals)) return false
-    return when (capture) {
-        is CaptureConfiguration.Video ->
-            PixelCameraStateSignal.VIDEO_MODE_ACTIVE in stateSignals
-        is CaptureConfiguration.TimeLapse ->
-            PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE in stateSignals &&
-                PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN in stateSignals &&
-                capture.speed.stateSignal in stateSignals
-        is CaptureConfiguration.NightSightTimeLapse ->
-            PixelCameraStateSignal.NIGHT_SIGHT_TIME_LAPSE_MODE_ACTIVE in stateSignals
-    }
-}
-
-private fun PixelCameraProfile.hasConfiguredActions(capture: CaptureConfiguration): Boolean {
     if (capture.zoom != null) return false
-    val commonActions = setOf(
-        capture.mode.startAction,
-        capture.mode.stopAction,
-        capture.lens.selectionAction,
-    )
-    if (!commonActions.all(::hasAction)) return false
-    return when (capture) {
-        is CaptureConfiguration.Video -> hasAction(AutomationAction.SELECT_VIDEO)
-        is CaptureConfiguration.TimeLapse ->
-            hasAction(AutomationAction.SELECT_VIDEO) &&
-                hasAction(AutomationAction.SELECT_TIME_LAPSE) &&
-                hasAction(AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL) &&
-                capture.speed in speedTargets
-        is CaptureConfiguration.NightSightTimeLapse ->
-            hasAction(AutomationAction.SELECT_NIGHT_SIGHT_TIME_LAPSE)
-    }
+    val requirements = capture.pixelCameraRequirements
+    return requirements.actions.all(::hasAction) &&
+        stateSignals.keys.containsAll(requirements.signals) &&
+        (requirements.speedTarget == null || requirements.speedTarget in speedTargets)
 }
 
 private fun PixelCameraProfile.hasAction(action: AutomationAction): Boolean =
     action in targets || action in fallbackGestures
-
-private val CaptureMode.startAction: AutomationAction
-    get() = when (this) {
-        CaptureMode.VIDEO -> AutomationAction.START_VIDEO_RECORDING
-        CaptureMode.TIME_LAPSE -> AutomationAction.START_RECORDING
-        CaptureMode.NIGHT_SIGHT_TIME_LAPSE -> AutomationAction.START_NIGHT_SIGHT_TIME_LAPSE_RECORDING
-    }
-
-private val CaptureMode.stopAction: AutomationAction
-    get() = when (this) {
-        CaptureMode.VIDEO -> AutomationAction.STOP_VIDEO_RECORDING
-        CaptureMode.TIME_LAPSE -> AutomationAction.STOP_RECORDING
-        CaptureMode.NIGHT_SIGHT_TIME_LAPSE -> AutomationAction.STOP_NIGHT_SIGHT_TIME_LAPSE_RECORDING
-    }
-
-private val LensSelection.selectionAction: AutomationAction
-    get() = when (this) {
-        LensSelection.REAR_MAIN -> AutomationAction.SELECT_REAR_MAIN_LENS
-        LensSelection.REAR_ULTRAWIDE -> AutomationAction.SELECT_REAR_ULTRAWIDE_LENS
-        LensSelection.REAR_TELEPHOTO -> AutomationAction.SELECT_REAR_TELEPHOTO_LENS
-        LensSelection.FRONT -> AutomationAction.SELECT_FRONT_LENS
-    }
-
-private val LensSelection.stateSignal: PixelCameraStateSignal
-    get() = when (this) {
-        LensSelection.REAR_MAIN -> PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE
-        LensSelection.REAR_ULTRAWIDE -> PixelCameraStateSignal.REAR_ULTRAWIDE_LENS_ACTIVE
-        LensSelection.REAR_TELEPHOTO -> PixelCameraStateSignal.REAR_TELEPHOTO_LENS_ACTIVE
-        LensSelection.FRONT -> PixelCameraStateSignal.FRONT_LENS_ACTIVE
-    }
-
-private val TimeLapseSpeed.stateSignal: PixelCameraStateSignal
-    get() = when (this) {
-        TimeLapseSpeed.AUTO -> PixelCameraStateSignal.TIME_LAPSE_SPEED_AUTO_ACTIVE
-        TimeLapseSpeed.X5 -> PixelCameraStateSignal.TIME_LAPSE_SPEED_X5_ACTIVE
-        TimeLapseSpeed.X10 -> PixelCameraStateSignal.TIME_LAPSE_SPEED_X10_ACTIVE
-        TimeLapseSpeed.X30 -> PixelCameraStateSignal.TIME_LAPSE_SPEED_X30_ACTIVE
-        TimeLapseSpeed.X120 -> PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE
-    }
 
 enum class AutomationAction {
     SELECT_VIDEO,

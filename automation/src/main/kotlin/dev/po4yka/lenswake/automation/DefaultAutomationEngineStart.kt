@@ -93,6 +93,7 @@ internal suspend fun EngineEnvironment.selectCaptureMode(
         context: RunContext,
         mode: CaptureMode,
     ) {
+        val failureCodes = mode.selectionFailureCodes
         when (mode) {
             CaptureMode.VIDEO -> dispatchAndVerify(
                 context = context,
@@ -100,11 +101,11 @@ internal suspend fun EngineEnvironment.selectCaptureMode(
                 actionState = AutomationStateName.SELECTING_VIDEO,
                 verificationState = AutomationStateName.VERIFYING_VIDEO,
                 dispatchFailure = failure(
-                    AutomationFailureCode.VIDEO_MODE_NOT_FOUND,
+                    failureCodes.dispatch,
                     "Pixel Camera could not select Video mode",
                 ),
                 verificationFailure = failure(
-                    AutomationFailureCode.VIDEO_MODE_NOT_VERIFIED,
+                    failureCodes.verification,
                     "Pixel Camera did not confirm Video mode",
                 ),
                 action = { pixelCamera.selectVideo(context.profileUse) },
@@ -116,11 +117,11 @@ internal suspend fun EngineEnvironment.selectCaptureMode(
                 actionState = AutomationStateName.SELECTING_TIME_LAPSE,
                 verificationState = AutomationStateName.VERIFYING_TIME_LAPSE,
                 dispatchFailure = failure(
-                    AutomationFailureCode.TIME_LAPSE_MODE_NOT_FOUND,
+                    failureCodes.dispatch,
                     "Pixel Camera could not select Time Lapse mode",
                 ),
                 verificationFailure = failure(
-                    AutomationFailureCode.TIME_LAPSE_MODE_NOT_VERIFIED,
+                    failureCodes.verification,
                     "Pixel Camera did not confirm Time Lapse mode",
                 ),
                 action = { pixelCamera.selectTimeLapse(context.profileUse) },
@@ -132,11 +133,11 @@ internal suspend fun EngineEnvironment.selectCaptureMode(
                 actionState = AutomationStateName.SELECTING_NIGHT_SIGHT_TIME_LAPSE,
                 verificationState = AutomationStateName.VERIFYING_NIGHT_SIGHT_TIME_LAPSE,
                 dispatchFailure = failure(
-                    AutomationFailureCode.TIME_LAPSE_MODE_NOT_FOUND,
+                    failureCodes.dispatch,
                     "Pixel Camera could not select Night Sight Time Lapse mode",
                 ),
                 verificationFailure = failure(
-                    AutomationFailureCode.TIME_LAPSE_MODE_NOT_VERIFIED,
+                    failureCodes.verification,
                     "Pixel Camera did not confirm Night Sight Time Lapse mode",
                 ),
                 action = { pixelCamera.selectNightSightTimeLapse(context.profileUse) },
