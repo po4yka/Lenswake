@@ -74,26 +74,38 @@ class DataExtractionRulesManifestTest {
         var section: String? = null
         try {
             while (parser.eventType != XmlPullParser.END_DOCUMENT) {
-                when (parser.eventType) {
-                    XmlPullParser.START_TAG -> when (parser.name) {
-                        "cloud-backup", "device-transfer" -> section = parser.name
-                        "exclude" -> section?.let { currentSection ->
-                            exclusions.getValue(currentSection) +=
-                                parser.getAttributeValue(null, "domain") to
-                                    parser.getAttributeValue(null, "path")
-                        }
-                    }
-
-                    XmlPullParser.END_TAG -> {
-                        if (parser.name == section) section = null
-                    }
-                }
+                section = extractionSection(parser, section, exclusions)
                 parser.next()
             }
         } finally {
             parser.close()
         }
         return exclusions
+    }
+
+    private fun extractionSection(
+        parser: XmlPullParser,
+        section: String?,
+        exclusions: MutableMap<String, MutableSet<Pair<String, String>>>,
+    ): String? = when {
+        parser.eventType == XmlPullParser.START_TAG && parser.name in exclusions -> parser.name
+        parser.eventType == XmlPullParser.START_TAG && parser.name == "exclude" -> {
+            addExclusion(parser, section, exclusions)
+            section
+        }
+
+        parser.eventType == XmlPullParser.END_TAG && parser.name == section -> null
+        else -> section
+    }
+
+    private fun addExclusion(
+        parser: XmlPullParser,
+        section: String?,
+        exclusions: MutableMap<String, MutableSet<Pair<String, String>>>,
+    ) {
+        if (section == null) return
+        exclusions.getValue(section) +=
+            parser.getAttributeValue(null, "domain") to parser.getAttributeValue(null, "path")
     }
 
     private companion object {
