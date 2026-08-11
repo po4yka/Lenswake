@@ -53,8 +53,9 @@ Still intentionally outside the implemented baseline:
   `docs/research/pixel-8-pro-baseline-2026-08-09.md`.
 
 The bundled physical-device profile currently exposes only the capture combination whose selectors and postconditions
-were calibrated on that exact environment. Scheduling is additionally constrained to the exact capture combination
-from the profile's latest successful production rehearsal; configured selectors alone never authorize unattended use.
+were calibrated on that exact environment. Scheduling is additionally constrained to capture combinations that passed
+a successful production rehearsal against the same profile definition; configured selectors alone never authorize
+unattended use.
 
 The debug APK can be built with:
 
