@@ -90,6 +90,11 @@ class KnownPixelCameraProfileCatalogTest {
 
     @Test
     fun `selectors retain empirically observed semantic discriminants`() {
+        assertActionSelectorDiscriminants()
+        assertStateSelectorDiscriminants()
+    }
+
+    private fun assertActionSelectorDiscriminants() {
         val video = profile.targets.getValue(AutomationAction.SELECT_VIDEO).selectors.single()
         assertEquals("video_supermode", video.resourceId)
         assertNull(video.contentDescription)
@@ -123,7 +128,9 @@ class KnownPixelCameraProfileCatalogTest {
             .single()
         assertEquals("zoom_toggle_1×", lensAction.resourceId)
         assertFalse(lensAction.requiresClickable)
+    }
 
+    private fun assertStateSelectorDiscriminants() {
         val lens = profile.stateSignals
             .getValue(PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE)
             .selectors
