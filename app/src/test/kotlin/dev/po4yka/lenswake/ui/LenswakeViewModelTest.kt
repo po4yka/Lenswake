@@ -434,7 +434,7 @@ class LenswakeViewModelTest {
     }
 
     @Test
-    fun runRehearsalUsesBoundedProductionRequestAndSurfacesPendingSafetyStop() = runTest {
+    fun profileBoundRehearsalUsesRequestedProfileAndSurfacesPendingSafetyStop() = runTest {
         val profiles = FakeProfileRepository().also { it.save(profile()) }
         val schedules = FakeScheduleRepository()
         val executions = FakeExecutionRepository()
@@ -463,7 +463,7 @@ class LenswakeViewModelTest {
         }
 
         assertEquals(true, viewModel.state.first { it.actions.canRunRehearsal }.actions.canRunRehearsal)
-        viewModel.runRehearsal()
+        viewModel.runProfileRehearsal(profileId.value)
 
         val pending = viewModel.state.first { it.rehearsal is RehearsalActionUiState.SafetyStopPending }
         assertEquals(profileId, received?.profileId)
@@ -508,7 +508,7 @@ class LenswakeViewModelTest {
     }
 
     @Test
-    fun runRehearsalSelectsTheFirstCaptureWithoutCurrentProof() = runTest {
+    fun profileBoundRehearsalSelectsTheFirstCaptureWithoutCurrentProof() = runTest {
         val profiles = FakeProfileRepository().also { it.save(profile()) }
         val proof = verifiedRehearsal(
             CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120),
@@ -533,13 +533,78 @@ class LenswakeViewModelTest {
         }
 
         viewModel.state.first { it.actions.canRunRehearsal }
-        viewModel.runRehearsal()
+        viewModel.runProfileRehearsal(profileId.value)
         viewModel.state.first { it.rehearsal is RehearsalActionUiState.Failed }
 
         assertEquals(
             CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120, dev.po4yka.lenswake.core.LensSelection.FRONT),
             received?.capture,
         )
+    }
+
+    @Test
+    fun scheduleBoundRehearsalUsesPersistedScheduleProfileAndCapture() = runTest {
+        val requestedSchedule = schedule()
+        val schedules = FakeScheduleRepository().also { it.save(requestedSchedule) }
+        val profiles = FakeProfileRepository().also {
+            it.save(profile().copy(id = ProfileId("000-first-profile")))
+            it.save(profile())
+        }
+        var received: RehearsalRequest? = null
+        val viewModel = LenswakeViewModel(
+            schedules,
+            profiles,
+            FakeExecutionRepository(),
+            RuntimePreflightProbe { rehearsalEligiblePreflight() },
+            installUseCase(profiles),
+            RehearsalCoordinator { request ->
+                received = request
+                RehearsalResult.Rejected(RehearsalResultCode.START_FAILED, "Expected test stop")
+            },
+            scheduleWorkflow(schedules, profiles),
+            TestUiStringProvider,
+        )
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.state.collect()
+        }
+
+        viewModel.state.first { it.actions.canRunRehearsal }
+        viewModel.runScheduleRehearsal(requestedSchedule.id.value)
+        viewModel.state.first { it.rehearsal is RehearsalActionUiState.Failed }
+
+        assertEquals(requestedSchedule.profileId, received?.profileId)
+        assertEquals(requestedSchedule.capture, received?.capture)
+        assertEquals(Duration.ofSeconds(10), received?.recordingDuration)
+        assertEquals(requestedSchedule.id, received?.scheduleId)
+    }
+
+    @Test
+    fun missingScheduleFailsWithoutStartingGlobalRehearsal() = runTest {
+        val schedules = FakeScheduleRepository()
+        val profiles = FakeProfileRepository().also { it.save(profile()) }
+        var coordinatorCalls = 0
+        val viewModel = LenswakeViewModel(
+            schedules,
+            profiles,
+            FakeExecutionRepository(),
+            RuntimePreflightProbe { rehearsalEligiblePreflight() },
+            installUseCase(profiles),
+            RehearsalCoordinator {
+                coordinatorCalls += 1
+                error("Missing schedule must not start rehearsal")
+            },
+            scheduleWorkflow(schedules, profiles),
+            TestUiStringProvider,
+        )
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.state.collect()
+        }
+
+        viewModel.state.first { it.actions.canRunRehearsal }
+        viewModel.runScheduleRehearsal("missing-schedule")
+        viewModel.state.first { it.rehearsal is RehearsalActionUiState.Failed }
+
+        assertEquals(0, coordinatorCalls)
     }
 
     @Test
@@ -951,6 +1016,7 @@ class LenswakeViewModelTest {
                 stopActionAt = proofAt.minusSeconds(1),
                 stoppedVerifiedAt = proofAt,
                 mediaSavedVerifiedAt = proofAt,
+                rehearsalVerifiedAt = proofAt,
                 createdAt = proofAt.minusSeconds(10),
                 updatedAt = proofAt,
             )

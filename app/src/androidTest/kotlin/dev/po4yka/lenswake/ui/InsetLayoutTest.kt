@@ -116,7 +116,7 @@ class InsetLayoutTest {
                                 state = LenswakeUiState(),
                                 contentPadding = contentPadding,
                                 onInstallCandidateProfile = {},
-                                onRunRehearsal = {},
+                                onRunRehearsal = { _ -> },
                             )
                         }
                     }

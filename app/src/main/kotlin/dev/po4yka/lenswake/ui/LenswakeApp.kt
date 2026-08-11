@@ -75,7 +75,8 @@ fun LenswakeApp(
     LenswakeApp(
         state = state,
         onInstallCandidateProfile = viewModel::installCandidateProfile,
-        onRunRehearsal = viewModel::runRehearsal,
+        onRunRehearsal = viewModel::runProfileRehearsal,
+        onRunScheduleRehearsal = viewModel::runScheduleRehearsal,
         onBeginCreateSchedule = viewModel::beginCreateSchedule,
         onBeginEditSchedule = viewModel::beginEditSchedule,
         onUpdateScheduleForm = viewModel::updateScheduleForm,
@@ -98,7 +99,8 @@ fun LenswakeApp(
 fun LenswakeApp(
     state: LenswakeUiState,
     onInstallCandidateProfile: () -> Unit = {},
-    onRunRehearsal: () -> Unit = {},
+    onRunRehearsal: (String) -> Unit = {},
+    onRunScheduleRehearsal: (String) -> Unit = {},
     onBeginCreateSchedule: () -> Unit = {},
     onBeginEditSchedule: (String) -> Unit = {},
     onUpdateScheduleForm: (ScheduleFormUiState) -> Unit = {},
@@ -180,6 +182,7 @@ fun LenswakeApp(
                                 onOpenSetup = navigation::navigateToSetup,
                                 onBeginCreate = onBeginCreateSchedule,
                                 onBeginEdit = onBeginEditSchedule,
+                                onRunRehearsal = onRunScheduleRehearsal,
                                 onUpdateForm = onUpdateScheduleForm,
                                 onSubmit = onSubmitSchedule,
                                 onCancelEditor = onCancelScheduleEditor,

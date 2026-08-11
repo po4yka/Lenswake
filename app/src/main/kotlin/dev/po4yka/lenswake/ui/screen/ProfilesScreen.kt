@@ -27,7 +27,7 @@ fun ProfilesScreen(
     state: LenswakeUiState,
     contentPadding: PaddingValues,
     onInstallCandidateProfile: () -> Unit,
-    onRunRehearsal: () -> Unit,
+    onRunRehearsal: (String) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier
@@ -41,9 +41,8 @@ fun ProfilesScreen(
     ) {
         profilesHeader()
         profileInstallAction(state, onInstallCandidateProfile)
-        installedProfiles(state)
+        installedProfiles(state, onRunRehearsal)
         profileInstallOutcome(state.profileInstall)
-        rehearsalAction(state, onRunRehearsal)
         activeRehearsal(state)
         rehearsalOutcome(state.rehearsal)
     }
@@ -84,13 +83,29 @@ private fun LazyListScope.profileInstallAction(
     }
 }
 
-private fun LazyListScope.installedProfiles(state: LenswakeUiState) {
+private fun LazyListScope.installedProfiles(
+    state: LenswakeUiState,
+    onRunRehearsal: (String) -> Unit,
+) {
+    if (state.profiles.isEmpty()) {
+        item {
+            profileRehearsalAction(
+                state = state,
+                onRunRehearsal = {},
+            )
+        }
+        return
+    }
     items(state.profiles.size, key = { state.profiles[it].id }) { index ->
         val profile = state.profiles[index]
         StatusRow(
             title = profile.title,
             detail = profile.environment,
             status = profile.compatibility,
+        )
+        profileRehearsalAction(
+            state = state,
+            onRunRehearsal = { onRunRehearsal(profile.id) },
         )
         if (index < state.profiles.lastIndex) {
             HorizontalDivider()
@@ -121,31 +136,30 @@ private fun LazyListScope.profileInstallOutcome(install: ProfileInstallUiState) 
     }
 }
 
-private fun LazyListScope.rehearsalAction(
+@Composable
+private fun profileRehearsalAction(
     state: LenswakeUiState,
     onRunRehearsal: () -> Unit,
 ) {
-    item {
-        val active = state.activeSession?.takeIf { it.kind == ActiveSessionKind.REHEARSAL }
-        val inProgress = state.rehearsal is RehearsalActionUiState.Running
-        ActionSection(
-            title = stringResource(R.string.profiles_test_title),
-            detail = active?.detail ?: if (inProgress) {
-                stringResource(R.string.profiles_test_running_detail)
-            } else {
-                stringResource(R.string.profiles_test_detail)
-            },
-            actionLabel = if (inProgress) {
-                stringResource(R.string.profiles_testing)
-            } else {
-                stringResource(R.string.action_test_recording)
-            },
-            actionEnabled = state.actions.canRunRehearsal,
-            actionInProgress = inProgress,
-            unavailableReason = state.actions.rehearsalUnavailableReason,
-            onAction = onRunRehearsal,
-        )
-    }
+    val active = state.activeSession?.takeIf { it.kind == ActiveSessionKind.REHEARSAL }
+    val inProgress = state.rehearsal is RehearsalActionUiState.Running
+    ActionSection(
+        title = stringResource(R.string.profiles_test_title),
+        detail = active?.detail ?: if (inProgress) {
+            stringResource(R.string.profiles_test_running_detail)
+        } else {
+            stringResource(R.string.profiles_test_detail)
+        },
+        actionLabel = if (inProgress) {
+            stringResource(R.string.profiles_testing)
+        } else {
+            stringResource(R.string.action_test_recording)
+        },
+        actionEnabled = state.actions.canRunRehearsal,
+        actionInProgress = inProgress,
+        unavailableReason = state.actions.rehearsalUnavailableReason,
+        onAction = onRunRehearsal,
+    )
 }
 
 private fun LazyListScope.activeRehearsal(state: LenswakeUiState) {

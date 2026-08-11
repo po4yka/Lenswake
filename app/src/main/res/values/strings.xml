@@ -25,6 +25,7 @@
     <string name="action_save_changes">Save changes</string>
     <string name="action_save_schedule">Save schedule</string>
     <string name="action_test_recording">Test recording</string>
+    <string name="action_test_now">Test now</string>
     <string name="action_use_date">Use date</string>
     <string name="action_use_time">Use time</string>
 
@@ -68,7 +69,7 @@
     <string name="profiles_install_failed_title">Camera profile could not be installed</string>
     <string name="profiles_test_title">Test recording</string>
     <string name="profiles_test_running_detail">Pixel Camera is recording briefly. Lenswake will stop it automatically.</string>
-    <string name="profiles_test_detail">Record a 10-second 120× Time Lapse now to confirm that Lenswake can start and stop Pixel Camera on this device.</string>
+    <string name="profiles_test_detail">Run the next unverified capture configuration through the production start and stop workflow.</string>
     <string name="profiles_testing">Testing camera</string>
     <string name="profiles_test_passed_title">Test recording passed</string>
     <string name="profiles_test_failed_title">Test recording failed</string>
@@ -158,6 +159,7 @@
     <string name="schedule_choose_date">Choose date</string>
     <string name="schedule_choose_time">Choose time</string>
     <string name="schedule_picker_content_description">%1$s, %2$s</string>
+    <string name="schedule_test_now_content_description">Test now, %1$s</string>
     <string name="schedule_delete_title">Delete %1$s?</string>
     <string name="schedule_delete_message">This schedule and its future recording times will be deleted. This can’t be undone.</string>
     <string name="schedule_rollback_failures">Some changes could not be undone:\n%1$s</string>
@@ -316,6 +318,7 @@
     <string name="schedule_error_rollback_incomplete">Some previous schedule settings could not be restored. Review Diagnostics before relying on this schedule.</string>
 
     <string name="rehearsal_profile_required">Install a Pixel Camera profile before testing.</string>
+    <string name="rehearsal_schedule_missing">The selected schedule no longer exists.</string>
     <string name="rehearsal_unexpected_failure">The test recording stopped unexpectedly. Review Diagnostics, then try again.</string>
     <string name="rehearsal_passed">Lenswake started and stopped Pixel Camera successfully. This profile is ready for scheduling.</string>
     <string name="rehearsal_busy">Another test recording is already running.</string>

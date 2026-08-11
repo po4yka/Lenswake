@@ -6,6 +6,7 @@ data class RehearsalRequest(
     val profileId: ProfileId,
     val capture: CaptureConfiguration,
     val recordingDuration: Duration,
+    val scheduleId: ScheduleId? = null,
 ) {
     init {
         require(recordingDuration >= MIN_RECORDING_DURATION && recordingDuration <= MAX_RECORDING_DURATION) {

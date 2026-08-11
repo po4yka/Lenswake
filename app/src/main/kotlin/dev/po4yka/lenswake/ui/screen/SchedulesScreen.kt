@@ -54,6 +54,7 @@ import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.ui.AndroidUiStringProvider
 import dev.po4yka.lenswake.ui.LenswakeUiState
 import dev.po4yka.lenswake.ui.ProfileSummaryUiState
+import dev.po4yka.lenswake.ui.RehearsalActionUiState
 import dev.po4yka.lenswake.ui.ScheduleActionUiState
 import dev.po4yka.lenswake.ui.ScheduleEditorMode
 import dev.po4yka.lenswake.ui.ScheduleEditorUiState
@@ -90,6 +91,7 @@ fun SchedulesScreen(
     onOpenSetup: () -> Unit,
     onBeginCreate: () -> Unit,
     onBeginEdit: (String) -> Unit,
+    onRunRehearsal: (String) -> Unit,
     onUpdateForm: (ScheduleFormUiState) -> Unit,
     onSubmit: () -> Unit,
     onCancelEditor: () -> Unit,
@@ -139,6 +141,11 @@ fun SchedulesScreen(
                     action = state.scheduleAction,
                     onDismiss = onClearOutcome,
                 )
+            }
+        }
+        if (state.rehearsal !is RehearsalActionUiState.Idle) {
+            item {
+                RehearsalOutcome(state.rehearsal)
             }
         }
         val editor = state.scheduleEditor
@@ -195,7 +202,11 @@ fun SchedulesScreen(
                 ScheduleCard(
                     schedule = schedule,
                     busy = busy,
+                    rehearsal = state.rehearsal,
+                    canRunRehearsal = state.actions.canRunRehearsal,
+                    rehearsalUnavailableReason = state.actions.rehearsalUnavailableReason,
                     onEdit = { onBeginEdit(schedule.id) },
+                    onRunRehearsal = { onRunRehearsal(schedule.id) },
                     onSetEnabled = { onSetEnabled(schedule.id, !schedule.enabled) },
                     onRequestDelete = { onRequestDelete(schedule.id) },
                 )
@@ -678,10 +689,18 @@ private fun LocalTime.toFormTimeLabel(locale: Locale): String = format(
 private fun ScheduleCard(
     schedule: ScheduleSummaryUiState,
     busy: Boolean,
+    rehearsal: RehearsalActionUiState,
+    canRunRehearsal: Boolean,
+    rehearsalUnavailableReason: String,
     onEdit: () -> Unit,
+    onRunRehearsal: () -> Unit,
     onSetEnabled: () -> Unit,
     onRequestDelete: () -> Unit,
 ) {
+    val testNowDescription = stringResource(
+        R.string.schedule_test_now_content_description,
+        schedule.title,
+    )
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(20.dp),
@@ -703,6 +722,37 @@ private fun ScheduleCard(
             }
             Text(schedule.timing, style = MaterialTheme.typography.bodyMedium)
             Text(schedule.capture.label(), style = MaterialTheme.typography.bodyMedium)
+            OutlinedButton(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics {
+                        contentDescription = testNowDescription
+                    },
+                enabled = !busy && canRunRehearsal,
+                onClick = onRunRehearsal,
+            ) {
+                Text(
+                    stringResource(
+                        if (rehearsal is RehearsalActionUiState.Running) {
+                            R.string.profiles_testing
+                        } else {
+                            R.string.action_test_now
+                        },
+                    ),
+                )
+            }
+            if (
+                !busy &&
+                !canRunRehearsal &&
+                rehearsal !is RehearsalActionUiState.Running &&
+                rehearsalUnavailableReason.isNotBlank()
+            ) {
+                Text(
+                    text = rehearsalUnavailableReason,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !busy,
@@ -729,6 +779,33 @@ private fun ScheduleCard(
                 Text(stringResource(R.string.action_delete_schedule))
             }
         }
+    }
+}
+
+@Composable
+private fun RehearsalOutcome(rehearsal: RehearsalActionUiState) {
+    when (rehearsal) {
+        RehearsalActionUiState.Idle -> Unit
+        RehearsalActionUiState.Running -> SummaryCard(
+            title = stringResource(R.string.profiles_test_title),
+            detail = stringResource(R.string.profiles_test_running_detail),
+            status = stringResource(R.string.status_working),
+        )
+        is RehearsalActionUiState.Passed -> SummaryCard(
+            title = stringResource(R.string.profiles_test_passed_title),
+            detail = rehearsal.message,
+            status = stringResource(R.string.status_passed),
+        )
+        is RehearsalActionUiState.Failed -> SummaryCard(
+            title = stringResource(R.string.profiles_test_failed_title),
+            detail = rehearsal.message,
+            status = stringResource(R.string.status_failed),
+        )
+        is RehearsalActionUiState.SafetyStopPending -> SummaryCard(
+            title = stringResource(R.string.profiles_waiting_for_stop_title),
+            detail = rehearsal.message,
+            status = stringResource(R.string.status_safety_alarm_armed),
+        )
     }
 }
 

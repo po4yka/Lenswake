@@ -34,6 +34,7 @@ import dev.po4yka.lenswake.core.PreflightReport
 import dev.po4yka.lenswake.core.PreflightSeverity
 import dev.po4yka.lenswake.core.PreflightStatus
 import dev.po4yka.lenswake.core.ProfileCompatibility
+import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.ProfilePersistenceIssue
 import dev.po4yka.lenswake.core.RecordingSchedule
 import dev.po4yka.lenswake.core.RehearsalRequest
@@ -224,37 +225,61 @@ class LenswakeViewModel internal constructor(
         }
     }
 
-    fun runRehearsal() {
+    fun runProfileRehearsal(profileId: String) {
+        launchRehearsal {
+            val profile = profileRepository.get(ProfileId(profileId))
+                ?: return@launchRehearsal RehearsalPreparation.Failed(
+                    strings.get(R.string.rehearsal_profile_required),
+                )
+            val supportedCaptures = profile.supportedCaptureConfigurations()
+                .sortedWith(capturePreferenceComparator)
+            val completedRehearsals = executions.first()
+            val capture = supportedCaptures.firstOrNull { candidate ->
+                completedRehearsals.none { it.qualifiesRehearsal(profile, candidate) }
+            } ?: supportedCaptures.firstOrNull()
+                ?: return@launchRehearsal RehearsalPreparation.Failed(
+                    strings.get(R.string.schedule_error_capture_not_supported),
+                )
+            RehearsalPreparation.Ready(
+                RehearsalRequest(
+                    profileId = profile.id,
+                    capture = capture,
+                    recordingDuration = Duration.ofSeconds(REHEARSAL_DURATION_SECONDS),
+                ),
+            )
+        }
+    }
+
+    fun runScheduleRehearsal(scheduleId: String) {
+        launchRehearsal {
+            val schedule = scheduleRepository.get(ScheduleId(scheduleId))
+                ?: return@launchRehearsal RehearsalPreparation.Failed(
+                    strings.get(R.string.rehearsal_schedule_missing),
+                )
+            RehearsalPreparation.Ready(
+                RehearsalRequest(
+                    profileId = schedule.profileId,
+                    capture = schedule.capture,
+                    recordingDuration = Duration.ofSeconds(REHEARSAL_DURATION_SECONDS),
+                    scheduleId = schedule.id,
+                ),
+            )
+        }
+    }
+
+    private fun launchRehearsal(
+        prepare: suspend () -> RehearsalPreparation,
+    ) {
         if (!state.value.actions.canRunRehearsal || rehearsal.value == RehearsalActionUiState.Running) return
 
         rehearsal.value = RehearsalActionUiState.Running
         viewModelScope.launch {
             try {
-                val profile = profileRepository.observeProfiles().first()
-                    .sortedBy { it.id.value }
-                    .firstOrNull()
-                rehearsal.value = if (profile == null) {
-                    RehearsalActionUiState.Failed(strings.get(R.string.rehearsal_profile_required))
-                } else {
-                    val supportedCaptures = profile.supportedCaptureConfigurations()
-                        .sortedWith(capturePreferenceComparator)
-                    val completedRehearsals = executions.first()
-                    val capture = supportedCaptures.firstOrNull { candidate ->
-                        completedRehearsals.none { it.qualifiesRehearsal(profile, candidate) }
-                    } ?: supportedCaptures.firstOrNull()
-                    if (capture == null) {
-                        RehearsalActionUiState.Failed(
-                            strings.get(R.string.schedule_error_capture_not_supported),
-                        )
-                    } else {
-                        rehearsalCoordinator.run(
-                            RehearsalRequest(
-                                profileId = profile.id,
-                                capture = capture,
-                                recordingDuration = Duration.ofSeconds(REHEARSAL_DURATION_SECONDS),
-                            ),
-                        ).toUiState(strings)
-                    }
+                rehearsal.value = when (val preparation = prepare()) {
+                    is RehearsalPreparation.Failed ->
+                        RehearsalActionUiState.Failed(preparation.message)
+                    is RehearsalPreparation.Ready ->
+                        rehearsalCoordinator.run(preparation.request).toUiState(strings)
                 }
                 refreshPreflight()
             } catch (cancelled: CancellationException) {
@@ -510,6 +535,11 @@ private data class ObservedActiveSession(
     val session: ExecutionSession?,
     val observedAt: java.time.Instant,
 )
+
+private sealed interface RehearsalPreparation {
+    data class Ready(val request: RehearsalRequest) : RehearsalPreparation
+    data class Failed(val message: String) : RehearsalPreparation
+}
 
 private fun SetupRemediationAction.remediationLabel(strings: UiStringProvider): String = strings.get(
     when (this) {

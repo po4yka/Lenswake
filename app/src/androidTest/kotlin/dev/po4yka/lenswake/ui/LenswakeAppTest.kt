@@ -36,7 +36,8 @@ class LenswakeAppTest {
     private fun setContent(
         state: LenswakeUiState? = null,
         onInstallCandidateProfile: () -> Unit = {},
-        onRunRehearsal: () -> Unit = {},
+        onRunRehearsal: (String) -> Unit = {},
+        onRunScheduleRehearsal: (String) -> Unit = {},
         onUpdateScheduleForm: (ScheduleFormUiState) -> Unit = {},
         onSubmitSchedule: () -> Unit = {},
         onRequestDeleteSchedule: (String) -> Unit = {},
@@ -54,6 +55,7 @@ class LenswakeAppTest {
                     state = resolvedState,
                     onInstallCandidateProfile = onInstallCandidateProfile,
                     onRunRehearsal = onRunRehearsal,
+                    onRunScheduleRehearsal = onRunScheduleRehearsal,
                     onUpdateScheduleForm = onUpdateScheduleForm,
                     onSubmitSchedule = onSubmitSchedule,
                     onRequestDeleteSchedule = onRequestDeleteSchedule,
@@ -280,7 +282,7 @@ class LenswakeAppTest {
 
     @Test
     fun profilesRouteDispatchesEnabledRehearsal() {
-        var rehearsalRequests = 0
+        var rehearsedProfileId: String? = null
         setContent(
             state = LenswakeUiState(
                 profiles = listOf(
@@ -295,12 +297,12 @@ class LenswakeAppTest {
                 ),
                 actions = UiActionAvailability(canRunRehearsal = true),
             ),
-            onRunRehearsal = { rehearsalRequests += 1 },
+            onRunRehearsal = { rehearsedProfileId = it },
         )
 
         composeRule.onNodeWithText("Profiles").performClick()
         composeRule.onNode(hasText("Test recording") and hasClickAction()).performClick()
-        composeRule.runOnIdle { assertEquals(1, rehearsalRequests) }
+        composeRule.runOnIdle { assertEquals("profile-1", rehearsedProfileId) }
     }
 
     @Test
@@ -348,6 +350,43 @@ class LenswakeAppTest {
         composeRule.onNodeWithText("Active recording: Dawn").assertExists()
         composeRule.onNodeWithText(detail).assertExists()
         composeRule.onNodeWithText("Recording expected").assertExists()
+    }
+
+    @Test
+    fun schedulesRouteDispatchesTestNowForExactSchedule() {
+        var rehearsedScheduleId: String? = null
+        setContent(
+            state = LenswakeUiState(
+                schedules = listOf(testSchedule()),
+                actions = UiActionAvailability(canRunRehearsal = true),
+            ),
+            onRunScheduleRehearsal = { rehearsedScheduleId = it },
+        )
+
+        composeRule.onNodeWithContentDescription("Test now, Dawn")
+            .performScrollTo()
+            .assertIsEnabled()
+            .performClick()
+
+        composeRule.runOnIdle { assertEquals("schedule-dawn", rehearsedScheduleId) }
+    }
+
+    @Test
+    fun schedulesRouteDisablesTestNowWhenRehearsalIsUnavailable() {
+        setContent(
+            state = LenswakeUiState(
+                schedules = listOf(testSchedule()),
+                actions = UiActionAvailability(
+                    canRunRehearsal = false,
+                    rehearsalUnavailableReason = "A recording is active.",
+                ),
+            ),
+        )
+
+        composeRule.onNodeWithContentDescription("Test now, Dawn")
+            .performScrollTo()
+            .assertIsNotEnabled()
+        composeRule.onNodeWithText("A recording is active.").assertExists()
     }
 
     @Test
@@ -655,6 +694,19 @@ class LenswakeAppTest {
         composeRule.onNodeWithText("Use time").assertExists()
     }
 }
+
+private fun testSchedule() = ScheduleSummaryUiState(
+    id = "schedule-dawn",
+    title = "Dawn",
+    timing = "Jan 1, 2030 06:00 - Jan 1, 2030 08:00",
+    status = "Enabled",
+    startLocal = LocalDateTime.of(2030, 1, 1, 6, 0),
+    stopLocal = LocalDateTime.of(2030, 1, 1, 8, 0),
+    zoneId = ZoneId.of("Asia/Tbilisi"),
+    capture = CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120),
+    profileId = "profile-verified",
+    enabled = true,
+)
 
 private val TEST_SUPPORTED_CAPTURES = setOf(
     CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120),
