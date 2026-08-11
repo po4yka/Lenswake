@@ -31,7 +31,8 @@ class AlarmTransportPersistenceTest {
         )
 
         assertTrue(first.persist(marker))
-        assertEquals(marker, SharedPreferencesAlarmTransportFailurePersistence(context, preferenceName).markers().single())
+        val restored = SharedPreferencesAlarmTransportFailurePersistence(context, preferenceName)
+        assertEquals(marker, restored.markers().single())
         assertTrue(first.isDeviceProtectedStorage)
         assertTrue(first.remove(marker.id))
         assertTrue(first.markers().isEmpty())

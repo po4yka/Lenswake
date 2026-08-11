@@ -228,9 +228,9 @@ internal class SharedPreferencesAlarmTransportFailurePersistence(
             code = AlarmTransportFailureCode.valueOf(fields[1]),
             recordedAtEpochMillis = fields[2].toLong(),
             cameraAction = fields[3].toBooleanStrict(),
-            title = decodeText(fields[4]),
-            message = decodeText(fields[5]),
-            actionLabel = decodeText(fields[6]),
+            title = decodeText(fields[TITLE_FIELD]),
+            message = decodeText(fields[MESSAGE_FIELD]),
+            actionLabel = decodeText(fields[ACTION_LABEL_FIELD]),
         )
     }.getOrNull()
 
@@ -249,6 +249,9 @@ internal class SharedPreferencesAlarmTransportFailurePersistence(
         const val FORMAT_VERSION = "1"
         const val SEPARATOR = "|"
         const val FIELD_COUNT = 7
+        const val TITLE_FIELD = 4
+        const val MESSAGE_FIELD = 5
+        const val ACTION_LABEL_FIELD = 6
     }
 }
 
@@ -357,32 +360,26 @@ internal class AlarmDeliveryRetryCoordinator(
         detail: String,
     ): AlarmDeliveryRetryResult {
         val work = entry.work
-        if (work.deliveryAttempt >= maxAttempts) {
-            return escalate(work, AlarmTransportFailureCode.RETRY_ATTEMPTS_EXHAUSTED, detail)
+        return when {
+            work.deliveryAttempt >= maxAttempts ->
+                escalate(work, AlarmTransportFailureCode.RETRY_ATTEMPTS_EXHAUSTED, detail)
+            else -> runCatching { backend.canScheduleExactAlarms() }.fold(
+                onSuccess = { available ->
+                    if (available) {
+                        scheduleJournaledRetry(entry, detail)
+                    } else {
+                        escalate(work, AlarmTransportFailureCode.EXACT_ALARM_UNAVAILABLE, detail)
+                    }
+                },
+                onFailure = { error ->
+                    escalate(
+                        work,
+                        AlarmTransportFailureCode.EXACT_ALARM_UNAVAILABLE,
+                        "$detail Exact-alarm capability check failed: ${error.message.orEmpty()}",
+                    )
+                },
+            )
         }
-        val exactAlarmsAvailable = runCatching { backend.canScheduleExactAlarms() }
-            .getOrElse { error ->
-                return escalate(
-                    work,
-                    AlarmTransportFailureCode.EXACT_ALARM_UNAVAILABLE,
-                    "$detail Exact-alarm capability check failed: ${error.message.orEmpty()}",
-                )
-            }
-        if (!exactAlarmsAvailable) {
-            return escalate(work, AlarmTransportFailureCode.EXACT_ALARM_UNAVAILABLE, detail)
-        }
-        val retryWork = work.nextAttempt()
-        val retryEntry = runCatching { backend.replaceJournalEntry(entry.key, retryWork) }.getOrNull()
-            ?: return escalate(work, AlarmTransportFailureCode.JOURNAL_UPDATE_FAILED, detail)
-        val scheduling = backend.schedule(retryWork, nowEpochMillis() + RETRY_DELAY_MILLIS)
-        if (scheduling.isSuccess) return AlarmDeliveryRetryResult.Scheduled
-
-        runCatching { backend.restoreJournalEntry(retryEntry.key, work) }
-        return escalate(
-            work,
-            AlarmTransportFailureCode.EXACT_ALARM_SCHEDULING_FAILED,
-            "$detail ${scheduling.exceptionOrNull()?.message.orEmpty()}".trim(),
-        )
     }
 
     /**
@@ -394,29 +391,69 @@ internal class AlarmDeliveryRetryCoordinator(
         work: AlarmDeliveryWork,
         detail: String,
     ): AlarmDeliveryRetryResult {
-        if (work.deliveryAttempt >= maxAttempts) {
-            return escalate(work, AlarmTransportFailureCode.RETRY_ATTEMPTS_EXHAUSTED, detail)
+        return when {
+            work.deliveryAttempt >= maxAttempts ->
+                escalate(work, AlarmTransportFailureCode.RETRY_ATTEMPTS_EXHAUSTED, detail)
+            else -> runCatching { backend.canScheduleExactAlarms() }.fold(
+                onSuccess = { available ->
+                    if (available) {
+                        scheduleUnjournaledRetryAfterCapabilityCheck(work, detail)
+                    } else {
+                        escalate(work, AlarmTransportFailureCode.EXACT_ALARM_UNAVAILABLE, detail)
+                    }
+                },
+                onFailure = { error ->
+                    escalate(
+                        work,
+                        AlarmTransportFailureCode.EXACT_ALARM_UNAVAILABLE,
+                        "$detail Exact-alarm capability check failed: ${error.message.orEmpty()}",
+                    )
+                },
+            )
         }
-        val exactAlarmsAvailable = runCatching { backend.canScheduleExactAlarms() }
-            .getOrElse { error ->
-                return escalate(
+    }
+
+    private fun scheduleJournaledRetry(
+        entry: AlarmDeliveryJournal.Entry,
+        detail: String,
+    ): AlarmDeliveryRetryResult {
+        val work = entry.work
+        val retryWork = work.nextAttempt()
+        val retryEntry = runCatching {
+            backend.replaceJournalEntry(entry.key, retryWork)
+        }.getOrNull()
+        return if (retryEntry == null) {
+            escalate(work, AlarmTransportFailureCode.JOURNAL_UPDATE_FAILED, detail)
+        } else {
+            val scheduling = backend.schedule(retryWork, nowEpochMillis() + RETRY_DELAY_MILLIS)
+            if (scheduling.isSuccess) {
+                AlarmDeliveryRetryResult.Scheduled
+            } else {
+                runCatching { backend.restoreJournalEntry(retryEntry.key, work) }
+                escalate(
                     work,
-                    AlarmTransportFailureCode.EXACT_ALARM_UNAVAILABLE,
-                    "$detail Exact-alarm capability check failed: ${error.message.orEmpty()}",
+                    AlarmTransportFailureCode.EXACT_ALARM_SCHEDULING_FAILED,
+                    "$detail ${scheduling.exceptionOrNull()?.message.orEmpty()}".trim(),
                 )
             }
-        if (!exactAlarmsAvailable) {
-            return escalate(work, AlarmTransportFailureCode.EXACT_ALARM_UNAVAILABLE, detail)
         }
+    }
+
+    private fun scheduleUnjournaledRetryAfterCapabilityCheck(
+        work: AlarmDeliveryWork,
+        detail: String,
+    ): AlarmDeliveryRetryResult {
         val retryWork = work.nextAttempt()
         val scheduling = backend.schedule(retryWork, nowEpochMillis() + RETRY_DELAY_MILLIS)
-        if (scheduling.isSuccess) return AlarmDeliveryRetryResult.Scheduled
-
-        return escalate(
-            work,
-            AlarmTransportFailureCode.EXACT_ALARM_SCHEDULING_FAILED,
-            "$detail ${scheduling.exceptionOrNull()?.message.orEmpty()}".trim(),
-        )
+        return if (scheduling.isSuccess) {
+            AlarmDeliveryRetryResult.Scheduled
+        } else {
+            escalate(
+                work,
+                AlarmTransportFailureCode.EXACT_ALARM_SCHEDULING_FAILED,
+                "$detail ${scheduling.exceptionOrNull()?.message.orEmpty()}".trim(),
+            )
+        }
     }
 
     fun resolve(work: AlarmDeliveryWork): Boolean {
