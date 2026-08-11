@@ -5,7 +5,9 @@ import java.util.Locale
 
 internal object TestUiStringProvider : UiStringProvider {
     private val values = mapOf(
-        R.string.action_diagnostics_not_implemented to "Diagnostic export is not implemented yet.",
+        R.string.diagnostics_export_title to "Lenswake diagnostics",
+        R.string.status_needs_attention to "Needs attention",
+        R.string.section_activity to "Activity",
         R.string.action_rehearsal_stopping to "Wait while Lenswake confirms that Pixel Camera has stopped.",
         R.string.action_rehearsal_active_session to
             "Recording session %1\$s owns Pixel Camera. STOP deadline: %2\$s.",

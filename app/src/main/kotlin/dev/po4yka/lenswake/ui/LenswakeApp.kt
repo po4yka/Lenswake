@@ -65,6 +65,7 @@ fun LenswakeApp(
     viewModel: LenswakeViewModel,
     onRemediate: (SetupRemediationAction) -> Unit,
     onOpenPixelCamera: () -> Unit,
+    onExportDiagnostics: () -> Unit,
 ) {
     LifecycleResumeEffect(viewModel) {
         viewModel.refreshPreflight()
@@ -87,6 +88,7 @@ fun LenswakeApp(
         onClearScheduleOutcome = viewModel::clearScheduleOutcome,
         onRemediate = onRemediate,
         onOpenPixelCamera = onOpenPixelCamera,
+        onExportDiagnostics = onExportDiagnostics,
         onClearRemediationMessage = viewModel::clearSetupRemediationMessage,
     )
 }
@@ -109,6 +111,7 @@ fun LenswakeApp(
     onClearScheduleOutcome: () -> Unit = {},
     onRemediate: (SetupRemediationAction) -> Unit = {},
     onOpenPixelCamera: () -> Unit = {},
+    onExportDiagnostics: () -> Unit = {},
     onClearRemediationMessage: () -> Unit = {},
 ) {
     val selectedTopLevel = rememberSaveable { mutableStateOf(LenswakeTopLevel.SCHEDULES) }
@@ -200,6 +203,7 @@ fun LenswakeApp(
                                 state = state,
                                 contentPadding = contentPadding,
                                 onOpenPixelCamera = onOpenPixelCamera,
+                                onExportDiagnostics = onExportDiagnostics,
                             )
                         }
                         entry<SetupRoute> {

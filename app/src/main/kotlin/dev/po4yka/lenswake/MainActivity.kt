@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -43,6 +44,7 @@ class MainActivity : ComponentActivity() {
                     viewModel = viewModel,
                     onRemediate = ::remediate,
                     onOpenPixelCamera = ::openPixelCamera,
+                    onExportDiagnostics = ::exportDiagnostics,
                 )
             }
         }
@@ -71,6 +73,25 @@ class MainActivity : ComponentActivity() {
             startActivity(intent)
         } catch (_: ActivityNotFoundException) {
             // Opening Camera is an optional manual aid; it must never resolve the incident.
+        }
+    }
+
+    private fun exportDiagnostics() {
+        val report = viewModel.diagnosticsExport() ?: return
+        try {
+            startActivity(
+                diagnosticsShareIntent(
+                    report = report,
+                    subject = getString(R.string.diagnostics_export_title),
+                    chooserTitle = getString(R.string.diagnostics_share_title),
+                ),
+            )
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(
+                this,
+                R.string.diagnostics_share_unavailable,
+                Toast.LENGTH_LONG,
+            ).show()
         }
     }
 
@@ -107,4 +128,16 @@ class MainActivity : ComponentActivity() {
     private companion object {
         const val PIXEL_CAMERA_PACKAGE = "com.google.android.GoogleCamera"
     }
+}
+
+internal fun diagnosticsShareIntent(
+    report: String,
+    subject: String,
+    chooserTitle: String,
+): Intent {
+    val shareIntent = Intent(Intent.ACTION_SEND)
+        .setType("text/plain")
+        .putExtra(Intent.EXTRA_SUBJECT, subject)
+        .putExtra(Intent.EXTRA_TEXT, report)
+    return Intent.createChooser(shareIntent, chooserTitle)
 }

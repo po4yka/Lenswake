@@ -111,8 +111,8 @@ class LenswakeViewModelTest {
         assertEquals("automation.record.start_verified", state.diagnosticEvents.single().title)
         assertFalse(state.actions.canCreateSchedule)
         assertTrue(state.actions.canInstallCandidateProfile)
-        assertFalse(state.actions.canExportDiagnostics)
-        assertEquals("Diagnostic export is not implemented yet.", state.actions.exportDiagnosticsUnavailableReason)
+        assertTrue(state.actions.canExportDiagnostics)
+        assertEquals("", state.actions.exportDiagnosticsUnavailableReason)
     }
 
     @Test

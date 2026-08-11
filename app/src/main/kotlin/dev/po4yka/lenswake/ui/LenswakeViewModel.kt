@@ -198,6 +198,8 @@ class LenswakeViewModel internal constructor(
         preflightRefresh.value += 1
     }
 
+    fun diagnosticsExport(): String? = DiagnosticsExportFormatter.format(state.value, strings)
+
     fun reportSetupRemediationUnavailable(action: SetupRemediationAction) {
         setupRemediationMessage.value = strings.get(
             R.string.remediation_unavailable,
@@ -701,11 +703,13 @@ internal object LenswakeUiStateMapper {
                 activeSession,
                 strings,
             ),
-            canExportDiagnostics = false,
-            exportDiagnosticsUnavailableReason = if (events.isEmpty()) {
+            canExportDiagnostics = events.isNotEmpty() || incidents.isNotEmpty() || profileIssues.isNotEmpty(),
+            exportDiagnosticsUnavailableReason = if (
+                events.isEmpty() && incidents.isEmpty() && profileIssues.isEmpty()
+            ) {
                 strings.get(R.string.action_diagnostics_empty_default)
             } else {
-                strings.get(R.string.action_diagnostics_not_implemented)
+                ""
             },
         ),
     )

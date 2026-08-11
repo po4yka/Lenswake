@@ -40,6 +40,7 @@ class LenswakeAppTest {
         onCancelDeleteSchedule: () -> Unit = {},
         onConfirmDeleteSchedule: (String) -> Unit = {},
         onRemediate: (SetupRemediationAction) -> Unit = {},
+        onExportDiagnostics: () -> Unit = {},
     ) {
         composeRule.setContent {
             LenswakeTheme {
@@ -56,6 +57,7 @@ class LenswakeAppTest {
                     onCancelDeleteSchedule = onCancelDeleteSchedule,
                     onConfirmDeleteSchedule = onConfirmDeleteSchedule,
                     onRemediate = onRemediate,
+                    onExportDiagnostics = onExportDiagnostics,
                 )
             }
         }
@@ -78,6 +80,7 @@ class LenswakeAppTest {
 
         composeRule.onNodeWithText("Diagnostics").performClick()
         composeRule.onNodeWithText("No activity yet").assertExists()
+        composeRule.onNodeWithText("Export diagnostics").assertDoesNotExist()
 
         composeRule.onNodeWithText("Schedules").performClick()
         composeRule.onNodeWithText("Review setup").performClick()
@@ -130,6 +133,30 @@ class LenswakeAppTest {
         composeRule.onNodeWithText("Activity").assertExists()
         composeRule.onNodeWithText("automation.record.stop_verified").assertExists()
         composeRule.onNodeWithText("Recorded event").assertDoesNotExist()
+    }
+
+    @Test
+    fun diagnosticsExportDispatchesWhenActivityExists() {
+        var exportRequests = 0
+        setContent(
+            state = LenswakeUiState(
+                diagnosticEvents = listOf(
+                    DiagnosticEventUiState(
+                        id = "event-1",
+                        title = "automation.record.stop_verified",
+                        detail = "Completed",
+                        occurredAt = "08:31",
+                    ),
+                ),
+                actions = UiActionAvailability(canExportDiagnostics = true),
+            ),
+            onExportDiagnostics = { exportRequests += 1 },
+        )
+
+        composeRule.onNodeWithText("Diagnostics").performClick()
+        composeRule.onNodeWithText("Export diagnostics").performClick()
+
+        composeRule.runOnIdle { assertEquals(1, exportRequests) }
     }
 
     @Test

@@ -16,6 +16,7 @@
     <string name="action_dismiss">Dismiss</string>
     <string name="action_edit">Edit</string>
     <string name="action_enable">Enable</string>
+    <string name="action_export_diagnostics">Export diagnostics</string>
     <string name="action_install_camera_profile">Install camera profile</string>
     <string name="action_open_pixel_camera">Open Pixel Camera</string>
     <string name="action_open_lenswake">Open Lenswake</string>
@@ -78,6 +79,9 @@
     <string name="active_session_detail">Session %1$s · STOP deadline %2$s</string>
 
     <string name="diagnostics_no_activity_title">No activity yet</string>
+    <string name="diagnostics_export_title">Lenswake diagnostics</string>
+    <string name="diagnostics_share_title">Share diagnostics</string>
+    <string name="diagnostics_share_unavailable">No app is available to share diagnostics.</string>
     <string name="profile_storage_issue_title">Camera profile storage issue</string>
     <string name="profile_storage_issue_detail">Stored profile entry “%1$s” is corrupt and was excluded. Lenswake cannot repair this entry. To remove it, clear Lenswake storage in Android settings; this permanently deletes all schedules, profiles, and history.</string>
     <string name="profile_storage_issue_blank_key">blank id</string>
@@ -250,7 +254,6 @@
     <string name="action_profile_installed">The camera profile is installed.</string>
     <string name="action_profile_retry">Camera profile installation can be retried.</string>
     <string name="action_profile_update_check">Check the installed profile after Pixel Camera changes.</string>
-    <string name="action_diagnostics_not_implemented">Diagnostic export is not implemented yet.</string>
     <string name="action_rehearsal_running">A test recording is already running.</string>
     <string name="action_rehearsal_active_session">Recording session %1$s owns Pixel Camera. STOP deadline: %2$s.</string>
     <string name="action_rehearsal_stopping">Wait while Lenswake confirms that Pixel Camera has stopped.</string>
