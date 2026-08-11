@@ -52,25 +52,33 @@ object RehearsalStopAlarmContract {
         identityIntent(context, sessionId, DELIVERY_IDENTITY)
 
     fun parse(intent: Intent): RehearsalStopTrigger? {
-        if (intent.action != ACTION_REHEARSAL_STOP) return null
-        val data = intent.data ?: return null
-        if (data.scheme != SCHEME || data.host != HOST) return null
-        val segments = data.pathSegments
-        if (segments.size != 2 || segments[1] != PATH_REHEARSAL_STOP) return null
-        if (data.getQueryParameter(IDENTITY_PARAMETER) !in setOf(DOMAIN_IDENTITY, DELIVERY_IDENTITY)) {
-            return null
+        val data = intent.data
+        val segments = data?.pathSegments.orEmpty()
+        val validEnvelope = listOf(
+            intent.action == ACTION_REHEARSAL_STOP,
+            data?.scheme == SCHEME,
+            data?.host == HOST,
+            segments.size == 2,
+            segments.getOrNull(1) == PATH_REHEARSAL_STOP,
+            data?.getQueryParameter(IDENTITY_PARAMETER) in setOf(DOMAIN_IDENTITY, DELIVERY_IDENTITY),
+            intent.hasExtra(EXTRA_EXPECTED_AT),
+        ).all { it }
+        return if (!validEnvelope) {
+            null
+        } else {
+            val expectedAtMillis = intent.getLongExtra(EXTRA_EXPECTED_AT, Long.MIN_VALUE)
+            val deliveryAttempt = intent.getIntExtra(EXTRA_DELIVERY_ATTEMPT, 0)
+            val validPayload = expectedAtMillis != Long.MIN_VALUE && deliveryAttempt >= 0
+            validPayload.takeIf { it }?.let {
+                runCatching {
+                    RehearsalStopTrigger(
+                        sessionId = SessionId(segments[0]),
+                        expectedAt = Instant.ofEpochMilli(expectedAtMillis),
+                        deliveryAttempt = deliveryAttempt,
+                    )
+                }.getOrNull()
+            }
         }
-        if (!intent.hasExtra(EXTRA_EXPECTED_AT)) return null
-        val expectedAtMillis = intent.getLongExtra(EXTRA_EXPECTED_AT, Long.MIN_VALUE)
-        val deliveryAttempt = intent.getIntExtra(EXTRA_DELIVERY_ATTEMPT, 0)
-        if (expectedAtMillis == Long.MIN_VALUE || deliveryAttempt < 0) return null
-        return runCatching {
-            RehearsalStopTrigger(
-                sessionId = SessionId(segments[0]),
-                expectedAt = Instant.ofEpochMilli(expectedAtMillis),
-                deliveryAttempt = deliveryAttempt,
-            )
-        }.getOrNull()
     }
 
     private fun intent(
