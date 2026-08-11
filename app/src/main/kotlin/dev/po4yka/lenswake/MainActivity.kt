@@ -2,7 +2,6 @@ package dev.po4yka.lenswake
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.result.contract.ActivityResultContracts
@@ -10,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.core.net.toUri
 import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.ui.LenswakeApp
 import dev.po4yka.lenswake.ui.AndroidUiStringProvider
@@ -55,14 +55,10 @@ class MainActivity : ComponentActivity() {
 
             SetupRemediationAction.REQUEST_MEDIA_VIDEO_PERMISSION ->
                 mediaVideoPermissionRequest.launch(
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                        arrayOf(
-                            android.Manifest.permission.READ_MEDIA_VIDEO,
-                            android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
-                        )
-                    } else {
-                        arrayOf(android.Manifest.permission.READ_MEDIA_VIDEO)
-                    },
+                    arrayOf(
+                        android.Manifest.permission.READ_MEDIA_VIDEO,
+                        android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+                    ),
                 )
 
             else -> startRemediationActivity(action)
@@ -79,7 +75,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startRemediationActivity(action: SetupRemediationAction) {
-        val packageUri = Uri.parse("package:$packageName")
+        val packageUri = "package:$packageName".toUri()
         val intent = when (action) {
             SetupRemediationAction.OPEN_NOTIFICATION_SETTINGS -> Intent(
                 Settings.ACTION_APP_NOTIFICATION_SETTINGS,
