@@ -37,6 +37,8 @@ Implemented now:
 - profile-driven capture capabilities, selector scoring, meaningful-discriminant enforcement, ambiguity rejection,
   observable state signals, per-speed targets, and verified lens selection;
 - selector-schema and environment compatibility checks that require a current, timestamped `VERIFIED` profile for unattended execution;
+- typed, profile-scoped Pixel Camera dialog detection and bounded recovery with a fresh pre-dispatch
+  presence check, postcondition verification, and fail-closed handling for unknown dialogs;
 - dynamically resolved secure Pixel Camera launch and a package-scoped, bounded Accessibility adapter;
 - create/edit/enable/disable/delete schedule workflows with profile-constrained mode, Time Lapse speed, and lens
   configuration, transactional alarm rollback, and active-camera ownership guards;

@@ -11,6 +11,7 @@ import dev.po4yka.lenswake.core.AutomationFailureCode
 import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.PixelCameraProfile
+import dev.po4yka.lenswake.core.PixelCameraDialogKind
 import dev.po4yka.lenswake.core.PixelCameraStateSignal
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.core.supportedCaptureConfigurations
@@ -49,11 +50,49 @@ internal class PixelCameraStateInferer(
         profile: PixelCameraProfile,
         nodes: List<UiNodeSnapshot>,
     ): PortResult<PixelCameraState> {
+        inferDialog(profile, nodes)?.let { return it }
         val missingSignals = requiredSignals(profile) - profile.stateSignals.keys
         return if (missingSignals.isEmpty()) {
             inferEvidence(collectEvidence(profile, nodes))
         } else {
             unavailableMissingSignals(missingSignals)
+        }
+    }
+
+    private fun inferDialog(
+        profile: PixelCameraProfile,
+        nodes: List<UiNodeSnapshot>,
+    ): PortResult<PixelCameraState>? {
+        val matches = linkedSetOf<PixelCameraDialogKind>()
+        profile.dialogProfiles.forEach { (kind, dialogProfile) ->
+            when (selectorMatcher.match(dialogProfile.presence, profile, nodes)) {
+                is SelectorMatchResult.Match -> matches += kind
+                is SelectorMatchResult.Ambiguous -> return PortResult.Unavailable(
+                    AutomationFailure(
+                        AutomationFailureCode.UI_TARGET_AMBIGUOUS,
+                        "The Pixel Camera dialog presence signal was ambiguous",
+                        mapOf("dialog" to kind.name),
+                    ),
+                )
+                is SelectorMatchResult.BelowThreshold,
+                SelectorMatchResult.NoEligibleNodes,
+                SelectorMatchResult.TargetNotConfigured,
+                -> Unit
+            }
+        }
+        val typed = matches - PixelCameraDialogKind.UNKNOWN
+        return when {
+            typed.size > 1 -> PortResult.Unavailable(
+                AutomationFailure(
+                    AutomationFailureCode.UNEXPECTED_CAMERA_DIALOG,
+                    "Multiple Pixel Camera dialog types matched the same snapshot",
+                    mapOf("dialogs" to typed.sortedBy { it.name }.joinToString(",") { it.name }),
+                ),
+            )
+            typed.size == 1 -> PortResult.Observed(PixelCameraState.Dialog(typed.single()))
+            PixelCameraDialogKind.UNKNOWN in matches ->
+                PortResult.Observed(PixelCameraState.Dialog(PixelCameraDialogKind.UNKNOWN))
+            else -> null
         }
     }
 

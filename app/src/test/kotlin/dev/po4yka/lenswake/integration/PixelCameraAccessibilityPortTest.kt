@@ -16,6 +16,8 @@ import dev.po4yka.lenswake.core.InteractionMethod
 import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.NormalizedPoint
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
+import dev.po4yka.lenswake.core.PixelCameraDialogKind
+import dev.po4yka.lenswake.core.PixelCameraDialogProfile
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
 import dev.po4yka.lenswake.core.PixelCameraStateSignal
@@ -136,6 +138,132 @@ class PixelCameraAccessibilityPortTest : PixelCameraAccessibilityPortTestFixture
         assertEquals(null, gateway.clickedNode)
     }
 
+}
+
+class PixelCameraAccessibilityDialogTest : PixelCameraAccessibilityPortTestFixture() {
+    @Test
+    fun `typed dialog takes precedence over the generic unknown rule`() = runTest {
+        val dialog = PixelCameraDialogKind.VIDEO_DURATION_LIMIT_REACHED
+        val messageResource = "android:id/message"
+        val message = "Video reached the duration limit."
+        val recoveryResource = "android:id/button1"
+        val configuredProfile = profile().copy(
+            dialogProfiles = mapOf(
+                dialog to PixelCameraDialogProfile(
+                    presence = UiSelectorSet(
+                        selectors = listOf(
+                            UiSelector(
+                                packageName = CAMERA_PACKAGE,
+                                resourceId = messageResource,
+                                text = message,
+                                role = "android.widget.TextView",
+                                requiresClickable = false,
+                            ),
+                        ),
+                        minimumScore = 150,
+                    ),
+                    recoveryTarget = selectorSet(recoveryResource),
+                ),
+                PixelCameraDialogKind.UNKNOWN to PixelCameraDialogProfile(
+                    presence = UiSelectorSet(
+                        selectors = listOf(
+                            UiSelector(
+                                packageName = CAMERA_PACKAGE,
+                                resourceId = messageResource,
+                                role = "android.widget.TextView",
+                                requiresClickable = false,
+                            ),
+                        ),
+                        minimumScore = 120,
+                    ),
+                    recoveryTarget = null,
+                ),
+            ),
+        )
+        val messageNode = node(messageResource).copy(
+            role = "android.widget.TextView",
+            text = message,
+            clickable = false,
+        )
+        val gateway = FakeAccessibilityGateway(
+            nodes = listOf(messageNode, node(recoveryResource)),
+            dispatchResult = AccessibilityDispatchResult.SemanticActionDispatched,
+        )
+        val port = port(gateway = gateway)
+
+        val observed = assertInstanceOf(
+            PortResult.Observed::class.java,
+            port.inspect(profileUse(configuredProfile)),
+        )
+        assertEquals(PixelCameraState.Dialog(dialog), observed.value)
+
+        assertInstanceOf(
+            ActionDispatch.Dispatched::class.java,
+            port.recoverDialog(dialog, profileUse(configuredProfile)),
+        )
+        assertEquals("node-$recoveryResource", gateway.clickedNode?.id)
+    }
+
+    @Test
+    fun `typed dialog is observed and recovered through its dedicated target`() = runTest {
+        val dialog = PixelCameraDialogKind.VIDEO_DURATION_LIMIT_REACHED
+        val dialogSignal = "video-duration-limit-dialog"
+        val recoveryTarget = "video-duration-limit-ok"
+        val configuredProfile = profile().copy(
+            dialogProfiles = mapOf(
+                dialog to PixelCameraDialogProfile(
+                    presence = selectorSet(dialogSignal),
+                    recoveryTarget = selectorSet(recoveryTarget),
+                ),
+            ),
+        )
+        val gateway = FakeAccessibilityGateway(
+            nodes = listOf(node(dialogSignal), node(recoveryTarget)),
+            dispatchResult = AccessibilityDispatchResult.SemanticActionDispatched,
+        )
+        val port = port(gateway = gateway)
+
+        val observed = assertInstanceOf(
+            PortResult.Observed::class.java,
+            port.inspect(profileUse(configuredProfile)),
+        )
+        assertEquals(PixelCameraState.Dialog(dialog), observed.value)
+
+        val recovered = assertInstanceOf(
+            ActionDispatch.Dispatched::class.java,
+            port.recoverDialog(dialog, profileUse(configuredProfile)),
+        )
+        assertEquals(InteractionMethod.ACCESSIBILITY_ACTION, recovered.method)
+        assertEquals("node-$recoveryTarget", gateway.clickedNode?.id)
+    }
+
+    @Test
+    fun `unknown dialog fails closed without dispatching a recovery target`() = runTest {
+        val dialogSignal = "unknown-dialog"
+        val configuredProfile = profile().copy(
+            dialogProfiles = mapOf(
+                PixelCameraDialogKind.UNKNOWN to PixelCameraDialogProfile(
+                    presence = selectorSet(dialogSignal),
+                    recoveryTarget = null,
+                ),
+            ),
+        )
+        val gateway = FakeAccessibilityGateway(nodes = listOf(node(dialogSignal)))
+        val port = port(gateway = gateway)
+
+        val observed = assertInstanceOf(
+            PortResult.Observed::class.java,
+            port.inspect(profileUse(configuredProfile)),
+        )
+        assertEquals(PixelCameraState.Dialog(PixelCameraDialogKind.UNKNOWN), observed.value)
+
+        val rejected = assertInstanceOf(
+            ActionDispatch.Rejected::class.java,
+            port.recoverDialog(PixelCameraDialogKind.UNKNOWN, profileUse(configuredProfile)),
+        )
+        assertEquals(AutomationFailureCode.UNEXPECTED_CAMERA_DIALOG, rejected.failure.code)
+        assertEquals(null, gateway.clickedNode)
+    }
 }
 
 class PixelCameraAccessibilityStateTest : PixelCameraAccessibilityPortTestFixture() {

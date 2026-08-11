@@ -18,6 +18,7 @@ import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.InteractionMethod
 import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
+import dev.po4yka.lenswake.core.PixelCameraDialogKind
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
 import dev.po4yka.lenswake.core.PixelCameraStateSignal
@@ -49,6 +50,116 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
 class DefaultAutomationEngineTest {
+    @Test
+    fun `start recovers a typed camera dialog before converging`() = runTest {
+        val session = session(status = SessionStatus.PENDING)
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(
+            state = PixelCameraState.Dialog(PixelCameraDialogKind.VIDEO_DURATION_LIMIT_REACHED),
+            stateAfterDialogRecovery = PixelCameraState.Photo,
+        )
+
+        val result = engine(repository, FakeDeviceControl(interactive = true), camera).start(session.id)
+
+        assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        assertEquals(
+            listOf(
+                "launch",
+                "recoverDialog:VIDEO_DURATION_LIMIT_REACHED",
+                "selectVideo",
+                "selectTimeLapse",
+                "selectRearMainLens",
+                "openTimeLapseSpeedControl",
+                "selectSpeed:X120",
+                "startRecording",
+            ),
+            camera.calls,
+        )
+        assertTrue(repository.events.any {
+            it.operation == AutomationOperation.RECOVER_CAMERA_DIALOG &&
+                it.outcome == AutomationOutcome.DISPATCHED &&
+                it.metadata["dialog"] == PixelCameraDialogKind.VIDEO_DURATION_LIMIT_REACHED.name
+        })
+    }
+
+    @Test
+    fun `unknown camera dialog fails typed without continuing automation`() = runTest {
+        val session = session(status = SessionStatus.PENDING)
+        val repository = FakeExecutionRepository(session)
+        val failure = AutomationFailure(
+            AutomationFailureCode.UNEXPECTED_CAMERA_DIALOG,
+            "Unknown dialog has no safe recovery",
+            mapOf("dialog" to PixelCameraDialogKind.UNKNOWN.name),
+        )
+        val camera = FakePixelCamera(
+            state = PixelCameraState.Dialog(PixelCameraDialogKind.UNKNOWN),
+            dialogRecoveryDispatch = ActionDispatch.Rejected(failure),
+        )
+
+        val result = engine(
+            repository,
+            FakeDeviceControl(interactive = true),
+            camera,
+            attempts = 1,
+        ).start(session.id)
+
+        val failed = assertInstanceOf(AutomationRunResult.Failed::class.java, result)
+        assertEquals(failure, failed.failure)
+        assertEquals(listOf("launch", "recoverDialog:UNKNOWN"), camera.calls)
+    }
+
+    @Test
+    fun `dialog recovery dispatch is never repeated while its postcondition is uncertain`() = runTest {
+        val session = session(status = SessionStatus.PENDING)
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(
+            state = PixelCameraState.Dialog(PixelCameraDialogKind.VIDEO_FILE_SIZE_LIMIT_REACHED),
+        )
+
+        val result = engine(
+            repository,
+            FakeDeviceControl(interactive = true),
+            camera,
+            attempts = 3,
+        ).start(session.id)
+
+        val failed = assertInstanceOf(AutomationRunResult.Failed::class.java, result)
+        assertEquals(AutomationFailureCode.UNEXPECTED_CAMERA_DIALOG, failed.failure.code)
+        assertEquals(
+            1,
+            camera.calls.count { it == "recoverDialog:VIDEO_FILE_SIZE_LIMIT_REACHED" },
+        )
+        assertEquals(0, camera.calls.count { it == "startRecording" })
+    }
+
+    @Test
+    fun `dialog recovery preserves a typed inspection failure during verification`() = runTest {
+        val session = session(status = SessionStatus.PENDING)
+        val repository = FakeExecutionRepository(session)
+        val inspectionFailure = AutomationFailure(
+            AutomationFailureCode.ACCESSIBILITY_DISABLED,
+            "Accessibility disconnected after recovery dispatch",
+        )
+        val camera = FakePixelCamera(
+            state = PixelCameraState.Dialog(PixelCameraDialogKind.VIDEO_DURATION_LIMIT_REACHED),
+            inspectionFailureAfterDialogRecovery = inspectionFailure,
+        )
+
+        val result = engine(
+            repository,
+            FakeDeviceControl(interactive = true),
+            camera,
+            attempts = 2,
+        ).start(session.id)
+
+        val failed = assertInstanceOf(AutomationRunResult.Failed::class.java, result)
+        assertEquals(inspectionFailure, failed.failure)
+        assertEquals(
+            1,
+            camera.calls.count { it == "recoverDialog:VIDEO_DURATION_LIMIT_REACHED" },
+        )
+    }
+
     @Test
     fun `video capture selects its configured lens without entering time lapse`() = runTest {
         val capture = CaptureConfiguration.Video(lens = LensSelection.FRONT)
@@ -2003,6 +2114,9 @@ private fun engine(
         private val onStopRecording: (suspend () -> Unit)? = null,
         private val stateAfterStop: PixelCameraState? = null,
         private val stopCompletesOnVerificationInspection: Int? = null,
+        private val stateAfterDialogRecovery: PixelCameraState? = null,
+        private val dialogRecoveryDispatch: ActionDispatch? = null,
+        private val inspectionFailureAfterDialogRecovery: AutomationFailure? = null,
     ) : PixelCameraPort {
         val calls = mutableListOf<String>()
         val trace = mutableListOf<String>()
@@ -2018,6 +2132,9 @@ private fun engine(
         override suspend fun inspect(profileUse: ProfileUse): PortResult<PixelCameraState> {
             receivedProfileUses += profileUse
             trace += "inspect"
+            if (calls.lastOrNull()?.startsWith("recoverDialog:") == true) {
+                inspectionFailureAfterDialogRecovery?.let { return PortResult.Unavailable(it) }
+            }
             if (
                 calls.lastOrNull() == "startRecording" &&
                 state is PixelCameraState.TimeLapse &&
@@ -2198,6 +2315,17 @@ private fun engine(
                 }
             }
             if (suspendStop) awaitCancellation()
+            return dispatched()
+        }
+
+        override suspend fun recoverDialog(
+            dialog: PixelCameraDialogKind,
+            profileUse: ProfileUse,
+        ): ActionDispatch {
+            receivedProfileUses += profileUse
+            calls += "recoverDialog:$dialog"
+            dialogRecoveryDispatch?.let { return it }
+            state = stateAfterDialogRecovery ?: state
             return dispatched()
         }
 

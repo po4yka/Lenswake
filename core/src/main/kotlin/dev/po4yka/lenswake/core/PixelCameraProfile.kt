@@ -119,6 +119,7 @@ data class PixelCameraProfile(
             (
                 targets.values +
                     speedTargets.values +
+                    dialogProfiles.values.map(PixelCameraDialogProfile::presence) +
                     dialogProfiles.values.mapNotNull(PixelCameraDialogProfile::recoveryTarget)
                 )
                 .flatMap(UiSelectorSet::selectors)

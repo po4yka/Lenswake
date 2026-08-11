@@ -1,6 +1,7 @@
 package dev.po4yka.lenswake.application
 
 import dev.po4yka.lenswake.core.AutomationAction
+import dev.po4yka.lenswake.core.PixelCameraDialogKind
 import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
 import dev.po4yka.lenswake.core.PixelCameraStateSignal
 import dev.po4yka.lenswake.core.ProfileCompatibility
@@ -38,7 +39,7 @@ class KnownPixelCameraProfileCatalogTest {
     @Test
     fun `candidate identity and environment are stable and fail closed`() {
         assertEquals(
-            "google-pixel-8-pro-sdk37-cp2a-260705-006-camera-69481630-1008x2244-en-us-v3",
+            "google-pixel-8-pro-sdk37-cp2a-260705-006-camera-69481630-1008x2244-en-us-v4",
             profile.id.value,
         )
         assertEquals("Google", profile.environment.deviceManufacturer)
@@ -75,6 +76,41 @@ class KnownPixelCameraProfileCatalogTest {
         assertEquals(setOf(TimeLapseSpeed.X120), profile.speedTargets.keys)
         assertEquals(
             setOf(
+                PixelCameraDialogKind.VIDEO_DURATION_LIMIT_REACHED,
+                PixelCameraDialogKind.VIDEO_FILE_SIZE_LIMIT_REACHED,
+                PixelCameraDialogKind.VIDEO_STORAGE_EXHAUSTED,
+                PixelCameraDialogKind.CAMERA_DISABLED,
+                PixelCameraDialogKind.UNKNOWN,
+            ),
+            profile.dialogProfiles.keys,
+        )
+        assertTrue(
+            profile.dialogProfiles
+                .getValue(PixelCameraDialogKind.VIDEO_DURATION_LIMIT_REACHED)
+                .recoveryTarget != null,
+        )
+        assertTrue(
+            profile.dialogProfiles
+                .getValue(PixelCameraDialogKind.VIDEO_FILE_SIZE_LIMIT_REACHED)
+                .recoveryTarget != null,
+        )
+        assertNull(
+            profile.dialogProfiles
+                .getValue(PixelCameraDialogKind.VIDEO_STORAGE_EXHAUSTED)
+                .recoveryTarget,
+        )
+        assertNull(
+            profile.dialogProfiles
+                .getValue(PixelCameraDialogKind.CAMERA_DISABLED)
+                .recoveryTarget,
+        )
+        assertNull(
+            profile.dialogProfiles
+                .getValue(PixelCameraDialogKind.UNKNOWN)
+                .recoveryTarget,
+        )
+        assertEquals(
+            setOf(
                 PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
                 PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
                 PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
@@ -92,6 +128,7 @@ class KnownPixelCameraProfileCatalogTest {
     fun `selectors retain empirically observed semantic discriminants`() {
         assertActionSelectorDiscriminants()
         assertStateSelectorDiscriminants()
+        assertDialogSelectorDiscriminants()
     }
 
     private fun assertActionSelectorDiscriminants() {
@@ -180,6 +217,32 @@ class KnownPixelCameraProfileCatalogTest {
         assertEquals("Time Lapse 120 times speed", pickerOpen.contentDescription)
         assertNull(pickerOpen.expectedSelected)
         assertFalse(pickerOpen.requiresClickable)
+    }
+
+    private fun assertDialogSelectorDiscriminants() {
+        val duration = profile.dialogProfiles
+            .getValue(PixelCameraDialogKind.VIDEO_DURATION_LIMIT_REACHED)
+        val presence = duration.presence.selectors.single()
+        assertEquals("android:id/message", presence.resourceId)
+        assertEquals("Video reached the duration limit.", presence.text)
+        assertEquals("android.widget.TextView", presence.role)
+        assertFalse(presence.requiresClickable)
+
+        val recovery = checkNotNull(duration.recoveryTarget).selectors.single()
+        assertEquals("android:id/button1", recovery.resourceId)
+        assertEquals("OK", recovery.text)
+        assertEquals("android.widget.Button", recovery.role)
+        assertTrue(recovery.requiresClickable)
+
+        val unknown = profile.dialogProfiles
+            .getValue(PixelCameraDialogKind.UNKNOWN)
+            .presence
+            .selectors
+            .single()
+        assertEquals("android:id/message", unknown.resourceId)
+        assertNull(unknown.text)
+        assertEquals("android.widget.TextView", unknown.role)
+        assertFalse(unknown.requiresClickable)
     }
 
     @Test

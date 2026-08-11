@@ -38,6 +38,8 @@ internal data class AutomationProfileEntity(
     val speedTargetsJson: String,
     @ColumnInfo(name = "state_signals_json")
     val stateSignalsJson: String,
+    @ColumnInfo(name = "dialog_profiles_json")
+    val dialogProfilesJson: String,
     @ColumnInfo(name = "fallback_gestures_json")
     val fallbackGesturesJson: String,
     val compatibility: String,

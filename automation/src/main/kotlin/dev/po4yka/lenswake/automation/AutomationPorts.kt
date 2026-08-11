@@ -4,6 +4,7 @@ import dev.po4yka.lenswake.core.AutomationFailure
 import dev.po4yka.lenswake.core.CaptureMode
 import dev.po4yka.lenswake.core.InteractionMethod
 import dev.po4yka.lenswake.core.LensSelection
+import dev.po4yka.lenswake.core.PixelCameraDialogKind
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import kotlinx.coroutines.delay
@@ -43,6 +44,10 @@ sealed interface PixelCameraState {
     ) : PixelCameraState
 
     data object RecordingUnknownMode : PixelCameraState
+
+    data class Dialog(
+        val kind: PixelCameraDialogKind,
+    ) : PixelCameraState
 }
 
 sealed interface PortResult<out T> {
@@ -122,6 +127,11 @@ interface PixelCameraPort {
 
     suspend fun stopRecording(
         mode: CaptureMode,
+        profileUse: ProfileUse,
+    ): ActionDispatch
+
+    suspend fun recoverDialog(
+        dialog: PixelCameraDialogKind,
         profileUse: ProfileUse,
     ): ActionDispatch
 }

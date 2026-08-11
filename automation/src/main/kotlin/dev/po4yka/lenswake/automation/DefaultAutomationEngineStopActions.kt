@@ -81,22 +81,11 @@ internal suspend fun EngineEnvironment.verifyStopped(context: RunContext) {
 internal suspend fun EngineEnvironment.inspectDuringStopReconciliation(
     context: RunContext,
     operation: AutomationOperation,
-): PortResult<PixelCameraState> = safeCall(
-    block = {
-        when (val timed = timed(operation) { pixelCamera.inspect(context.profileUse) }) {
-            is TimedCall.Completed -> timed.value
-            TimedCall.TimedOut -> PortResult.Unavailable(timeoutFailure(operation))
-        }
-    },
-    recover = { error ->
-        PortResult.Unavailable(
-            operationFailure(
-                AutomationFailureCode.STOP_NOT_CONFIRMED,
-                "Pixel Camera state inspection failed during uncertain Stop reconciliation",
-                error,
-            ),
-        )
-    },
+): PortResult<PixelCameraState> = inspectCameraHandlingDialog(
+    context = context,
+    operation = operation,
+    failureCode = AutomationFailureCode.STOP_NOT_CONFIRMED,
+    failureMessage = "Pixel Camera state inspection failed during uncertain Stop reconciliation",
 )
 
 internal suspend fun markUncertainStopReconciled(

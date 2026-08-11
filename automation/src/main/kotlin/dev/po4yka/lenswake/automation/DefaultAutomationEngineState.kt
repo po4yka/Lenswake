@@ -33,6 +33,18 @@ internal fun EngineEnvironment.eventName(
     outcome: AutomationOutcome,
 ): String = when (state) {
     AutomationStateName.RECORDING -> "automation.record.start_verified"
+    AutomationStateName.RECOVERING_CAMERA_DIALOG ->
+        if (outcome == AutomationOutcome.DISPATCHED) {
+            "automation.camera_dialog.recovery_dispatched"
+        } else {
+            defaultEventName(state, operation, outcome)
+        }
+    AutomationStateName.VERIFYING_CAMERA_DIALOG_RECOVERY ->
+        if (outcome == AutomationOutcome.SUCCEEDED) {
+            "automation.camera_dialog.recovery_verified"
+        } else {
+            defaultEventName(state, operation, outcome)
+        }
     AutomationStateName.VERIFYING_MEDIA_SAVED ->
         if (operation == AutomationOperation.VERIFY_MEDIA_SAVED && outcome == AutomationOutcome.SUCCEEDED) {
             "automation.media.save_verified"
@@ -90,6 +102,7 @@ internal fun PixelCameraState.isConfirmedStopped(): Boolean = when (this) {
         PixelCameraState.NotRunning,
         PixelCameraState.Unknown,
         PixelCameraState.RecordingUnknownMode,
+        is PixelCameraState.Dialog,
         -> false
     }
 
@@ -102,6 +115,7 @@ internal fun PixelCameraState.isRecording(): Boolean = when (this) {
         PixelCameraState.Photo,
         PixelCameraState.NotRunning,
         PixelCameraState.Unknown,
+        is PixelCameraState.Dialog,
         -> false
     }
 

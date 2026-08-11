@@ -2,6 +2,8 @@ package dev.po4yka.lenswake.application
 
 import dev.po4yka.lenswake.core.AutomationAction
 import dev.po4yka.lenswake.core.NormalizedBounds
+import dev.po4yka.lenswake.core.PixelCameraDialogKind
+import dev.po4yka.lenswake.core.PixelCameraDialogProfile
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
@@ -23,7 +25,7 @@ object KnownPixelCameraProfileCatalog {
 
     val pixel8ProAndroid17Camera69481630: PixelCameraProfile = PixelCameraProfile(
         id = ProfileId(
-            "google-pixel-8-pro-sdk37-cp2a-260705-006-camera-69481630-1008x2244-en-us-v3",
+            "google-pixel-8-pro-sdk37-cp2a-260705-006-camera-69481630-1008x2244-en-us-v4",
         ),
         environment = PixelCameraEnvironment(
             deviceManufacturer = "Google",
@@ -88,6 +90,34 @@ object KnownPixelCameraProfileCatalog {
                 contentDescription = "Time Lapse 120 times speed",
                 text = "120×",
                 minimumScore = 100,
+            ),
+        ),
+        dialogProfiles = mapOf(
+            PixelCameraDialogKind.VIDEO_DURATION_LIMIT_REACHED to PixelCameraDialogProfile(
+                presence = dialogPresence("Video reached the duration limit."),
+                recoveryTarget = dialogAction("OK"),
+            ),
+            PixelCameraDialogKind.VIDEO_FILE_SIZE_LIMIT_REACHED to PixelCameraDialogProfile(
+                presence = dialogPresence("Video reached the 100 GB size limit."),
+                recoveryTarget = dialogAction("OK"),
+            ),
+            PixelCameraDialogKind.VIDEO_STORAGE_EXHAUSTED to PixelCameraDialogProfile(
+                presence = dialogPresence(
+                    "There is not enough storage available to continue capturing. " +
+                        "You can free up space in the Files app.",
+                ),
+                recoveryTarget = null,
+            ),
+            PixelCameraDialogKind.CAMERA_DISABLED to PixelCameraDialogProfile(
+                presence = dialogPresence(
+                    "Your organization doesn't allow you to use Camera. " +
+                        "Contact your IT admin for more info.",
+                ),
+                recoveryTarget = null,
+            ),
+            PixelCameraDialogKind.UNKNOWN to PixelCameraDialogProfile(
+                presence = dialogPresence(text = null),
+                recoveryTarget = null,
             ),
         ),
         stateSignals = mapOf(
@@ -223,6 +253,30 @@ object KnownPixelCameraProfileCatalog {
         requiresClickable = requiresClickable,
     )
 
+    private fun dialogPresence(text: String?): UiSelectorSet = UiSelectorSet(
+        selectors = listOf(
+            cameraSelector(
+                resourceId = "android:id/message",
+                text = text,
+                role = "android.widget.TextView",
+                requiresClickable = false,
+            ),
+        ),
+        minimumScore = 150,
+    )
+
+    private fun dialogAction(text: String): UiSelectorSet = UiSelectorSet(
+        selectors = listOf(
+            cameraSelector(
+                resourceId = "android:id/button1",
+                text = text,
+                role = "android.widget.Button",
+                requiresClickable = true,
+            ),
+        ),
+        minimumScore = 160,
+    )
+
     private fun selectorSet(
         resourceId: String?,
         contentDescription: String?,
@@ -251,6 +305,7 @@ object KnownPixelCameraProfileCatalog {
         resourceId: String? = null,
         contentDescription: String? = null,
         text: String? = null,
+        role: String? = null,
         expectedSelected: Boolean? = null,
         expectedChecked: Boolean? = null,
         expectedRegion: NormalizedBounds? = null,
@@ -260,6 +315,7 @@ object KnownPixelCameraProfileCatalog {
         resourceId = resourceId,
         contentDescription = contentDescription,
         text = text,
+        role = role,
         expectedSelected = expectedSelected,
         expectedChecked = expectedChecked,
         expectedRegion = expectedRegion,

@@ -1622,11 +1622,24 @@ known state?
         otherwise FAIL
 ```
 
+The implemented profile schema stores dialog handling separately from ordinary camera-state
+signals. Each `PixelCameraDialogKind` has a calibrated presence selector and may have one explicit
+recovery target. Detection happens before mode inference so a dialog cannot be mistaken for a
+missing mode control. Immediately before dispatch, the Accessibility adapter takes a fresh bounded
+snapshot and verifies that the same typed dialog is still present; it never resolves a recovery
+target from an earlier tree.
+
+After dispatch the automation engine polls for the dialog to disappear under the finite
+`RECOVER_CAMERA_DIALOG` policy. Dispatch acceptance is not recovery success. A changed dialog,
+ambiguous presence/target, missing recovery target, or exhausted postcondition check produces
+`UNEXPECTED_CAMERA_DIALOG` (or the narrower selector failure) and stops automation. The `UNKNOWN`
+kind is detection-only and cannot be configured with an automatic target.
+
 ---
 
 # 38. Known Recoverable Conditions
 
-Examples that may eventually become explicit recovery strategies:
+Implemented convergence and recovery strategies include:
 
 ```text
 Pixel Camera opened in Photo
@@ -1637,7 +1650,12 @@ mode drawer currently open
 speed selector currently open
 screen asleep at STOP
 Pixel Camera not foreground
+profile-identified informational/limit dialog with an explicit safe recovery target
 ```
+
+Known terminal dialog kinds may also be represented without a recovery target. This is useful for
+conditions such as disabled Camera or exhausted storage: diagnostics remain typed, while Lenswake
+does not click a button that could leave Pixel Camera or mutate unrelated system state.
 
 ---
 

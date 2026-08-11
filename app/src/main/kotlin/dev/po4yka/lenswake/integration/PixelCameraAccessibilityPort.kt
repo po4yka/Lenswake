@@ -13,6 +13,7 @@ import dev.po4yka.lenswake.core.CaptureMode
 import dev.po4yka.lenswake.core.InteractionMethod
 import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
+import dev.po4yka.lenswake.core.PixelCameraDialogKind
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.platform.CameraLaunchDispatch
 import dev.po4yka.lenswake.platform.PlatformCapabilityCode
@@ -33,6 +34,10 @@ class PixelCameraAccessibilityPort internal constructor(
     private val profileValidator = PixelCameraProfileValidator(environmentProbe)
     private val stateInferer = PixelCameraStateInferer(selectorMatcher)
     private val actionDispatcher = PixelCameraActionDispatcher(selectorMatcher, accessibilityGateway)
+    private val dialogRecoveryDispatcher = PixelCameraDialogRecoveryDispatcher(
+        selectorMatcher,
+        accessibilityGateway,
+    )
     private val speedControlCloser = TimeLapseSpeedControlCloser(
         selectorMatcher = selectorMatcher,
         gateway = accessibilityGateway,
@@ -136,6 +141,11 @@ class PixelCameraAccessibilityPort internal constructor(
         profileValidator,
         mode.stopAction,
     )
+
+    override suspend fun recoverDialog(
+        dialog: PixelCameraDialogKind,
+        profileUse: ProfileUse,
+    ): ActionDispatch = dialogRecoveryDispatcher.recover(dialog, profileUse, profileValidator)
 }
 
 private fun CameraLaunchDispatch.Unavailable.failureCode(): AutomationFailureCode =

@@ -50,6 +50,7 @@ private suspend fun EngineEnvironment.convergeStartStep(
     )
     PixelCameraState.NotRunning,
     PixelCameraState.Unknown,
+    is PixelCameraState.Dialog,
     -> fail(
         context,
         failure(AutomationFailureCode.CAMERA_STATE_UNKNOWN, "Pixel Camera state is unknown"),

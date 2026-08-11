@@ -170,16 +170,11 @@ private suspend fun EngineEnvironment.inspectSpeedPicker(
     val operation = AutomationOperation.OPEN_TIME_LAPSE_SPEED_CONTROL
     val state = AutomationStateName.VERIFYING_TIME_LAPSE_SPEED_CONTROL
     context.transition(state, operation = operation, outcome = AutomationOutcome.STARTED, attempt = attempt)
-    val inspection = safeCall(
-        block = {
-            when (val timed = timed(operation) { pixelCamera.inspect(context.profileUse) }) {
-                is TimedCall.Completed -> timed.value
-                TimedCall.TimedOut -> PortResult.Unavailable(timeoutFailure(operation))
-            }
-        },
-        recover = { error ->
-            PortResult.Unavailable(operationFailure(verificationFailure.code, verificationFailure.message, error))
-        },
+    val inspection = inspectCameraHandlingDialog(
+        context = context,
+        operation = operation,
+        failureCode = verificationFailure.code,
+        failureMessage = verificationFailure.message,
     )
     return when (inspection) {
         is PortResult.Observed -> PickerInspection(predicate(inspection.value)).also { result ->

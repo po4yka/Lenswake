@@ -24,7 +24,7 @@ import dev.po4yka.lenswake.data.internal.mapping.ProfileJsonMigration
         ExecutionEventEntity::class,
         EnvironmentSnapshotEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class LenswakeDatabase : RoomDatabase() {
@@ -161,6 +161,14 @@ abstract class LenswakeDatabase : RoomDatabase() {
             )
         }
 
+        val MIGRATION_6_7: Migration = Migration(6, 7) { database ->
+            database.execSQL(
+                "ALTER TABLE `automation_profiles` " +
+                    "ADD COLUMN `dialog_profiles_json` TEXT NOT NULL " +
+                    "DEFAULT '{\"schemaVersion\":2,\"dialogs\":[]}'",
+            )
+        }
+
         fun create(context: Context): LenswakeDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
@@ -172,6 +180,7 @@ abstract class LenswakeDatabase : RoomDatabase() {
                 MIGRATION_3_4,
                 MIGRATION_4_5,
                 MIGRATION_5_6,
+                MIGRATION_6_7,
             )
                 .build()
     }

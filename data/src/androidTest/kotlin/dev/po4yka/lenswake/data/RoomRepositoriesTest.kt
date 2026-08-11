@@ -24,6 +24,8 @@ import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.NormalizedBounds
 import dev.po4yka.lenswake.core.NormalizedPoint
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
+import dev.po4yka.lenswake.core.PixelCameraDialogKind
+import dev.po4yka.lenswake.core.PixelCameraDialogProfile
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
 import dev.po4yka.lenswake.core.PixelCameraStateSignal
@@ -115,6 +117,10 @@ class RoomRepositoriesTest {
         assertEquals(
             profile.speedTargets[TimeLapseSpeed.X120],
             restoredProfile?.speedTargets?.get(TimeLapseSpeed.X120),
+        )
+        assertEquals(
+            profile.dialogProfiles[PixelCameraDialogKind.VIDEO_DURATION_LIMIT_REACHED],
+            restoredProfile?.dialogProfiles?.get(PixelCameraDialogKind.VIDEO_DURATION_LIMIT_REACHED),
         )
         assertEquals(
             true,
@@ -780,6 +786,30 @@ class RoomRepositoriesTest {
                     ),
                 ),
                 minimumScore = 20,
+            ),
+        ),
+        dialogProfiles = mapOf(
+            PixelCameraDialogKind.VIDEO_DURATION_LIMIT_REACHED to PixelCameraDialogProfile(
+                presence = UiSelectorSet(
+                    selectors = listOf(
+                        UiSelector(
+                            packageName = "com.google.android.GoogleCamera",
+                            text = "Video reached the duration limit.",
+                            requiresClickable = false,
+                        ),
+                    ),
+                    minimumScore = 30,
+                ),
+                recoveryTarget = UiSelectorSet(
+                    selectors = listOf(
+                        UiSelector(
+                            packageName = "com.google.android.GoogleCamera",
+                            role = "android.widget.Button",
+                            text = "OK",
+                        ),
+                    ),
+                    minimumScore = 60,
+                ),
             ),
         ),
         fallbackGestures = mapOf(

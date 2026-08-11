@@ -132,6 +132,57 @@ class PixelCameraProfileTest {
     }
 
     @Test
+    fun `unknown dialog cannot be configured with an automatic recovery target`() {
+        val selector = UiSelectorSet(
+            selectors = listOf(UiSelector(environment().cameraPackage, text = "Unknown dialog")),
+            minimumScore = 30,
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            PixelCameraProfile(
+                id = ProfileId("profile-1"),
+                environment = environment(),
+                selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
+                dialogProfiles = mapOf(
+                    PixelCameraDialogKind.UNKNOWN to PixelCameraDialogProfile(selector, selector),
+                ),
+                compatibility = ProfileCompatibility.NEEDS_REHEARSAL,
+                verifiedAt = null,
+            )
+        }
+    }
+
+    @Test
+    fun `dialog presence selector requires a meaningful discriminant`() {
+        val unsafePresence = UiSelectorSet(
+            selectors = listOf(
+                UiSelector(
+                    packageName = environment().cameraPackage,
+                    expectedSelected = true,
+                    requiresClickable = false,
+                ),
+            ),
+            minimumScore = 1,
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            PixelCameraProfile(
+                id = ProfileId("profile-1"),
+                environment = environment(),
+                selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
+                dialogProfiles = mapOf(
+                    PixelCameraDialogKind.UNKNOWN to PixelCameraDialogProfile(
+                        presence = unsafePresence,
+                        recoveryTarget = null,
+                    ),
+                ),
+                compatibility = ProfileCompatibility.NEEDS_REHEARSAL,
+                verifiedAt = null,
+            )
+        }
+    }
+
+    @Test
     fun `region is a meaningful action selector discriminant`() {
         val regionSelector = UiSelectorSet(
             selectors = listOf(

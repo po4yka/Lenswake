@@ -5,6 +5,8 @@ import dev.po4yka.lenswake.core.GestureProfile
 import dev.po4yka.lenswake.core.NormalizedBounds
 import dev.po4yka.lenswake.core.NormalizedPoint
 import dev.po4yka.lenswake.core.PixelCameraStateSignal
+import dev.po4yka.lenswake.core.PixelCameraDialogKind
+import dev.po4yka.lenswake.core.PixelCameraDialogProfile
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.core.UiSelector
 import dev.po4yka.lenswake.core.UiSelectorSet
@@ -138,6 +140,44 @@ internal object JsonColumnCodec {
         }
     }
 
+    fun encodeDialogProfiles(
+        dialogProfiles: Map<PixelCameraDialogKind, PixelCameraDialogProfile>,
+    ): String {
+        val payload = DialogProfilesPayload(
+            schemaVersion = PROFILE_JSON_SCHEMA_VERSION,
+            dialogs = dialogProfiles.entries
+                .sortedBy { it.key.name }
+                .map { (kind, profile) ->
+                    DialogProfilePayload(
+                        kind = kind.name,
+                        presence = profile.presence.toPayload(),
+                        recoveryTarget = profile.recoveryTarget?.toPayload(),
+                    )
+                },
+        )
+        return json.encodeToString(payload).bounded(MAX_PROFILE_JSON_LENGTH, "profile dialogs")
+    }
+
+    fun decodeDialogProfiles(
+        encoded: String,
+    ): Map<PixelCameraDialogKind, PixelCameraDialogProfile> {
+        val payload = json.decodeFromString<DialogProfilesPayload>(
+            encoded.bounded(MAX_PROFILE_JSON_LENGTH, "profile dialogs"),
+        )
+        require(payload.schemaVersion == PROFILE_JSON_SCHEMA_VERSION) {
+            "Unsupported profile dialogs JSON schema version: ${payload.schemaVersion}"
+        }
+        require(payload.dialogs.map { it.kind }.distinct().size == payload.dialogs.size) {
+            "Persisted profile dialogs contain duplicate kind keys"
+        }
+        return payload.dialogs.associate { dialog ->
+            enumValueOf<PixelCameraDialogKind>(dialog.kind) to PixelCameraDialogProfile(
+                presence = dialog.presence.toDomain(),
+                recoveryTarget = dialog.recoveryTarget?.toDomain(),
+            )
+        }
+    }
+
     fun encodeGestures(gestures: Map<AutomationAction, GestureProfile>): String {
         val payload = gestures.entries
             .sortedBy { it.key.name }
@@ -222,6 +262,25 @@ private data class StateSignalPayload(
 )
 
 @Serializable
+private data class DialogProfilesPayload(
+    val schemaVersion: Int,
+    val dialogs: List<DialogProfilePayload>,
+)
+
+@Serializable
+private data class DialogProfilePayload(
+    val kind: String,
+    val presence: SelectorSetPayload,
+    val recoveryTarget: SelectorSetPayload?,
+)
+
+@Serializable
+private data class SelectorSetPayload(
+    val minimumScore: Int,
+    val selectors: List<SelectorPayload>,
+)
+
+@Serializable
 private data class BoundsPayload(
     val left: Float,
     val top: Float,
@@ -234,6 +293,16 @@ private data class GesturePayload(
     val action: String,
     val x: Float,
     val y: Float,
+)
+
+private fun UiSelectorSet.toPayload(): SelectorSetPayload = SelectorSetPayload(
+    minimumScore = minimumScore,
+    selectors = selectors.map(UiSelector::toPayload),
+)
+
+private fun SelectorSetPayload.toDomain(): UiSelectorSet = UiSelectorSet(
+    selectors = selectors.map(SelectorPayload::toDomain),
+    minimumScore = minimumScore,
 )
 
 private fun UiSelector.toPayload(): SelectorPayload = SelectorPayload(

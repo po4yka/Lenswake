@@ -33,13 +33,14 @@ class LenswakeDatabaseMigrationTest {
 
         val migrated = migrationHelper.runMigrationsAndValidate(
             DATABASE_NAME,
-            6,
+            7,
             true,
             LenswakeDatabase.MIGRATION_1_2,
             LenswakeDatabase.MIGRATION_2_3,
             LenswakeDatabase.MIGRATION_3_4,
             LenswakeDatabase.MIGRATION_4_5,
             LenswakeDatabase.MIGRATION_5_6,
+            LenswakeDatabase.MIGRATION_6_7,
         )
         migrated.query(
             "SELECT id FROM automation_profiles WHERE id = 'profile-migration'",
@@ -57,6 +58,7 @@ class LenswakeDatabaseMigrationTest {
                 LenswakeDatabase.MIGRATION_3_4,
                 LenswakeDatabase.MIGRATION_4_5,
                 LenswakeDatabase.MIGRATION_5_6,
+                LenswakeDatabase.MIGRATION_6_7,
             )
             .build()
         val (rawProfile, schedule) = runBlocking {
@@ -136,6 +138,7 @@ class LenswakeDatabaseMigrationTest {
                 LenswakeDatabase.MIGRATION_3_4,
                 LenswakeDatabase.MIGRATION_4_5,
                 LenswakeDatabase.MIGRATION_5_6,
+                LenswakeDatabase.MIGRATION_6_7,
             )
             .build()
         val (profile, schemaOneProfile) = runBlocking {
@@ -246,6 +249,46 @@ class LenswakeDatabaseMigrationTest {
             assertEquals(true, cursor.isNull(1))
         }
         migrated.close()
+    }
+
+    @Test
+    fun migratesVersionSixWithReadableEmptyDialogProfiles() {
+        createVersionOneDatabase()
+        migrationHelper.runMigrationsAndValidate(
+            DATABASE_NAME,
+            6,
+            true,
+            LenswakeDatabase.MIGRATION_1_2,
+            LenswakeDatabase.MIGRATION_2_3,
+            LenswakeDatabase.MIGRATION_3_4,
+            LenswakeDatabase.MIGRATION_4_5,
+            LenswakeDatabase.MIGRATION_5_6,
+        ).close()
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            DATABASE_NAME,
+            7,
+            true,
+            LenswakeDatabase.MIGRATION_6_7,
+        )
+        migrated.query(
+            "SELECT dialog_profiles_json FROM automation_profiles WHERE id = 'profile-migration'",
+        ).use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals("{\"schemaVersion\":2,\"dialogs\":[]}", cursor.getString(0))
+        }
+        migrated.close()
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.databaseBuilder(context, LenswakeDatabase::class.java, DATABASE_NAME)
+            .addMigrations(LenswakeDatabase.MIGRATION_6_7)
+            .build()
+        val profile = runBlocking {
+            RoomAutomationProfileRepository(database).get(ProfileId("profile-migration"))
+        }
+        database.close()
+
+        assertEquals(emptyMap<Any, Any>(), checkNotNull(profile).dialogProfiles)
     }
 
     private fun createVersionOneDatabase() {
