@@ -3,6 +3,7 @@ package dev.po4yka.lenswake.data
 import android.content.Context
 import androidx.room.Room
 import androidx.room.testing.MigrationTestHelper
+import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -28,41 +29,7 @@ class LenswakeDatabaseMigrationTest {
 
     @Test
     fun migratesVersionOneToCurrentAndKeepsLegacyProfileReadable() {
-        migrationHelper.createDatabase(DATABASE_NAME, 1).apply {
-            execSQL(
-                """
-                INSERT INTO automation_profiles (
-                    id, device_manufacturer, device_model, android_sdk,
-                    android_build_fingerprint, camera_package, camera_version_code,
-                    locale_tag, display_width_px, display_height_px, density_dpi,
-                    selector_schema_version, targets_json,
-                    fallback_gestures_json, compatibility,
-                    verified_at_epoch_ms
-                ) VALUES (
-                    'profile-migration', 'Google', 'Pixel 8 Pro', 37,
-                    'google/husky/test', 'com.google.android.GoogleCamera', 1,
-                    'en-US', 1344, 2992, 480,
-                    1,
-                    '[{"action":"SELECT_VIDEO","minimumScore":75,"selectors":[{"packageName":"com.google.android.GoogleCamera","resourceId":"camera:id/video","role":"android.widget.Button","contentDescription":"Video","text":null,"expectedRegion":null,"requiresClickable":true,"requiresVisible":true}]}]',
-                    '[]', 'VERIFIED', 1000
-                )
-                """.trimIndent(),
-            )
-            execSQL(
-                """
-                INSERT INTO schedules (
-                    id, name, start_at_epoch_ms, stop_at_epoch_ms, zone_id,
-                    capture_type, time_lapse_speed, lens_selection, zoom_factor,
-                    profile_id, enabled, created_at_epoch_ms, updated_at_epoch_ms
-                ) VALUES (
-                    'schedule-migration', 'Migrated schedule', 1000, 2000, 'UTC',
-                    'TIME_LAPSE', 'X120', 'REAR_MAIN', NULL,
-                    'profile-migration', 1, 500, 600
-                )
-                """.trimIndent(),
-            )
-            close()
-        }
+        createVersionOneDatabase()
 
         val migrated = migrationHelper.runMigrationsAndValidate(
             DATABASE_NAME,
@@ -152,51 +119,7 @@ class LenswakeDatabaseMigrationTest {
 
     @Test
     fun migratesVersionThreeProfileJsonWithoutContentLoss() {
-        migrationHelper.createDatabase(DATABASE_NAME, 3).apply {
-            execSQL(
-                """
-                INSERT INTO automation_profiles (
-                    id, device_manufacturer, device_model, android_sdk,
-                    android_build_fingerprint, camera_package, camera_version_code,
-                    locale_tag, display_width_px, display_height_px, density_dpi,
-                    selector_schema_version, targets_json, speed_targets_json,
-                    state_signals_json, fallback_gestures_json, compatibility,
-                    verified_at_epoch_ms
-                ) VALUES (
-                    'profile-current-json', 'Google', 'Pixel 8 Pro', 37,
-                    'google/husky/test', 'com.google.android.GoogleCamera', 1,
-                    'en-US', 1344, 2992, 480,
-                    3,
-                    '{"schemaVersion":2,"targets":[{"action":"SELECT_VIDEO","minimumScore":90,"selectors":[{"packageName":"com.google.android.GoogleCamera","resourceId":"camera:id/video","role":"android.widget.Button","contentDescription":"Video","text":null,"expectedSelected":true,"expectedChecked":true,"expectedRegion":null,"requiresClickable":true,"requiresVisible":true}]}]}',
-                    '{"schemaVersion":2,"targets":[]}',
-                    '{"schemaVersion":2,"signals":[]}',
-                    '[]', 'NEEDS_REHEARSAL', NULL
-                )
-                """.trimIndent(),
-            )
-            execSQL(
-                """
-                INSERT INTO automation_profiles (
-                    id, device_manufacturer, device_model, android_sdk,
-                    android_build_fingerprint, camera_package, camera_version_code,
-                    locale_tag, display_width_px, display_height_px, density_dpi,
-                    selector_schema_version, targets_json, speed_targets_json,
-                    state_signals_json, fallback_gestures_json, compatibility,
-                    verified_at_epoch_ms
-                ) VALUES (
-                    'profile-schema-one', 'Google', 'Pixel 8 Pro', 37,
-                    'google/husky/test', 'com.google.android.GoogleCamera', 1,
-                    'en-US', 1344, 2992, 480,
-                    1,
-                    '{"schemaVersion":1,"targets":[{"action":"SELECT_VIDEO","minimumScore":80,"selectors":[{"packageName":"com.google.android.GoogleCamera","resourceId":"camera:id/video","role":"android.widget.Button","contentDescription":"Video","text":null,"expectedSelected":false,"expectedRegion":null,"requiresClickable":true,"requiresVisible":true}]}]}',
-                    '{"schemaVersion":1,"targets":[{"speed":"X120","minimumScore":81,"selectors":[{"packageName":"com.google.android.GoogleCamera","resourceId":"camera:id/x120","role":"android.widget.Button","contentDescription":"120x","text":null,"expectedSelected":true,"expectedRegion":null,"requiresClickable":true,"requiresVisible":true}]}]}',
-                    '{"schemaVersion":1,"signals":[{"signal":"VIDEO_MODE_ACTIVE","minimumScore":82,"selectors":[{"packageName":"com.google.android.GoogleCamera","resourceId":"camera:id/video","role":"android.widget.Button","contentDescription":"Video","text":null,"expectedSelected":true,"expectedRegion":null,"requiresClickable":false,"requiresVisible":true}]}]}',
-                    '[]', 'NEEDS_REHEARSAL', NULL
-                )
-                """.trimIndent(),
-            )
-            close()
-        }
+        createVersionThreeDatabase()
 
         migrationHelper.runMigrationsAndValidate(
             DATABASE_NAME,
@@ -243,38 +166,7 @@ class LenswakeDatabaseMigrationTest {
 
     @Test
     fun migratesVersionFourWithNullableMediaSaveProofColumns() {
-        migrationHelper.createDatabase(DATABASE_NAME, 4).apply {
-            execSQL(
-                """
-                INSERT INTO execution_sessions (
-                    id, execution_key, kind, profile_id, capture_type,
-                    time_lapse_speed, lens_selection,
-                    expected_start_at_epoch_ms, expected_stop_at_epoch_ms,
-                    status, revision, created_at_epoch_ms, updated_at_epoch_ms
-                ) VALUES (
-                    'execution-media-migration', 'rehearsal/media-migration', 'REHEARSAL',
-                    'profile-migration', 'TIME_LAPSE', 'X120', 'REAR_MAIN',
-                    1000, 2000, 'COMPLETED', 3, 500, 1500
-                )
-                """.trimIndent(),
-            )
-            execSQL(
-                """
-                INSERT INTO execution_sessions (
-                    id, execution_key, kind, profile_id, capture_type,
-                    time_lapse_speed, lens_selection,
-                    expected_start_at_epoch_ms, expected_stop_at_epoch_ms,
-                    status, record_action_at_epoch_ms, revision,
-                    created_at_epoch_ms, updated_at_epoch_ms
-                ) VALUES (
-                    'execution-active-migration', 'schedule/active-migration', 'SCHEDULED',
-                    'profile-migration', 'TIME_LAPSE', 'X120', 'REAR_MAIN',
-                    1000, 2000, 'RECORDING', 1200, 3, 500, 1500
-                )
-                """.trimIndent(),
-            )
-            close()
-        }
+        createVersionFourDatabase()
 
         val migrated = migrationHelper.runMigrationsAndValidate(
             DATABASE_NAME,
@@ -308,6 +200,151 @@ class LenswakeDatabaseMigrationTest {
             assertEquals(0, cursor.getInt(0))
         }
         migrated.close()
+    }
+
+    private fun createVersionOneDatabase() {
+        migrationHelper.createDatabase(DATABASE_NAME, 1).apply {
+            insertVersionOneProfile()
+            insertVersionOneSchedule()
+            close()
+        }
+    }
+
+    private fun SupportSQLiteDatabase.insertVersionOneProfile() {
+        execSQL(
+            """
+            INSERT INTO automation_profiles (
+                id, device_manufacturer, device_model, android_sdk,
+                android_build_fingerprint, camera_package, camera_version_code,
+                locale_tag, display_width_px, display_height_px, density_dpi,
+                selector_schema_version, targets_json,
+                fallback_gestures_json, compatibility,
+                verified_at_epoch_ms
+            ) VALUES (
+                'profile-migration', 'Google', 'Pixel 8 Pro', 37,
+                'google/husky/test', 'com.google.android.GoogleCamera', 1,
+                'en-US', 1344, 2992, 480,
+                1,
+                '[{"action":"SELECT_VIDEO","minimumScore":75,"selectors":[{"packageName":"com.google.android.GoogleCamera","resourceId":"camera:id/video","role":"android.widget.Button","contentDescription":"Video","text":null,"expectedRegion":null,"requiresClickable":true,"requiresVisible":true}]}]',
+                '[]', 'VERIFIED', 1000
+            )
+            """.trimIndent(),
+        )
+    }
+
+    private fun SupportSQLiteDatabase.insertVersionOneSchedule() {
+        execSQL(
+            """
+            INSERT INTO schedules (
+                id, name, start_at_epoch_ms, stop_at_epoch_ms, zone_id,
+                capture_type, time_lapse_speed, lens_selection, zoom_factor,
+                profile_id, enabled, created_at_epoch_ms, updated_at_epoch_ms
+            ) VALUES (
+                'schedule-migration', 'Migrated schedule', 1000, 2000, 'UTC',
+                'TIME_LAPSE', 'X120', 'REAR_MAIN', NULL,
+                'profile-migration', 1, 500, 600
+            )
+            """.trimIndent(),
+        )
+    }
+
+    private fun createVersionThreeDatabase() {
+        migrationHelper.createDatabase(DATABASE_NAME, 3).apply {
+            insertCurrentProfileJson()
+            insertSchemaOneProfileJson()
+            close()
+        }
+    }
+
+    private fun SupportSQLiteDatabase.insertCurrentProfileJson() {
+        execSQL(
+            """
+            INSERT INTO automation_profiles (
+                id, device_manufacturer, device_model, android_sdk,
+                android_build_fingerprint, camera_package, camera_version_code,
+                locale_tag, display_width_px, display_height_px, density_dpi,
+                selector_schema_version, targets_json, speed_targets_json,
+                state_signals_json, fallback_gestures_json, compatibility,
+                verified_at_epoch_ms
+            ) VALUES (
+                'profile-current-json', 'Google', 'Pixel 8 Pro', 37,
+                'google/husky/test', 'com.google.android.GoogleCamera', 1,
+                'en-US', 1344, 2992, 480,
+                3,
+                '{"schemaVersion":2,"targets":[{"action":"SELECT_VIDEO","minimumScore":90,"selectors":[{"packageName":"com.google.android.GoogleCamera","resourceId":"camera:id/video","role":"android.widget.Button","contentDescription":"Video","text":null,"expectedSelected":true,"expectedChecked":true,"expectedRegion":null,"requiresClickable":true,"requiresVisible":true}]}]}',
+                '{"schemaVersion":2,"targets":[]}',
+                '{"schemaVersion":2,"signals":[]}',
+                '[]', 'NEEDS_REHEARSAL', NULL
+            )
+            """.trimIndent(),
+        )
+    }
+
+    private fun SupportSQLiteDatabase.insertSchemaOneProfileJson() {
+        execSQL(
+            """
+            INSERT INTO automation_profiles (
+                id, device_manufacturer, device_model, android_sdk,
+                android_build_fingerprint, camera_package, camera_version_code,
+                locale_tag, display_width_px, display_height_px, density_dpi,
+                selector_schema_version, targets_json, speed_targets_json,
+                state_signals_json, fallback_gestures_json, compatibility,
+                verified_at_epoch_ms
+            ) VALUES (
+                'profile-schema-one', 'Google', 'Pixel 8 Pro', 37,
+                'google/husky/test', 'com.google.android.GoogleCamera', 1,
+                'en-US', 1344, 2992, 480,
+                1,
+                '{"schemaVersion":1,"targets":[{"action":"SELECT_VIDEO","minimumScore":80,"selectors":[{"packageName":"com.google.android.GoogleCamera","resourceId":"camera:id/video","role":"android.widget.Button","contentDescription":"Video","text":null,"expectedSelected":false,"expectedRegion":null,"requiresClickable":true,"requiresVisible":true}]}]}',
+                '{"schemaVersion":1,"targets":[{"speed":"X120","minimumScore":81,"selectors":[{"packageName":"com.google.android.GoogleCamera","resourceId":"camera:id/x120","role":"android.widget.Button","contentDescription":"120x","text":null,"expectedSelected":true,"expectedRegion":null,"requiresClickable":true,"requiresVisible":true}]}]}',
+                '{"schemaVersion":1,"signals":[{"signal":"VIDEO_MODE_ACTIVE","minimumScore":82,"selectors":[{"packageName":"com.google.android.GoogleCamera","resourceId":"camera:id/video","role":"android.widget.Button","contentDescription":"Video","text":null,"expectedSelected":true,"expectedRegion":null,"requiresClickable":false,"requiresVisible":true}]}]}',
+                '[]', 'NEEDS_REHEARSAL', NULL
+            )
+            """.trimIndent(),
+        )
+    }
+
+    private fun createVersionFourDatabase() {
+        migrationHelper.createDatabase(DATABASE_NAME, 4).apply {
+            insertCompletedExecution()
+            insertActiveExecution()
+            close()
+        }
+    }
+
+    private fun SupportSQLiteDatabase.insertCompletedExecution() {
+        execSQL(
+            """
+            INSERT INTO execution_sessions (
+                id, execution_key, kind, profile_id, capture_type,
+                time_lapse_speed, lens_selection,
+                expected_start_at_epoch_ms, expected_stop_at_epoch_ms,
+                status, revision, created_at_epoch_ms, updated_at_epoch_ms
+            ) VALUES (
+                'execution-media-migration', 'rehearsal/media-migration', 'REHEARSAL',
+                'profile-migration', 'TIME_LAPSE', 'X120', 'REAR_MAIN',
+                1000, 2000, 'COMPLETED', 3, 500, 1500
+            )
+            """.trimIndent(),
+        )
+    }
+
+    private fun SupportSQLiteDatabase.insertActiveExecution() {
+        execSQL(
+            """
+            INSERT INTO execution_sessions (
+                id, execution_key, kind, profile_id, capture_type,
+                time_lapse_speed, lens_selection,
+                expected_start_at_epoch_ms, expected_stop_at_epoch_ms,
+                status, record_action_at_epoch_ms, revision,
+                created_at_epoch_ms, updated_at_epoch_ms
+            ) VALUES (
+                'execution-active-migration', 'schedule/active-migration', 'SCHEDULED',
+                'profile-migration', 'TIME_LAPSE', 'X120', 'REAR_MAIN',
+                1000, 2000, 'RECORDING', 1200, 3, 500, 1500
+            )
+            """.trimIndent(),
+        )
     }
 
     private companion object {
