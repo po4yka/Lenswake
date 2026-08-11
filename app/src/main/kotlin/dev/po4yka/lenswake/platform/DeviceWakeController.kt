@@ -45,7 +45,25 @@ class AndroidDeviceWakeController(context: Context) : DeviceWakeController {
     private val powerManager = applicationContext.getSystemService(PowerManager::class.java)
     private val gatewayComponent = AlarmWakeGatewayContract.component(applicationContext)
 
-    override fun availability(): PlatformCapability<Unit> = try {
+    override fun availability(): PlatformCapability<Unit> = runCatching(::inspectAvailability)
+        .fold(
+            onSuccess = { it },
+            onFailure = { error ->
+                when (error) {
+                    is PackageManager.NameNotFoundException -> unavailable(
+                        "The private display-wake gateway is not declared",
+                        error,
+                    )
+                    is RuntimeException -> unavailable(
+                        "Display-wake notification capability could not be inspected",
+                        error,
+                    )
+                    else -> throw error
+                }
+            },
+        )
+
+    private fun inspectAvailability(): PlatformCapability<Unit> =
         when {
             !gatewayIsDeclaredPrivateAndEnabled() -> unavailable(
                 "The display-wake gateway is missing, disabled, or exported",
@@ -80,39 +98,60 @@ class AndroidDeviceWakeController(context: Context) : DeviceWakeController {
                 }
             }
         }
-    } catch (error: PackageManager.NameNotFoundException) {
-        unavailable("The private display-wake gateway is not declared", error)
-    } catch (error: RuntimeException) {
-        unavailable("Display-wake notification capability could not be inspected", error)
-    }
 
-    override suspend fun wakeDevice(): PlatformCapability<Unit> {
+    override suspend fun wakeDevice(): PlatformCapability<Unit> =
         if (powerManager.isInteractive) {
             DeviceWakeNotificationContract.cancel(notificationManager)
-            return PlatformCapability.Available(Unit)
+            PlatformCapability.Available(Unit)
+        } else {
+            when (val readiness = availability()) {
+                is PlatformCapability.Unavailable -> readiness
+                is PlatformCapability.Available -> dispatchWakeAndVerify()
+            }
         }
-        val readiness = availability()
-        if (readiness is PlatformCapability.Unavailable) return readiness
 
-        try {
+    private suspend fun dispatchWakeAndVerify(): PlatformCapability<Unit> {
+        val dispatch = runCatching {
             notificationManager.notify(
                 DeviceWakeNotificationContract.NOTIFICATION_ID,
                 DeviceWakeNotificationContract.notification(applicationContext),
             )
-        } catch (error: SecurityException) {
-            return unavailable("The full-screen wake notification was rejected", error)
-        } catch (error: RuntimeException) {
-            return unavailable("The full-screen wake notification could not be posted", error)
+        }
+        val failure = dispatch.exceptionOrNull()
+        val rejected = when (failure) {
+            null -> null
+            is SecurityException -> unavailable(
+                "The full-screen wake notification was rejected",
+                failure,
+            )
+            is RuntimeException -> unavailable(
+                "The full-screen wake notification could not be posted",
+                failure,
+            )
+            else -> throw checkNotNull(failure)
         }
 
-        return try {
-            repeat(WAKE_CONFIRMATION_ATTEMPTS) {
-                delay(WAKE_CONFIRMATION_INTERVAL_MILLIS)
-                if (powerManager.isInteractive) return PlatformCapability.Available(Unit)
+        return if (rejected != null) {
+            rejected
+        } else {
+            try {
+                awaitInteractiveDisplay()
+            } finally {
+                DeviceWakeNotificationContract.cancel(notificationManager)
             }
+        }
+    }
+
+    private suspend fun awaitInteractiveDisplay(): PlatformCapability<Unit> {
+        var attempt = 0
+        while (!powerManager.isInteractive && attempt < WAKE_CONFIRMATION_ATTEMPTS) {
+            delay(WAKE_CONFIRMATION_INTERVAL_MILLIS)
+            attempt += 1
+        }
+        return if (powerManager.isInteractive) {
+            PlatformCapability.Available(Unit)
+        } else {
             unavailable("The display did not become interactive before the wake deadline")
-        } finally {
-            DeviceWakeNotificationContract.cancel(notificationManager)
         }
     }
 
