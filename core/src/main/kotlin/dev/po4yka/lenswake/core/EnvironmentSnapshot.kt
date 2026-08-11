@@ -2,6 +2,8 @@ package dev.po4yka.lenswake.core
 
 import java.time.Instant
 
+private const val MAX_BATTERY_PERCENT = 100
+
 /**
  * Immutable diagnostic context captured immediately before an automation run.
  *
@@ -24,7 +26,7 @@ data class EnvironmentSnapshot(
 ) {
     init {
         require(lenswakeVersion.isNotBlank()) { "Lenswake version must not be blank" }
-        require(batteryPercent == null || batteryPercent in 0..100) {
+        require(batteryPercent == null || batteryPercent in 0..MAX_BATTERY_PERCENT) {
             "Battery percent must be between zero and one hundred"
         }
         require(availableStorageBytes == null || availableStorageBytes >= 0) {
