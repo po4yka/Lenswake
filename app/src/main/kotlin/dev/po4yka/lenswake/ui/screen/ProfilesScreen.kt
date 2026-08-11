@@ -89,7 +89,7 @@ private fun LazyListScope.installedProfiles(
 ) {
     if (state.profiles.isEmpty()) {
         item {
-            profileRehearsalAction(
+            ProfileRehearsalAction(
                 state = state,
                 onRunRehearsal = {},
             )
@@ -103,7 +103,7 @@ private fun LazyListScope.installedProfiles(
             detail = profile.environment,
             status = profile.compatibility,
         )
-        profileRehearsalAction(
+        ProfileRehearsalAction(
             state = state,
             onRunRehearsal = { onRunRehearsal(profile.id) },
         )
@@ -137,7 +137,7 @@ private fun LazyListScope.profileInstallOutcome(install: ProfileInstallUiState) 
 }
 
 @Composable
-private fun profileRehearsalAction(
+private fun ProfileRehearsalAction(
     state: LenswakeUiState,
     onRunRehearsal: () -> Unit,
 ) {
