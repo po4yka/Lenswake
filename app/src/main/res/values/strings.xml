@@ -16,7 +16,6 @@
     <string name="action_dismiss">Dismiss</string>
     <string name="action_edit">Edit</string>
     <string name="action_enable">Enable</string>
-    <string name="action_export_diagnostics">Export diagnostics</string>
     <string name="action_install_camera_profile">Install camera profile</string>
     <string name="action_open_pixel_camera">Open Pixel Camera</string>
     <string name="action_open_lenswake">Open Lenswake</string>
@@ -41,7 +40,6 @@
     <string name="status_passed">Passed</string>
     <string name="status_ready">Ready</string>
     <string name="status_ready_with_warnings">Ready with warnings</string>
-    <string name="status_recorded_event">Recorded event</string>
     <string name="status_safety_alarm_armed">Safety alarm armed</string>
     <string name="status_preparing">Preparing</string>
     <string name="status_recording_expected">Recording expected</string>
@@ -59,9 +57,6 @@
     <string name="screen_setup_title">Setup</string>
     <string name="screen_setup_summary">Finish the device settings Lenswake needs before it can run a schedule.</string>
     <string name="section_readiness_checks">Readiness checks</string>
-    <string name="section_capabilities">Capabilities</string>
-    <string name="section_scheduled_alarm_failures">Scheduled alarm failures</string>
-    <string name="section_profile_storage_issues">Profile storage issues</string>
     <string name="section_activity">Activity</string>
 
     <string name="profiles_camera_profile_title">Camera profile</string>
