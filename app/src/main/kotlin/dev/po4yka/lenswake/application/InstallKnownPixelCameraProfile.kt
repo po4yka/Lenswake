@@ -47,72 +47,107 @@ class InstallKnownPixelCameraProfile(
     private val environmentProbe: () -> PortResult<PixelCameraEnvironment>,
     private val profileRepository: AutomationProfileRepository,
 ) {
-    suspend operator fun invoke(): InstallKnownPixelCameraProfileResult {
-        val environment = when (val observation = inspectEnvironment()) {
-            is PortResult.Observed -> observation.value
-            is PortResult.Unavailable -> return InstallKnownPixelCameraProfileResult.EnvironmentUnavailable(
+    suspend operator fun invoke(): InstallKnownPixelCameraProfileResult =
+        when (val observation = inspectEnvironment()) {
+            is PortResult.Observed -> installFor(observation.value)
+            is PortResult.Unavailable -> InstallKnownPixelCameraProfileResult.EnvironmentUnavailable(
                 observation.failure,
             )
         }
+
+    private suspend fun installFor(
+        environment: PixelCameraEnvironment,
+    ): InstallKnownPixelCameraProfileResult {
         val catalogProfile = KnownPixelCameraProfileCatalog.exactMatch(environment)
-            ?: return InstallKnownPixelCameraProfileResult.UnsupportedEnvironment(environment)
-
-        val existing = try {
-            profileRepository.get(catalogProfile.id)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (failure: Exception) {
-            return persistenceFailure(ProfilePersistenceStage.READ_EXISTING, failure)
+        return if (catalogProfile == null) {
+            InstallKnownPixelCameraProfileResult.UnsupportedEnvironment(environment)
+        } else {
+            install(catalogProfile)
         }
-        if (existing != null && KnownPixelCameraProfileCatalog.containsDefinition(existing)) {
-            return InstallKnownPixelCameraProfileResult.AlreadyInstalled(existing)
-        }
-
-        try {
-            profileRepository.save(catalogProfile)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (failure: Exception) {
-            return persistenceFailure(ProfilePersistenceStage.SAVE, failure)
-        }
-
-        val persisted = try {
-            profileRepository.get(catalogProfile.id)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (failure: Exception) {
-            return persistenceFailure(ProfilePersistenceStage.READ_BACK, failure)
-        }
-        if (persisted != catalogProfile) {
-            return InstallKnownPixelCameraProfileResult.PersistenceFailure(
-                stage = ProfilePersistenceStage.READ_BACK,
-                detail = "The persisted profile did not match the catalog profile after save",
-            )
-        }
-
-        return InstallKnownPixelCameraProfileResult.Installed(
-            profile = persisted,
-            replacedExisting = existing != null,
-        )
     }
 
-    private fun inspectEnvironment(): PortResult<PixelCameraEnvironment> = try {
-        environmentProbe()
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (failure: Exception) {
-        PortResult.Unavailable(
-            AutomationFailure(
-                code = AutomationFailureCode.UNKNOWN,
-                message = "Pixel Camera environment inspection failed",
-                context = mapOf("exception" to failure::class.java.simpleName.take(256)),
-            ),
-        )
+    private suspend fun install(
+        catalogProfile: PixelCameraProfile,
+    ): InstallKnownPixelCameraProfileResult = observeOperation {
+        profileRepository.get(catalogProfile.id)
+    }.fold(
+        onSuccess = { existing ->
+            if (existing != null && KnownPixelCameraProfileCatalog.containsDefinition(existing)) {
+                InstallKnownPixelCameraProfileResult.AlreadyInstalled(existing)
+            } else {
+                saveAndVerify(catalogProfile, replacedExisting = existing != null)
+            }
+        },
+        onFailure = { failure ->
+            persistenceFailure(ProfilePersistenceStage.READ_EXISTING, failure)
+        },
+    )
+
+    private suspend fun saveAndVerify(
+        catalogProfile: PixelCameraProfile,
+        replacedExisting: Boolean,
+    ): InstallKnownPixelCameraProfileResult = observeOperation {
+        profileRepository.save(catalogProfile)
+    }.fold(
+        onSuccess = { verifyPersistedProfile(catalogProfile, replacedExisting) },
+        onFailure = { failure -> persistenceFailure(ProfilePersistenceStage.SAVE, failure) },
+    )
+
+    private suspend fun verifyPersistedProfile(
+        catalogProfile: PixelCameraProfile,
+        replacedExisting: Boolean,
+    ): InstallKnownPixelCameraProfileResult = observeOperation {
+        profileRepository.get(catalogProfile.id)
+    }.fold(
+        onSuccess = { persisted ->
+            if (persisted == catalogProfile) {
+                InstallKnownPixelCameraProfileResult.Installed(
+                    profile = persisted,
+                    replacedExisting = replacedExisting,
+                )
+            } else {
+                InstallKnownPixelCameraProfileResult.PersistenceFailure(
+                    stage = ProfilePersistenceStage.READ_BACK,
+                    detail = "The persisted profile did not match the catalog profile after save",
+                )
+            }
+        },
+        onFailure = { failure -> persistenceFailure(ProfilePersistenceStage.READ_BACK, failure) },
+    )
+
+    private suspend fun <T> observeOperation(operation: suspend () -> T): Result<T> {
+        val result = runCatching { operation() }
+        result.exceptionOrNull()?.rethrowNonRecoverable()
+        return result
+    }
+
+    private fun inspectEnvironment(): PortResult<PixelCameraEnvironment> {
+        val result = runCatching(environmentProbe)
+        result.exceptionOrNull()?.rethrowNonRecoverable()
+        return result.getOrElse { failure ->
+            PortResult.Unavailable(
+                AutomationFailure(
+                    code = AutomationFailureCode.UNKNOWN,
+                    message = "Pixel Camera environment inspection failed",
+                    context = mapOf(
+                        "exception" to failure::class.java.simpleName.take(MAX_EXCEPTION_TYPE_NAME_LENGTH),
+                    ),
+                ),
+            )
+        }
+    }
+
+    private fun Throwable.rethrowNonRecoverable() {
+        if (this is CancellationException || this is Error) throw this
+    }
+
+    private companion object {
+        const val MAX_EXCEPTION_TYPE_NAME_LENGTH = 256
     }
 
     private fun persistenceFailure(
         stage: ProfilePersistenceStage,
-        failure: Exception,
+        failure: Throwable,
     ): InstallKnownPixelCameraProfileResult.PersistenceFailure =
         InstallKnownPixelCameraProfileResult.PersistenceFailure(
             stage = stage,
