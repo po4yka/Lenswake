@@ -8,6 +8,7 @@ import android.os.StatFs
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.po4yka.lenswake.LenswakeApplication
+import dev.po4yka.lenswake.core.PreflightCheck
 import dev.po4yka.lenswake.core.PreflightCheckType
 import dev.po4yka.lenswake.core.PreflightStatus
 import dev.po4yka.lenswake.platform.DeviceWakeController
@@ -47,6 +48,17 @@ class AndroidRuntimePreflightProbeTest {
         ).inspect(emptyList())
 
         val checks = report.checks.associateBy { it.type }
+        assertAlarmAndNotificationCapabilities(application, checks)
+        assertMediaAndCameraCapabilities(application, checks)
+        assertBatteryCapabilities(application, checks)
+        assertStorageCapability(application, checks)
+        assertTrue(report.readiness is dev.po4yka.lenswake.core.ScheduleReadiness.Blocked)
+    }
+
+    private fun assertAlarmAndNotificationCapabilities(
+        application: LenswakeApplication,
+        checks: Map<PreflightCheckType, PreflightCheck>,
+    ) {
         val alarmManager = application.getSystemService(AlarmManager::class.java)
         assertEquals(
             if (alarmManager.canScheduleExactAlarms()) PreflightStatus.PASSED else PreflightStatus.FAILED,
@@ -63,15 +75,25 @@ class AndroidRuntimePreflightProbeTest {
             },
             checks.getValue(PreflightCheckType.NOTIFICATIONS).status,
         )
+        assertEquals(
+            if (notificationManager.canUseFullScreenIntent()) {
+                PreflightStatus.PASSED
+            } else {
+                PreflightStatus.FAILED
+            },
+            checks.getValue(PreflightCheckType.FULL_SCREEN_INTENT).status,
+        )
+    }
+
+    private fun assertMediaAndCameraCapabilities(
+        application: LenswakeApplication,
+        checks: Map<PreflightCheckType, PreflightCheck>,
+    ) {
         val mediaVideoPermission = application.checkSelfPermission(android.Manifest.permission.READ_MEDIA_VIDEO) ==
             PackageManager.PERMISSION_GRANTED
         assertEquals(
             if (mediaVideoPermission) PreflightStatus.PASSED else PreflightStatus.FAILED,
             checks.getValue(PreflightCheckType.MEDIA_VIDEO_ACCESS).status,
-        )
-        assertEquals(
-            if (notificationManager.canUseFullScreenIntent()) PreflightStatus.PASSED else PreflightStatus.FAILED,
-            checks.getValue(PreflightCheckType.FULL_SCREEN_INTENT).status,
         )
         assertEquals(
             PreflightStatus.PASSED,
@@ -88,6 +110,12 @@ class AndroidRuntimePreflightProbeTest {
         assertTrue(checks.containsKey(PreflightCheckType.ACCESSIBILITY_ENABLED))
         assertTrue(checks.containsKey(PreflightCheckType.ACCESSIBILITY_CONNECTED))
         assertEquals(PreflightStatus.PASSED, checks.getValue(PreflightCheckType.DEVICE_WAKE).status)
+    }
+
+    private fun assertBatteryCapabilities(
+        application: LenswakeApplication,
+        checks: Map<PreflightCheckType, PreflightCheck>,
+    ) {
         val batteryManager = application.getSystemService(BatteryManager::class.java)
         val batteryPercent = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
         assertEquals(
@@ -112,6 +140,12 @@ class AndroidRuntimePreflightProbeTest {
             },
             checks.getValue(PreflightCheckType.CHARGING).status,
         )
+    }
+
+    private fun assertStorageCapability(
+        application: LenswakeApplication,
+        checks: Map<PreflightCheckType, PreflightCheck>,
+    ) {
         val primarySharedStorage = application.getExternalFilesDir(null)
         if (primarySharedStorage != null) {
             val available = StatFs(primarySharedStorage.absolutePath).availableBytes
@@ -130,7 +164,6 @@ class AndroidRuntimePreflightProbeTest {
                 checks.getValue(PreflightCheckType.STORAGE).status,
             )
         }
-        assertTrue(report.readiness is dev.po4yka.lenswake.core.ScheduleReadiness.Blocked)
     }
 
     @Test

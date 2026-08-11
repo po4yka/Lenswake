@@ -18,9 +18,12 @@ import dev.po4yka.lenswake.application.RuntimePreflightProbe
 import dev.po4yka.lenswake.application.localizedText
 import dev.po4yka.lenswake.automation.PortResult
 import dev.po4yka.lenswake.core.ExecutionRepository
+import dev.po4yka.lenswake.core.ExecutionSession
+import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PreflightReport
 import dev.po4yka.lenswake.core.PreflightStatus
+import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.platform.PlatformCapability
 import dev.po4yka.lenswake.platform.AndroidDeviceWakeController
@@ -29,6 +32,7 @@ import dev.po4yka.lenswake.platform.SecurePixelCameraResolver
 import dev.po4yka.lenswake.ui.AndroidUiStringProvider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import java.util.concurrent.CancellationException
 
 /** Android-backed readiness inspection. It is observational and never grants special access. */
 class AndroidRuntimePreflightProbe(
@@ -51,28 +55,7 @@ class AndroidRuntimePreflightProbe(
         .map { }
 
     override suspend fun inspect(profiles: List<PixelCameraProfile>): PreflightReport {
-        val environmentInspection = runCatching(cameraEnvironmentProbe::inspect)
-        val environmentResult = environmentInspection.getOrNull()
-        val currentEnvironment = (environmentResult as? PortResult.Observed)?.value
-        val cameraFailure = (environmentResult as? PortResult.Unavailable)?.failure
-        val cameraStatus = when {
-            currentEnvironment != null -> PreflightStatus.PASSED
-            environmentInspection.isFailure -> PreflightStatus.UNKNOWN
-            else -> PreflightStatus.FAILED
-        }
-        val rehearsalEvidence = runCatching {
-            if (currentEnvironment == null) {
-                emptyMap()
-            } else {
-                profiles
-                    .filter { profile -> profile.environment == currentEnvironment }
-                    .mapNotNull { profile ->
-                        executionRepository.latestSuccessfulRehearsal(profile.id)
-                            ?.let { profile.id to it }
-                    }
-                    .toMap()
-            }
-        }
+        val camera = observeCamera(profiles)
 
         return evaluator.evaluate(
             observation = RuntimePreflightObservation(
@@ -80,21 +63,8 @@ class AndroidRuntimePreflightProbe(
                 notifications = notificationObservation(),
                 mediaVideoAccess = mediaVideoAccessObservation(),
                 fullScreenIntent = fullScreenIntentObservation(),
-                pixelCameraInstalled = RuntimeCapabilityObservation(
-                    status = cameraStatus,
-                    message = currentEnvironment?.let {
-                        localizedText(
-                            R.string.preflight_pixel_camera_installed,
-                            it.cameraVersionCode,
-                            it.deviceModel,
-                        )
-                    } ?: if (cameraFailure != null || environmentInspection.isFailure) {
-                        localizedText(R.string.preflight_pixel_camera_check_failed)
-                    } else {
-                        localizedText(R.string.preflight_pixel_camera_unknown)
-                    },
-                ),
-                cameraEnvironment = currentEnvironment,
+                pixelCameraInstalled = camera.capability,
+                cameraEnvironment = camera.environment,
                 secureCameraResolves = secureCameraObservation(),
                 deviceWake = deviceWakeObservation(),
                 accessibilityEnabled = accessibilityEnabledObservation(),
@@ -110,12 +80,51 @@ class AndroidRuntimePreflightProbe(
                     }.getOrNull(),
                 ),
                 storage = storageObservation(),
-                successfulRehearsals = rehearsalEvidence.getOrDefault(emptyMap()),
-                rehearsalEvidenceFailure = rehearsalEvidence.exceptionOrNull()?.let {
+                successfulRehearsals = camera.rehearsals.getOrDefault(emptyMap()),
+                rehearsalEvidenceFailure = camera.rehearsals.exceptionOrNull()?.let {
                     localizedText(R.string.preflight_rehearsal_evidence_load_failed)
                 },
             ),
             profiles = profiles,
+        )
+    }
+
+    private suspend fun observeCamera(profiles: List<PixelCameraProfile>): CameraObservation {
+        val inspection = runSuspendCatchingPreservingCancellation(cameraEnvironmentProbe::inspect)
+        val result = inspection.getOrNull()
+        val environment = (result as? PortResult.Observed)?.value
+        val cameraFailure = (result as? PortResult.Unavailable)?.failure
+        val status = when {
+            environment != null -> PreflightStatus.PASSED
+            inspection.isFailure -> PreflightStatus.UNKNOWN
+            else -> PreflightStatus.FAILED
+        }
+        val rehearsals = runSuspendCatchingPreservingCancellation {
+            profiles
+                .filter { profile -> profile.environment == environment }
+                .mapNotNull { profile ->
+                    executionRepository.latestSuccessfulRehearsal(profile.id)
+                        ?.let { profile.id to it }
+                }
+                .toMap()
+                .takeIf { environment != null }
+                .orEmpty()
+        }
+        val message = environment?.let {
+            localizedText(
+                R.string.preflight_pixel_camera_installed,
+                it.cameraVersionCode,
+                it.deviceModel,
+            )
+        } ?: if (cameraFailure != null || inspection.isFailure) {
+            localizedText(R.string.preflight_pixel_camera_check_failed)
+        } else {
+            localizedText(R.string.preflight_pixel_camera_unknown)
+        }
+        return CameraObservation(
+            capability = RuntimeCapabilityObservation(status, message),
+            environment = environment,
+            rehearsals = rehearsals,
         )
     }
 
@@ -376,4 +385,22 @@ internal fun storageObservation(
     )
 }
 
-private fun Long.toReadableMiB(): Long = this / (1024L * 1024L)
+private fun Long.toReadableMiB(): Long = this / BYTES_PER_MEBIBYTE
+
+private const val BYTES_PER_MEBIBYTE = 1024L * 1024L
+
+private data class CameraObservation(
+    val capability: RuntimeCapabilityObservation,
+    val environment: PixelCameraEnvironment?,
+    val rehearsals: Result<Map<ProfileId, ExecutionSession>>,
+)
+
+internal suspend inline fun <T> runSuspendCatchingPreservingCancellation(
+    crossinline operation: suspend () -> T,
+): Result<T> {
+    val result = runCatching { operation() }
+    val failure = result.exceptionOrNull()
+    if (failure is CancellationException) throw failure
+    if (failure != null && failure !is Exception) throw failure
+    return result
+}
