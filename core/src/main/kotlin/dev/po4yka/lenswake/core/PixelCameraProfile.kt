@@ -50,14 +50,7 @@ object ProfileCompatibilityEvaluator {
             return ProfileCompatibility.INCOMPATIBLE
         }
 
-        if (
-            calibrated.androidSdk != current.androidSdk ||
-            calibrated.cameraVersionCode != current.cameraVersionCode ||
-            calibrated.localeTag != current.localeTag ||
-            calibrated.displayWidthPx != current.displayWidthPx ||
-            calibrated.displayHeightPx != current.displayHeightPx ||
-            calibrated.densityDpi != current.densityDpi
-        ) {
+        if (calibrated.hasRuntimeConfigurationDrift(current)) {
             return ProfileCompatibility.NEEDS_REHEARSAL
         }
 
@@ -68,6 +61,16 @@ object ProfileCompatibilityEvaluator {
         }
     }
 }
+
+private fun PixelCameraEnvironment.hasRuntimeConfigurationDrift(current: PixelCameraEnvironment): Boolean =
+    listOf(
+        androidSdk != current.androidSdk,
+        cameraVersionCode != current.cameraVersionCode,
+        localeTag != current.localeTag,
+        displayWidthPx != current.displayWidthPx,
+        displayHeightPx != current.displayHeightPx,
+        densityDpi != current.densityDpi,
+    ).any { it }
 
 data class PixelCameraProfile(
     val id: ProfileId,
