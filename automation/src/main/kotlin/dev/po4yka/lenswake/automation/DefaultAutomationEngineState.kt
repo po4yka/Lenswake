@@ -146,6 +146,7 @@ internal class EngineAbort(
 internal sealed interface TimedCall<out T> {
         data class Completed<T>(
             val value: T,
+            val durationMs: Long,
         ) : TimedCall<T>
 
         data object TimedOut : TimedCall<Nothing>

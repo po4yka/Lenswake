@@ -2169,7 +2169,10 @@ automation.stop.verified
 
 # 57. Diagnostics Export
 
-A session report may be exportable as JSON or text.
+A session report is exportable as text using the same session grouping shown in the UI. It includes
+the ordered event timeline, session duration, explicitly measured step durations, matched selector
+signals, weakest selector score and threshold, retry count, accessibility gesture fallback count,
+and privileged-input fallback count.
 
 Example:
 
@@ -2345,7 +2348,7 @@ Fallback usage
 
 # 65. Diagnostics UI
 
-Show:
+Show setup state:
 
 ```text
 Exact alarms
@@ -2359,6 +2362,12 @@ storage
 thermal
 latest automation failure
 ```
+
+Automation history is session-centric rather than a process-wide flat event feed. The latest ten
+persisted sessions are shown newest-first, while every event inside a shown session remains
+available in chronological order. Each session card includes actual recording duration when both
+verification timestamps exist, retry/fallback totals, the weakest selector confidence observed,
+and per-event timing, attempt, interaction method, and selector confidence.
 
 ---
 

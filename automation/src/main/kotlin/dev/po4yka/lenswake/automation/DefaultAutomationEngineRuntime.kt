@@ -61,6 +61,7 @@ internal class RunContext(
             outcome: AutomationOutcome,
             method: InteractionMethod? = null,
             attempt: Int? = null,
+            durationMs: Long? = null,
             failure: AutomationFailure? = null,
             metadata: Map<String, String> = emptyMap(),
             update: (ExecutionSession, Instant) -> ExecutionSession = { session, _ -> session },
@@ -86,6 +87,7 @@ internal class RunContext(
                 outcome = outcome,
                 interactionMethod = method,
                 attempt = attempt,
+                durationMs = durationMs,
                 failure = failure,
                 metadata = metadata,
             )
@@ -118,6 +120,24 @@ internal class RunContext(
                     ),
                 )
             }
+        }
+
+        suspend fun transitionDispatched(
+            state: AutomationStateName,
+            operation: AutomationOperation,
+            attempt: Int,
+            durationMs: Long,
+            dispatch: ActionDispatch.Dispatched,
+        ) {
+            transition(
+                state = state,
+                operation = operation,
+                outcome = AutomationOutcome.DISPATCHED,
+                method = dispatch.method,
+                attempt = attempt,
+                durationMs = durationMs,
+                metadata = dispatch.metadata,
+            )
         }
 
     private fun ensureRevisionCanAdvance() {

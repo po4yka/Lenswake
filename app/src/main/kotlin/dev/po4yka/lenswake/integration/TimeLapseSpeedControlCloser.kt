@@ -58,7 +58,7 @@ internal class TimeLapseSpeedControlCloser(
         profile: PixelCameraProfile,
         nodes: List<UiNodeSnapshot>,
     ): ActionDispatch = when (val picker = bindPicker(profile, nodes)) {
-        is PickerBinding.Bound -> mapGlobalBack(gateway.dispatchGlobalBack(picker.node))
+        is PickerBinding.Bound -> mapGlobalBack(picker.match, gateway.dispatchGlobalBack(picker.match.node))
         is PickerBinding.Rejected -> ActionDispatch.Rejected(picker.failure)
     }
 
@@ -69,7 +69,7 @@ internal class TimeLapseSpeedControlCloser(
         ?.let { selectorMatcher.match(it, profile, nodes) }
         ?.let { match ->
             when (match) {
-                is SelectorMatchResult.Match -> PickerBinding.Bound(match.node)
+                is SelectorMatchResult.Match -> PickerBinding.Bound(match)
                 is SelectorMatchResult.Ambiguous,
                 is SelectorMatchResult.BelowThreshold,
                 SelectorMatchResult.NoEligibleNodes,
@@ -83,9 +83,13 @@ internal class TimeLapseSpeedControlCloser(
         ),
     )
 
-    private fun mapGlobalBack(result: AccessibilityDispatchResult): ActionDispatch = when (result) {
+    private fun mapGlobalBack(
+        match: SelectorMatchResult.Match,
+        result: AccessibilityDispatchResult,
+    ): ActionDispatch = when (result) {
         AccessibilityDispatchResult.GlobalActionDispatched -> ActionDispatch.Dispatched(
             InteractionMethod.ACCESSIBILITY_ACTION,
+            match.selectorMetadata(),
         )
         AccessibilityDispatchResult.ServiceDisconnected -> rejectedClose(
             AutomationFailureCode.ACCESSIBILITY_DISABLED,
@@ -159,7 +163,7 @@ private sealed interface PickerValidation {
 }
 
 private sealed interface PickerBinding {
-    data class Bound(val node: UiNodeSnapshot) : PickerBinding
+    data class Bound(val match: SelectorMatchResult.Match) : PickerBinding
 
     data class Rejected(val failure: AutomationFailure) : PickerBinding
 }

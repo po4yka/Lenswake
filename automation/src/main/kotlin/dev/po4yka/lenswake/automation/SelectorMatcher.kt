@@ -60,6 +60,7 @@ sealed interface SelectorMatchResult {
     data class Match(
         val node: UiNodeSnapshot,
         val score: Int,
+        val minimumScore: Int,
         val selectorIndex: Int,
         val matchedSignals: Set<SelectorSignal>,
     ) : SelectorMatchResult
@@ -127,7 +128,7 @@ class SelectorMatcher {
             )
 
             bestCandidates.size > 1 -> SelectorMatchResult.Ambiguous(bestCandidates, bestScore)
-            else -> bestCandidates.single().toMatchResult()
+            else -> bestCandidates.single().toMatchResult(minimumScore)
         }
     }
 
@@ -208,9 +209,10 @@ class SelectorMatcher {
     private fun configuredStateMatches(expected: Boolean?, actual: Boolean?): Boolean =
         expected != null && expected == actual
 
-    private fun SelectorCandidate.toMatchResult() = SelectorMatchResult.Match(
+    private fun SelectorCandidate.toMatchResult(minimumScore: Int) = SelectorMatchResult.Match(
         node = node,
         score = score,
+        minimumScore = minimumScore,
         selectorIndex = selectorIndex,
         matchedSignals = matchedSignals,
     )

@@ -19,7 +19,7 @@ data class LenswakeUiState(
     val schedules: List<ScheduleSummaryUiState> = emptyList(),
     val profiles: List<ProfileSummaryUiState> = emptyList(),
     val capabilities: List<CapabilityUiState> = emptyList(),
-    val diagnosticEvents: List<DiagnosticEventUiState> = emptyList(),
+    val diagnosticSessions: List<DiagnosticSessionUiState> = emptyList(),
     val alarmTransportIncidents: List<AlarmTransportIncidentUiState> = emptyList(),
     val profilePersistenceIssues: List<ProfilePersistenceIssueUiState> = emptyList(),
     val profileInstall: ProfileInstallUiState = ProfileInstallUiState.Idle,
@@ -225,11 +225,41 @@ data class ProfileSummaryUiState(
 )
 
 @Immutable
-data class DiagnosticEventUiState(
+data class DiagnosticSessionUiState(
+    val id: String,
+    val title: String,
+    val detail: String,
+    val status: String,
+    val duration: String,
+    val metrics: DiagnosticSessionMetricsUiState,
+    val timeline: List<DiagnosticTimelineEventUiState>,
+)
+
+@Immutable
+data class DiagnosticSessionMetricsUiState(
+    val retryCount: Int,
+    val fallbackCount: Int,
+    val privilegedFallbackCount: Int,
+    val selectorConfidence: DiagnosticSelectorConfidenceUiState?,
+)
+
+@Immutable
+data class DiagnosticTimelineEventUiState(
     val id: String,
     val title: String,
     val detail: String,
     val occurredAt: String,
+    val duration: String?,
+    val interactionMethod: String?,
+    val attempt: Int?,
+    val selectorConfidence: DiagnosticSelectorConfidenceUiState?,
+    val selectorMatch: String? = null,
+)
+
+@Immutable
+data class DiagnosticSelectorConfidenceUiState(
+    val score: Int,
+    val minimumScore: Int,
 )
 
 @Immutable

@@ -26,6 +26,7 @@ import dev.po4yka.lenswake.core.supports
 import java.time.Instant
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.TimeSource
 
 internal fun EngineEnvironment.persistenceFailure(
     message: String,
@@ -90,7 +91,9 @@ internal suspend fun <T> EngineEnvironment.timed(
         operation: AutomationOperation,
         block: suspend () -> T,
     ): TimedCall<T> = withTimeoutOrNull(config.timeoutFor(operation)) {
-        TimedCall.Completed(block())
+        val startedAt = TimeSource.Monotonic.markNow()
+        val value = block()
+        TimedCall.Completed(value, startedAt.elapsedNow().inWholeMilliseconds)
     } ?: TimedCall.TimedOut
 
 internal fun EngineEnvironment.timeoutFailure(operation: AutomationOperation): AutomationFailure = failure(

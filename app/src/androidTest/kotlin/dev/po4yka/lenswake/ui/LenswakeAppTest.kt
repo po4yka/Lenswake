@@ -94,7 +94,7 @@ class LenswakeAppTest {
     }
 
     @Test
-    fun diagnosticsPrioritizesAttentionAndActivityOverSetupChecks() {
+    fun diagnosticsPrioritizesAttentionAndSessionTimelineOverSetupChecks() {
         setContent(
             state = LenswakeUiState(
                 capabilities = listOf(
@@ -120,14 +120,7 @@ class LenswakeAppTest {
                         detail = "A stored profile could not be read.",
                     ),
                 ),
-                diagnosticEvents = listOf(
-                    DiagnosticEventUiState(
-                        id = "event-1",
-                        title = "automation.record.stop_verified",
-                        detail = "Completed",
-                        occurredAt = "08:31",
-                    ),
-                ),
+                diagnosticSessions = listOf(diagnosticSession()),
             ),
         )
 
@@ -135,25 +128,18 @@ class LenswakeAppTest {
 
         composeRule.onNodeWithText("Needs attention").assertExists()
         composeRule.onNodeWithText("Hidden setup check").assertDoesNotExist()
-        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(4)
-        composeRule.onNodeWithText("Activity").assertExists()
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(5)
+        composeRule.onNodeWithText("Sessions").assertExists()
         composeRule.onNodeWithText("automation.record.stop_verified").assertExists()
         composeRule.onNodeWithText("Recorded event").assertDoesNotExist()
     }
 
     @Test
-    fun diagnosticsExportDispatchesWhenActivityExists() {
+    fun diagnosticsExportDispatchesWhenSessionExists() {
         var exportRequests = 0
         setContent(
             state = LenswakeUiState(
-                diagnosticEvents = listOf(
-                    DiagnosticEventUiState(
-                        id = "event-1",
-                        title = "automation.record.stop_verified",
-                        detail = "Completed",
-                        occurredAt = "08:31",
-                    ),
-                ),
+                diagnosticSessions = listOf(diagnosticSession()),
                 actions = UiActionAvailability(canExportDiagnostics = true),
             ),
             onExportDiagnostics = { exportRequests += 1 },
@@ -760,6 +746,33 @@ private fun testSchedule(
     capture = CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120),
     profileId = "profile-verified",
     enabled = true,
+)
+
+private fun diagnosticSession() = DiagnosticSessionUiState(
+    id = "session-1",
+    title = "Morning capture",
+    detail = "08:00 · Session session-1",
+    status = "COMPLETED",
+    duration = "1m 0s",
+    metrics = DiagnosticSessionMetricsUiState(
+        retryCount = 1,
+        fallbackCount = 1,
+        privilegedFallbackCount = 0,
+        selectorConfidence = DiagnosticSelectorConfidenceUiState(180, 160),
+    ),
+    timeline = listOf(
+        DiagnosticTimelineEventUiState(
+            id = "event-1",
+            title = "automation.record.stop_verified",
+            detail = "Completed",
+            occurredAt = "08:31",
+            duration = "2s",
+            interactionMethod = "ACCESSIBILITY_ACTION",
+            attempt = 1,
+            selectorConfidence = DiagnosticSelectorConfidenceUiState(180, 160),
+            selectorMatch = "Selector match: #0 (RESOURCE_ID)",
+        ),
+    ),
 )
 
 private val TEST_SUPPORTED_CAPTURES = setOf(

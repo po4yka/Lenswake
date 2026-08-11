@@ -15,6 +15,7 @@ import dev.po4yka.lenswake.core.ExecutionChange
 import dev.po4yka.lenswake.core.ExecutionRepository
 import dev.po4yka.lenswake.core.ExecutionReservationResult
 import dev.po4yka.lenswake.core.ExecutionSession
+import dev.po4yka.lenswake.core.InteractionMethod
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PixelCameraStateSignal
@@ -83,11 +84,105 @@ import org.junit.jupiter.api.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class LenswakeUiStateMapperTest : LenswakeViewModelTestSupport() {
     @Test
+    fun mapperUsesSessionIdAsTheStableNewestSessionTieBreaker() {
+        val laterId = session().copy(
+            id = SessionId("session-z"),
+            executionKey = "execution-z",
+        )
+        val earlierId = session().copy(
+            id = SessionId("session-a"),
+            executionKey = "execution-a",
+        )
+
+        val state = LenswakeUiStateMapper.map(
+            schedules = emptyList(),
+            profiles = emptyList(),
+            events = emptyList(),
+            executions = listOf(laterId, earlierId),
+            preflight = blockedPreflight(),
+            now = now,
+            strings = TestUiStringProvider,
+        )
+
+        assertEquals(listOf("session-a", "session-z"), state.diagnosticSessions.map { it.id })
+    }
+
+    @Test
+    fun mapperBuildsSessionTimelineWithDurationConfidenceAndReliabilityMetrics() {
+        val completedSession = session().copy(
+            status = dev.po4yka.lenswake.core.SessionStatus.COMPLETED,
+            recordingVerifiedAt = now.plusSeconds(10),
+            stoppedVerifiedAt = now.plusSeconds(70),
+            updatedAt = now.plusSeconds(75),
+        )
+        val events = reliabilityEvents()
+
+        val state = LenswakeUiStateMapper.map(
+            schedules = emptyList(),
+            profiles = emptyList(),
+            events = events,
+            executions = listOf(completedSession),
+            preflight = blockedPreflight(),
+            now = now.plusSeconds(75),
+            strings = TestUiStringProvider,
+        )
+
+        val diagnostics = state.diagnosticSessions.single()
+        assertEquals("Morning capture", diagnostics.title)
+        assertEquals("COMPLETED", diagnostics.status)
+        assertEquals("1m 0s", diagnostics.duration)
+        assertEquals(1, diagnostics.metrics.retryCount)
+        assertEquals(1, diagnostics.metrics.fallbackCount)
+        assertEquals(1, diagnostics.metrics.privilegedFallbackCount)
+        assertEquals(180, diagnostics.metrics.selectorConfidence?.score)
+        assertEquals(160, diagnostics.metrics.selectorConfidence?.minimumScore)
+        assertEquals(listOf("event-dispatched", "event-retry", "event-privileged"), diagnostics.timeline.map { it.id })
+        assertEquals("2s", diagnostics.timeline.first().duration)
+        assertEquals(null, diagnostics.timeline[1].duration)
+        assertEquals(180, diagnostics.timeline.first().selectorConfidence?.score)
+        assertEquals("Selector match: #0 (RESOURCE_ID)", diagnostics.timeline.first().selectorMatch)
+    }
+
+    private fun reliabilityEvents() = listOf(
+        event().copy(
+            id = EventId("event-dispatched"),
+            sequence = 1,
+            timestamp = now.plusSeconds(10),
+            outcome = AutomationOutcome.DISPATCHED,
+            interactionMethod = InteractionMethod.ACCESSIBILITY_PROFILE_GESTURE,
+            attempt = 1,
+            durationMs = 2_000,
+            metadata = mapOf(
+                "selectorScore" to "180",
+                "selectorMinimumScore" to "160",
+                "selectorIndex" to "0",
+                "selectorSignals" to "RESOURCE_ID",
+            ),
+        ),
+        event().copy(
+            id = EventId("event-retry"),
+            sequence = 2,
+            timestamp = now.plusSeconds(12),
+            outcome = AutomationOutcome.RETRYING,
+            attempt = 2,
+        ),
+        event().copy(
+            id = EventId("event-privileged"),
+            sequence = 3,
+            timestamp = now.plusSeconds(15),
+            outcome = AutomationOutcome.DISPATCHED,
+            interactionMethod = InteractionMethod.PRIVILEGED_INPUT,
+            attempt = 2,
+        ),
+    )
+
+    @Test
     fun mapperProjectsPersistedDataWithoutClaimingCurrentReadiness() {
         val state = LenswakeUiStateMapper.map(
             schedules = listOf(schedule()),
             profiles = listOf(profile()),
             events = listOf(event()),
+            executions = listOf(session()),
             preflight = blockedPreflight(),
             now = now,
             strings = TestUiStringProvider,
@@ -104,7 +199,7 @@ class LenswakeUiStateMapperTest : LenswakeViewModelTestSupport() {
             CapabilityStatus.BLOCKED,
             state.capabilities.single { it.name == "Lenswake Accessibility Service" }.status,
         )
-        assertEquals("automation.record.start_verified", state.diagnosticEvents.single().title)
+        assertEquals("automation.record.start_verified", state.diagnosticSessions.single().timeline.single().title)
         assertFalse(state.actions.canCreateSchedule)
         assertTrue(state.actions.canInstallCandidateProfile)
         assertTrue(state.actions.canExportDiagnostics)
@@ -297,7 +392,9 @@ class LenswakeViewModelTest : LenswakeViewModelTestSupport() {
         try {
             val loaded = async {
                 viewModel.state.first {
-                    it.schedules.size == 1 && it.profiles.size == 1 && it.diagnosticEvents.size == 1
+                    it.schedules.size == 1 &&
+                        it.profiles.size == 1 &&
+                        it.diagnosticSessions.singleOrNull()?.timeline?.size == 1
                 }
             }
 
@@ -309,8 +406,49 @@ class LenswakeViewModelTest : LenswakeViewModelTestSupport() {
             val state = loaded.await()
             assertEquals("Morning capture", state.schedules.single().title)
             assertEquals("Pixel 8 Pro", state.profiles.single().title)
-            assertEquals("VERIFY_RECORDING", state.diagnosticEvents.single().detail.substringAfterLast(" - "))
+            assertEquals(
+                "VERIFY_RECORDING",
+                state.diagnosticSessions.single().timeline.single().detail.substringAfterLast(" - "),
+            )
             assertInstanceOf(ReadinessUiState.Blocked::class.java, state.readiness)
+        } finally {
+            viewModel.viewModelScope.cancel()
+        }
+    }
+
+    @Test
+    fun viewModelKeepsTheCompleteTimelineForAnObservedSession() = runTest {
+        val schedules = FakeScheduleRepository()
+        val profiles = FakeProfileRepository()
+        val executions = FakeExecutionRepository()
+        val viewModel = LenswakeViewModel(
+            schedules,
+            profiles,
+            executions,
+            RuntimePreflightProbe { blockedPreflight() },
+            installUseCase(profiles),
+            unavailableRehearsalCoordinator(),
+            scheduleWorkflow(schedules, profiles),
+            TestUiStringProvider,
+        )
+
+        try {
+            executions.reservePixelCamera(session())
+            repeat(75) { index ->
+                executions.publish(
+                    event().copy(
+                        id = EventId("event-$index"),
+                        sequence = index.toLong(),
+                        timestamp = now.plusMillis(index.toLong()),
+                    ),
+                )
+            }
+
+            val state = viewModel.state.first {
+                it.diagnosticSessions.singleOrNull()?.timeline?.size == 75
+            }
+
+            assertEquals(75, state.diagnosticSessions.single().timeline.size)
         } finally {
             viewModel.viewModelScope.cancel()
         }

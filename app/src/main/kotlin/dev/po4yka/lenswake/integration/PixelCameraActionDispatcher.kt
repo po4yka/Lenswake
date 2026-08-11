@@ -43,7 +43,7 @@ internal class PixelCameraActionDispatcher(
         speed: TimeLapseSpeed?,
         nodes: List<UiNodeSnapshot>,
     ): ActionDispatch = when (val target = resolveTarget(action, profile, speed, nodes)) {
-        is TargetResolution.Node -> dispatchClick(action, profile, target.node)
+        is TargetResolution.Node -> dispatchClick(action, profile, target.match)
         TargetResolution.Fallback -> dispatchProfileGesture(action, profile)
         is TargetResolution.Rejected -> ActionDispatch.Rejected(target.failure)
     }
@@ -54,7 +54,7 @@ internal class PixelCameraActionDispatcher(
         speed: TimeLapseSpeed?,
         nodes: List<UiNodeSnapshot>,
     ): TargetResolution = when (val match = match(action, profile, speed, nodes)) {
-        is SelectorMatchResult.Match -> TargetResolution.Node(match.node)
+        is SelectorMatchResult.Match -> TargetResolution.Node(match)
         is SelectorMatchResult.Ambiguous -> TargetResolution.Rejected(
             accessibilityFailure(
                 AutomationFailureCode.UI_TARGET_AMBIGUOUS,
@@ -93,13 +93,15 @@ internal class PixelCameraActionDispatcher(
     private suspend fun dispatchClick(
         action: AutomationAction,
         profile: PixelCameraProfile,
-        node: UiNodeSnapshot,
-    ): ActionDispatch = when (gateway.dispatchClick(node)) {
+        match: SelectorMatchResult.Match,
+    ): ActionDispatch = when (gateway.dispatchClick(match.node)) {
         AccessibilityDispatchResult.SemanticActionDispatched -> dispatched(
             InteractionMethod.ACCESSIBILITY_ACTION,
+            match.selectorMetadata(),
         )
         AccessibilityDispatchResult.GestureSubmitted -> dispatched(
             InteractionMethod.ACCESSIBILITY_NODE_GESTURE,
+            match.selectorMetadata(),
         )
         AccessibilityDispatchResult.GlobalActionDispatched -> error(
             "A node click cannot return a global action dispatch",
@@ -197,7 +199,7 @@ internal class PixelCameraActionDispatcher(
 }
 
 private sealed interface TargetResolution {
-    data class Node(val node: UiNodeSnapshot) : TargetResolution
+    data class Node(val match: SelectorMatchResult.Match) : TargetResolution
 
     data class Rejected(val failure: AutomationFailure) : TargetResolution
 
@@ -210,7 +212,17 @@ private sealed interface ActionSnapshot {
     data class Rejected(val failure: AutomationFailure) : ActionSnapshot
 }
 
-private fun dispatched(method: InteractionMethod): ActionDispatch = ActionDispatch.Dispatched(method)
+private fun dispatched(
+    method: InteractionMethod,
+    metadata: Map<String, String> = emptyMap(),
+): ActionDispatch = ActionDispatch.Dispatched(method, metadata)
+
+internal fun SelectorMatchResult.Match.selectorMetadata(): Map<String, String> = mapOf(
+    "selectorScore" to score.toString(),
+    "selectorMinimumScore" to minimumScore.toString(),
+    "selectorIndex" to selectorIndex.toString(),
+    "selectorSignals" to matchedSignals.map { it.name }.sorted().joinToString(","),
+)
 
 private fun rejected(
     code: AutomationFailureCode,

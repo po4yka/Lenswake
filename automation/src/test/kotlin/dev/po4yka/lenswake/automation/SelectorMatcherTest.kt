@@ -39,6 +39,7 @@ class SelectorMatcherTest {
         val match = assertInstanceOf(SelectorMatchResult.Match::class.java, result)
         assertEquals("exact", match.node.id)
         assertEquals(230, match.score)
+        assertEquals(100, match.minimumScore)
     }
 
     @Test

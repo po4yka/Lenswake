@@ -86,7 +86,7 @@ internal class PixelCameraDialogRecoveryDispatcher(
         profileUse: ProfileUse,
         nodes: List<UiNodeSnapshot>,
     ): ActionDispatch = when (val match = selectorMatcher.match(target, profileUse.profile, nodes)) {
-        is SelectorMatchResult.Match -> mapDispatch(dialog, gateway.dispatchClick(match.node))
+        is SelectorMatchResult.Match -> mapDispatch(dialog, match, gateway.dispatchClick(match.node))
         is SelectorMatchResult.Ambiguous -> rejected(
             AutomationFailureCode.UI_TARGET_AMBIGUOUS,
             "Multiple Pixel Camera dialog recovery targets matched",
@@ -110,12 +110,13 @@ internal class PixelCameraDialogRecoveryDispatcher(
 
     private fun mapDispatch(
         dialog: PixelCameraDialogKind,
+        match: SelectorMatchResult.Match,
         result: AccessibilityDispatchResult,
     ): ActionDispatch = when (result) {
         AccessibilityDispatchResult.SemanticActionDispatched ->
-            ActionDispatch.Dispatched(InteractionMethod.ACCESSIBILITY_ACTION)
+            ActionDispatch.Dispatched(InteractionMethod.ACCESSIBILITY_ACTION, match.selectorMetadata())
         AccessibilityDispatchResult.GestureSubmitted ->
-            ActionDispatch.Dispatched(InteractionMethod.ACCESSIBILITY_NODE_GESTURE)
+            ActionDispatch.Dispatched(InteractionMethod.ACCESSIBILITY_NODE_GESTURE, match.selectorMetadata())
         AccessibilityDispatchResult.ServiceDisconnected -> rejected(
             AutomationFailureCode.ACCESSIBILITY_DISABLED,
             "Lenswake Accessibility Service disconnected before dialog recovery dispatch",

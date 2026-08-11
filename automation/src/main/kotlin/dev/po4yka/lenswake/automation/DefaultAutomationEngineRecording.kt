@@ -60,13 +60,7 @@ internal suspend fun EngineEnvironment.dispatchRecordingStart(context: RunContex
                 TimedCall.TimedOut -> fail(context, timeoutFailure(operation))
                 is TimedCall.Completed -> when (val dispatch = invocation.value) {
                     is ActionDispatch.Dispatched -> {
-                        context.transition(
-                            state = state,
-                            operation = operation,
-                            outcome = AutomationOutcome.DISPATCHED,
-                            method = dispatch.method,
-                            attempt = attempt,
-                        )
+                        context.transitionDispatched(state, operation, attempt, invocation.durationMs, dispatch)
                         return
                     }
 
@@ -177,13 +171,7 @@ internal suspend fun EngineEnvironment.dispatchRecordingStop(context: RunContext
                 TimedCall.TimedOut -> fail(context, timeoutFailure(operation))
                 is TimedCall.Completed -> when (val dispatch = invocation.value) {
                     is ActionDispatch.Dispatched -> {
-                        context.transition(
-                            state = state,
-                            operation = operation,
-                            outcome = AutomationOutcome.DISPATCHED,
-                            method = dispatch.method,
-                            attempt = attempt,
-                        )
+                        context.transitionDispatched(state, operation, attempt, invocation.durationMs, dispatch)
                         return
                     }
 
@@ -235,10 +223,11 @@ internal suspend fun EngineEnvironment.dispatch(
                 attempt = attempt,
                 metadata = metadata,
             )
+            var durationMs: Long? = null
             val result = safeCall(
                 block = {
                     when (val timed = timed(operation, action)) {
-                        is TimedCall.Completed -> timed.value
+                        is TimedCall.Completed -> timed.value.also { durationMs = timed.durationMs }
                         TimedCall.TimedOut -> ActionDispatch.Rejected(timeoutFailure(operation))
                     }
                 },
@@ -254,7 +243,8 @@ internal suspend fun EngineEnvironment.dispatch(
                         outcome = AutomationOutcome.DISPATCHED,
                         method = result.method,
                         attempt = attempt,
-                        metadata = metadata,
+                        durationMs = durationMs,
+                        metadata = metadata + result.metadata,
                         update = onDispatched,
                     )
                     return result.method

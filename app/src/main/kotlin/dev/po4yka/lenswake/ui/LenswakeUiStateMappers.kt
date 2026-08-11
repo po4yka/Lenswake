@@ -7,6 +7,7 @@ import dev.po4yka.lenswake.application.AlarmTransportIncidentAction
 import dev.po4yka.lenswake.core.AutomationEvent
 import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.ExecutionSession
+import dev.po4yka.lenswake.core.InteractionMethod
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PreflightCheck
 import dev.po4yka.lenswake.core.PreflightCheckType
@@ -21,12 +22,16 @@ import dev.po4yka.lenswake.core.ScheduleReadiness
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.supportedCaptureConfigurations
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
+
+internal val DIAGNOSTIC_SESSION_ORDER: Comparator<ExecutionSession> =
+    compareByDescending<ExecutionSession> { it.updatedAt }.thenBy { it.id.value }
 
 internal object LenswakeActionAvailabilityMapper {
     fun map(
@@ -65,8 +70,8 @@ internal object LenswakeActionAvailabilityMapper {
             activeSession,
             strings,
         ),
-        canExportDiagnostics = diagnosticsAvailable(events, incidents, profileIssues),
-        exportDiagnosticsUnavailableReason = if (diagnosticsAvailable(events, incidents, profileIssues)) {
+        canExportDiagnostics = diagnosticsAvailable(executions, events, incidents, profileIssues),
+        exportDiagnosticsUnavailableReason = if (diagnosticsAvailable(executions, events, incidents, profileIssues)) {
             ""
         } else {
             strings.get(R.string.action_diagnostics_empty_default)
@@ -141,10 +146,11 @@ internal object LenswakeActionAvailabilityMapper {
     }
 
     private fun diagnosticsAvailable(
+        executions: List<ExecutionSession>,
         events: List<AutomationEvent>,
         incidents: List<AlarmTransportIncident>,
         profileIssues: List<ProfilePersistenceIssue>,
-    ): Boolean = events.isNotEmpty() || incidents.isNotEmpty() || profileIssues.isNotEmpty()
+    ): Boolean = executions.isNotEmpty() || events.isNotEmpty() || incidents.isNotEmpty() || profileIssues.isNotEmpty()
 
     private fun PreflightReport.hasAllScheduleChecksPassed(): Boolean =
         scheduleRequiredChecks.all { type ->
@@ -390,7 +396,64 @@ internal object LenswakeProfileUiMapper {
 }
 
 internal object LenswakeDiagnosticsUiMapper {
-    fun eventSummary(event: AutomationEvent, strings: UiStringProvider): DiagnosticEventUiState {
+    fun sessions(
+        executions: List<ExecutionSession>,
+        events: List<AutomationEvent>,
+        strings: UiStringProvider,
+    ): List<DiagnosticSessionUiState> {
+        val eventsBySession = events.groupBy(AutomationEvent::sessionId)
+        return executions
+            .sortedWith(DIAGNOSTIC_SESSION_ORDER)
+            .take(MAX_SESSION_COUNT)
+            .map { session -> sessionSummary(session, eventsBySession[session.id].orEmpty(), strings) }
+    }
+
+    private fun sessionSummary(
+        session: ExecutionSession,
+        events: List<AutomationEvent>,
+        strings: UiStringProvider,
+    ): DiagnosticSessionUiState {
+        val orderedEvents = events.sortedWith(
+            compareBy<AutomationEvent> { it.timestamp }
+                .thenBy { it.sequence ?: Long.MAX_VALUE }
+                .thenBy { it.id.value },
+        )
+        val selectorConfidences = orderedEvents.mapNotNull(::selectorConfidence)
+        return DiagnosticSessionUiState(
+            id = session.id.value,
+            title = session.scheduleName?.takeIf(String::isNotBlank) ?: strings.get(
+                when (session.kind) {
+                    SessionKind.SCHEDULED -> R.string.diagnostics_scheduled_session_title
+                    SessionKind.REHEARSAL -> R.string.diagnostics_rehearsal_session_title
+                },
+            ),
+            detail = strings.get(
+                R.string.diagnostics_session_detail,
+                session.expectedStartAt.atOffset(ZoneOffset.UTC).format(eventTimeFormatter),
+                session.id.value,
+            ),
+            status = session.status.name,
+            duration = formatDuration(sessionDuration(session), strings),
+            metrics = DiagnosticSessionMetricsUiState(
+                retryCount = orderedEvents.count { it.outcome == dev.po4yka.lenswake.core.AutomationOutcome.RETRYING },
+                fallbackCount = orderedEvents.count { it.interactionMethod in fallbackMethods },
+                privilegedFallbackCount = orderedEvents.count {
+                    it.interactionMethod == InteractionMethod.PRIVILEGED_INPUT
+                },
+                selectorConfidence = selectorConfidences.minWithOrNull(
+                    compareBy<DiagnosticSelectorConfidenceUiState> {
+                        it.score.toDouble() / it.minimumScore.coerceAtLeast(1)
+                    }.thenBy { it.score },
+                ),
+            ),
+            timeline = orderedEvents.map { event -> eventSummary(event, strings) },
+        )
+    }
+
+    private fun eventSummary(
+        event: AutomationEvent,
+        strings: UiStringProvider,
+    ): DiagnosticTimelineEventUiState {
         val operation = event.operation
         val failure = event.failure
         val detail = when {
@@ -419,12 +482,65 @@ internal object LenswakeDiagnosticsUiMapper {
                 event.outcome.name,
             )
         }
-        return DiagnosticEventUiState(
+        return DiagnosticTimelineEventUiState(
             id = event.id.value,
             title = strings.get(R.string.diagnostics_event_title, event.name),
             detail = detail,
             occurredAt = event.timestamp.atOffset(ZoneOffset.UTC).format(eventTimeFormatter),
+            duration = event.durationMs?.let { formatDuration(Duration.ofMillis(it), strings) },
+            interactionMethod = event.interactionMethod?.name,
+            attempt = event.attempt,
+            selectorConfidence = selectorConfidence(event),
+            selectorMatch = selectorMatch(event, strings),
         )
+    }
+
+    private fun sessionDuration(session: ExecutionSession): Duration {
+        val start = session.recordingVerifiedAt ?: session.createdAt
+        val end = session.stoppedVerifiedAt ?: session.updatedAt
+        return Duration.between(start, end).coerceAtLeast(Duration.ZERO)
+    }
+
+    private fun selectorConfidence(event: AutomationEvent): DiagnosticSelectorConfidenceUiState? {
+        val values = event.failure?.context.orEmpty() + event.metadata
+        val score = (values[SELECTOR_SCORE] ?: values[BEST_SCORE])?.toIntOrNull()
+        val minimumScore = (values[SELECTOR_MINIMUM_SCORE] ?: values[MINIMUM_SCORE])?.toIntOrNull()
+        return if (score != null && minimumScore != null) {
+            DiagnosticSelectorConfidenceUiState(score = score, minimumScore = minimumScore)
+        } else {
+            null
+        }
+    }
+
+    private fun selectorMatch(event: AutomationEvent, strings: UiStringProvider): String? {
+        val index = event.metadata[SELECTOR_INDEX]?.toIntOrNull() ?: return null
+        val signals = event.metadata[SELECTOR_SIGNALS]
+        return if (signals.isNullOrBlank()) {
+            strings.get(R.string.diagnostics_selector_match_index, index)
+        } else {
+            strings.get(R.string.diagnostics_selector_match_signals, index, signals)
+        }
+    }
+
+    private fun formatDuration(duration: Duration, strings: UiStringProvider): String {
+        val millis = duration.toMillis()
+        val seconds = duration.seconds
+        val minutes = seconds / SECONDS_PER_MINUTE
+        val hours = minutes / MINUTES_PER_HOUR
+        return when {
+            hours > 0 -> strings.get(
+                R.string.diagnostics_duration_hours_minutes,
+                hours,
+                minutes % MINUTES_PER_HOUR,
+            )
+            minutes > 0 -> strings.get(
+                R.string.diagnostics_duration_minutes_seconds,
+                minutes,
+                seconds % SECONDS_PER_MINUTE,
+            )
+            seconds > 0 -> strings.get(R.string.diagnostics_duration_seconds, seconds)
+            else -> strings.get(R.string.diagnostics_duration_milliseconds, millis)
+        }
     }
 
     fun incidentSummary(
@@ -479,5 +595,18 @@ internal object LenswakeDiagnosticsUiMapper {
         AlarmTransportFailureCode.RECOVERY_REQUEUE_FAILED,
         AlarmTransportFailureCode.RECOVERY_CAPABILITY_UNAVAILABLE,
     )
+    private val fallbackMethods = setOf(
+        InteractionMethod.ACCESSIBILITY_NODE_GESTURE,
+        InteractionMethod.ACCESSIBILITY_PROFILE_GESTURE,
+    )
+    private const val MAX_SESSION_COUNT = 10
     private const val MAX_VISIBLE_PERSISTENCE_KEY_LENGTH = 64
+    private const val SELECTOR_SCORE = "selectorScore"
+    private const val SELECTOR_MINIMUM_SCORE = "selectorMinimumScore"
+    private const val BEST_SCORE = "bestScore"
+    private const val MINIMUM_SCORE = "minimumScore"
+    private const val SELECTOR_INDEX = "selectorIndex"
+    private const val SELECTOR_SIGNALS = "selectorSignals"
+    private const val SECONDS_PER_MINUTE = 60
+    private const val MINUTES_PER_HOUR = 60
 }

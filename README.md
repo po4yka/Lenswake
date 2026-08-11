@@ -1495,7 +1495,13 @@ Last rehearsal: PASS
 
 ## Diagnostics
 
-Shows:
+Shows operational setup state plus complete per-session reports. Each report groups its events as
+an ordered timeline, derives session duration, shows explicitly measured step durations, surfaces
+the matched selector signals and weakest observed score against its configured threshold, and totals retries,
+accessibility gesture fallbacks, and
+privileged-input fallbacks. Text export preserves the same session boundaries and metrics.
+
+Setup state includes:
 
 - permission state
 - exact alarm state

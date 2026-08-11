@@ -81,6 +81,20 @@
     <string name="active_session_detail">Session %1$s · STOP deadline %2$s</string>
 
     <string name="diagnostics_no_activity_title">No activity yet</string>
+    <string name="diagnostics_sessions_section">Sessions</string>
+    <string name="diagnostics_timeline_section">Timeline</string>
+    <string name="diagnostics_session_duration">Duration: %1$s</string>
+    <string name="diagnostics_retry_count">Retries: %1$d</string>
+    <string name="diagnostics_fallback_count">Gesture fallbacks: %1$d</string>
+    <string name="diagnostics_privileged_fallback_count">Privileged: %1$d</string>
+    <string name="diagnostics_selector_confidence">Selector: %1$d / %2$d</string>
+    <string name="diagnostics_selector_confidence_unavailable">Selector: no score</string>
+    <string name="diagnostics_event_duration">Duration: %1$s</string>
+    <string name="diagnostics_event_method">Method: %1$s</string>
+    <string name="diagnostics_event_attempt">Attempt: %1$d</string>
+    <string name="diagnostics_selector_match_index">Selector match: #%1$d</string>
+    <string name="diagnostics_selector_match_signals">Selector match: #%1$d (%2$s)</string>
+    <string name="diagnostics_event_metrics_separator"> · </string>
     <string name="diagnostics_export_title">Lenswake diagnostics</string>
     <string name="diagnostics_share_title">Share diagnostics</string>
     <string name="diagnostics_share_unavailable">No app is available to share diagnostics.</string>
@@ -88,6 +102,13 @@
     <string name="profile_storage_issue_detail">Stored profile entry “%1$s” is corrupt and was excluded. Lenswake cannot repair this entry. To remove it, clear Lenswake storage in Android settings; this permanently deletes all schedules, profiles, and history.</string>
     <string name="profile_storage_issue_blank_key">blank id</string>
     <string name="diagnostics_no_activity_detail">Recording activity and errors will appear here after Lenswake runs.</string>
+    <string name="diagnostics_scheduled_session_title">Scheduled session</string>
+    <string name="diagnostics_rehearsal_session_title">Rehearsal</string>
+    <string name="diagnostics_session_detail">%1$s · Session %2$s</string>
+    <string name="diagnostics_duration_milliseconds">%1$dms</string>
+    <string name="diagnostics_duration_seconds">%1$ds</string>
+    <string name="diagnostics_duration_minutes_seconds">%1$dm %2$ds</string>
+    <string name="diagnostics_duration_hours_minutes">%1$dh %2$dm</string>
     <string name="diagnostics_timed_detail">%1$s · %2$s</string>
     <string name="diagnostics_event_title">%1$s</string>
     <string name="diagnostics_event_detail">%1$s - %2$s</string>

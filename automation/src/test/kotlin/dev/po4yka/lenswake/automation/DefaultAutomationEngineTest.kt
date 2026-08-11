@@ -51,6 +51,30 @@ import kotlin.time.Duration.Companion.milliseconds
 
 class DefaultAutomationEngineTest {
     @Test
+    fun `dispatched selector confidence is persisted in the session timeline`() = runTest {
+        val session = session(status = SessionStatus.PENDING)
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(
+            state = PixelCameraState.Photo,
+            startDispatchMetadata = mapOf(
+                "selectorScore" to "180",
+                "selectorMinimumScore" to "160",
+            ),
+        )
+
+        val result = engine(repository, FakeDeviceControl(interactive = true), camera).start(session.id)
+
+        assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        val dispatch = repository.events.single {
+            it.operation == AutomationOperation.START_RECORDING &&
+                it.outcome == AutomationOutcome.DISPATCHED
+        }
+        assertEquals("180", dispatch.metadata["selectorScore"])
+        assertEquals("160", dispatch.metadata["selectorMinimumScore"])
+        assertNotNull(dispatch.durationMs)
+    }
+
+    @Test
     fun `start recovers a typed camera dialog before converging`() = runTest {
         val session = session(status = SessionStatus.PENDING)
         val repository = FakeExecutionRepository(session)
@@ -2107,6 +2131,7 @@ private fun engine(
         private val recordingStartsOnVerificationInspection: Int? = null,
         private val startException: Exception? = null,
         private val startDispatch: ActionDispatch? = null,
+        private val startDispatchMetadata: Map<String, String> = emptyMap(),
         private val onStartRecording: (suspend () -> Unit)? = null,
         private val suspendStop: Boolean = false,
         private val stopException: Exception? = null,
@@ -2292,7 +2317,7 @@ private fun engine(
                     else -> error("Record dispatch requires a configurable capture state")
                 }
             }
-            return dispatched()
+            return dispatched(startDispatchMetadata)
         }
 
         override suspend fun stopRecording(
@@ -2329,7 +2354,8 @@ private fun engine(
             return dispatched()
         }
 
-        private fun dispatched() = ActionDispatch.Dispatched(InteractionMethod.ACCESSIBILITY_ACTION)
+        private fun dispatched(metadata: Map<String, String> = emptyMap()) =
+            ActionDispatch.Dispatched(InteractionMethod.ACCESSIBILITY_ACTION, metadata)
     }
 
     private class FakeProfileRepository(

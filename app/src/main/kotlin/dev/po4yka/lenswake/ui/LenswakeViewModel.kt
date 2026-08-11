@@ -146,7 +146,7 @@ class LenswakeViewModel internal constructor(
     private val diagnosticEvents = executions
         .flatMapLatest { executions ->
             val eventFlows = executions
-                .sortedByDescending { it.updatedAt }
+                .sortedWith(DIAGNOSTIC_SESSION_ORDER)
                 .take(MAX_OBSERVED_SESSIONS)
                 .map { executionRepository.observeEvents(it.id) }
 
@@ -156,11 +156,6 @@ class LenswakeViewModel internal constructor(
                 combine(eventFlows) { eventsBySession ->
                     eventsBySession
                         .flatMap { it }
-                        .sortedWith(
-                            compareByDescending<AutomationEvent> { it.timestamp }
-                                .thenByDescending { it.sequence ?: -1L },
-                        )
-                        .take(MAX_VISIBLE_EVENTS)
                 }
             }
         }
@@ -298,7 +293,6 @@ class LenswakeViewModel internal constructor(
 
     private companion object {
         const val MAX_OBSERVED_SESSIONS = 10
-        const val MAX_VISIBLE_EVENTS = 50
         const val STOP_TIMEOUT_MILLIS = 5_000L
         const val DEADLINE_RECHECK_MILLIS = 30_000L
     }
@@ -444,7 +438,7 @@ internal object LenswakeUiStateMapper {
             .sortedWith(compareBy({ it.environment.deviceModel }, { it.id.value }))
             .map { LenswakeProfileUiMapper.summary(it, executions, strings) },
         capabilities = preflight.checks.map { LenswakeReadinessUiMapper.capability(it, strings) },
-        diagnosticEvents = events.map { LenswakeDiagnosticsUiMapper.eventSummary(it, strings) },
+        diagnosticSessions = LenswakeDiagnosticsUiMapper.sessions(executions, events, strings),
         alarmTransportIncidents = incidents.map { LenswakeDiagnosticsUiMapper.incidentSummary(it, strings) },
         profilePersistenceIssues = profileIssues.map {
             LenswakeDiagnosticsUiMapper.profilePersistenceIssueSummary(it, strings)

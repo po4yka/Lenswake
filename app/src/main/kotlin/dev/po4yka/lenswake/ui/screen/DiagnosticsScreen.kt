@@ -3,12 +3,16 @@ package dev.po4yka.lenswake.ui.screen
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,6 +21,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.ui.AlarmTransportIncidentUiAction
+import dev.po4yka.lenswake.ui.DiagnosticSessionUiState
+import dev.po4yka.lenswake.ui.DiagnosticTimelineEventUiState
 import dev.po4yka.lenswake.ui.LenswakeUiState
 import dev.po4yka.lenswake.ui.component.ScreenHeader
 import dev.po4yka.lenswake.ui.component.SectionHeading
@@ -44,7 +50,7 @@ fun DiagnosticsScreen(
         diagnosticsHeader()
         exportAction(state, onExportDiagnostics)
         attentionItems(state, onOpenPixelCamera)
-        diagnosticActivity(state)
+        diagnosticSessions(state)
     }
 }
 
@@ -113,10 +119,10 @@ private fun LazyListScope.attentionItems(
     }
 }
 
-private fun LazyListScope.diagnosticActivity(state: LenswakeUiState) {
-    item { SectionHeading(stringResource(R.string.section_activity)) }
-    item {
-        if (state.diagnosticEvents.isEmpty()) {
+private fun LazyListScope.diagnosticSessions(state: LenswakeUiState) {
+    item { SectionHeading(stringResource(R.string.diagnostics_sessions_section)) }
+    if (state.diagnosticSessions.isEmpty()) {
+        item {
             ListItem(
                 headlineContent = {
                     Text(stringResource(R.string.diagnostics_no_activity_title))
@@ -125,26 +131,140 @@ private fun LazyListScope.diagnosticActivity(state: LenswakeUiState) {
                     Text(stringResource(R.string.diagnostics_no_activity_detail))
                 },
             )
-        } else {
-            Column {
-                state.diagnosticEvents.forEachIndexed { index, event ->
-                    ListItem(
-                        headlineContent = { Text(event.title) },
-                        supportingContent = {
-                            Text(
-                                stringResource(
-                                    R.string.diagnostics_timed_detail,
-                                    event.occurredAt,
-                                    event.detail,
-                                ),
-                            )
-                        },
-                    )
-                    if (index < state.diagnosticEvents.lastIndex) {
-                        HorizontalDivider()
-                    }
-                }
+        }
+        return
+    }
+    state.diagnosticSessions.forEach { session ->
+        item(key = "diagnostic-session-${session.id}") {
+            DiagnosticSessionCard(session)
+        }
+        session.timeline.forEach { event ->
+            item(key = "diagnostic-event-${session.id}-${event.id}") {
+                DiagnosticTimelineRow(
+                    event = event,
+                    modifier = Modifier.padding(start = 16.dp),
+                )
             }
         }
     }
+}
+
+@Composable
+private fun DiagnosticSessionCard(session: DiagnosticSessionUiState) {
+    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(vertical = 8.dp)) {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(session.title, style = MaterialTheme.typography.titleMedium)
+                        Text(session.detail, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Text(
+                        session.status,
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+                Text(
+                    stringResource(R.string.diagnostics_session_duration, session.duration),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                SessionMetrics(session)
+                Text(
+                    stringResource(R.string.diagnostics_timeline_section),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SessionMetrics(session: DiagnosticSessionUiState) {
+    val metrics = session.metrics
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(
+                stringResource(R.string.diagnostics_retry_count, metrics.retryCount),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelMedium,
+            )
+            Text(
+                stringResource(R.string.diagnostics_fallback_count, metrics.fallbackCount),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(
+                stringResource(
+                    R.string.diagnostics_privileged_fallback_count,
+                    metrics.privilegedFallbackCount,
+                ),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelMedium,
+            )
+            Text(
+                metrics.selectorConfidence?.let { confidence ->
+                    stringResource(
+                        R.string.diagnostics_selector_confidence,
+                        confidence.score,
+                        confidence.minimumScore,
+                    )
+                } ?: stringResource(R.string.diagnostics_selector_confidence_unavailable),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticTimelineRow(
+    event: DiagnosticTimelineEventUiState,
+    modifier: Modifier = Modifier,
+) {
+    val separator = stringResource(R.string.diagnostics_event_metrics_separator)
+    val metrics = buildList {
+        event.duration?.let { add(stringResource(R.string.diagnostics_event_duration, it)) }
+        event.interactionMethod?.let { add(stringResource(R.string.diagnostics_event_method, it)) }
+        event.attempt?.let { add(stringResource(R.string.diagnostics_event_attempt, it)) }
+        event.selectorMatch?.let(::add)
+        event.selectorConfidence?.let { confidence ->
+            add(
+                stringResource(
+                    R.string.diagnostics_selector_confidence,
+                    confidence.score,
+                    confidence.minimumScore,
+                ),
+            )
+        }
+    }
+    ListItem(
+        modifier = modifier,
+        headlineContent = { Text(event.title) },
+        supportingContent = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(stringResource(R.string.diagnostics_timed_detail, event.occurredAt, event.detail))
+                if (metrics.isNotEmpty()) {
+                    Text(metrics.joinToString(separator), style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        },
+    )
 }

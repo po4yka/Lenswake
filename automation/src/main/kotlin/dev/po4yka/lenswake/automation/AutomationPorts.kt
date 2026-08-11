@@ -63,6 +63,7 @@ sealed interface PortResult<out T> {
 sealed interface ActionDispatch {
     data class Dispatched(
         val method: InteractionMethod,
+        val metadata: Map<String, String> = emptyMap(),
     ) : ActionDispatch
 
     data class Rejected(

@@ -199,10 +199,11 @@ private suspend fun EngineEnvironment.dispatchSpeedPickerOpen(
     val operation = AutomationOperation.OPEN_TIME_LAPSE_SPEED_CONTROL
     val state = AutomationStateName.OPENING_TIME_LAPSE_SPEED_CONTROL
     context.transition(state, operation = operation, outcome = AutomationOutcome.STARTED, attempt = attempt)
+    var durationMs: Long? = null
     val dispatch = safeCall(
         block = {
             when (val timed = timed(operation) { pixelCamera.openTimeLapseSpeedControl(context.profileUse) }) {
-                is TimedCall.Completed -> timed.value
+                is TimedCall.Completed -> timed.value.also { durationMs = timed.durationMs }
                 TimedCall.TimedOut -> ActionDispatch.Rejected(timeoutFailure(operation))
             }
         },
@@ -217,6 +218,8 @@ private suspend fun EngineEnvironment.dispatchSpeedPickerOpen(
             outcome = AutomationOutcome.DISPATCHED,
             method = dispatch.method,
             attempt = attempt,
+            durationMs = durationMs,
+            metadata = dispatch.metadata,
         )
     }
     return dispatch

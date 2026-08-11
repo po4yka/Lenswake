@@ -496,6 +496,10 @@ class PixelCameraAccessibilityFailureTest : PixelCameraAccessibilityPortTestFixt
 
         val dispatched = assertInstanceOf(ActionDispatch.Dispatched::class.java, result)
         assertEquals(InteractionMethod.ACCESSIBILITY_ACTION, dispatched.method)
+        assertEquals("100", dispatched.metadata["selectorScore"])
+        assertEquals("100", dispatched.metadata["selectorMinimumScore"])
+        assertEquals("0", dispatched.metadata["selectorIndex"])
+        assertEquals("RESOURCE_ID", dispatched.metadata["selectorSignals"])
         assertEquals(null, gateway.profileGesturePoint)
     }
 
