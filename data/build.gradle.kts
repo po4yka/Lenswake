@@ -25,6 +25,12 @@ android {
         resValues = false
         shaders = false
     }
+
+    lint {
+        warningsAsErrors = true
+        // Release availability is maintained separately and is not a source-correctness signal.
+        disable += setOf("GradleDependency", "NewerVersionAvailable")
+    }
 }
 
 kotlin {
