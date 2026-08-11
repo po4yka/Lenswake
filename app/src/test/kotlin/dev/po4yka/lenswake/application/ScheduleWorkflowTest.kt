@@ -146,7 +146,7 @@ class ScheduleWorkflowTest {
     }
 
     @Test
-    fun createRejectsRehearsalNotPromotedAtProfileVerificationTime() = runTest {
+    fun createAcceptsExactProofAfterAnotherCaptureAdvancesProfileVerificationTime() = runTest {
         val events = mutableListOf<String>()
         val workflow = ScheduleWorkflow(
             scheduleRepository = FakeScheduleRepository(emptyList(), events),
@@ -163,9 +163,8 @@ class ScheduleWorkflowTest {
 
         val result = workflow.create(command())
 
-        val rejected = assertInstanceOf(ScheduleWorkflowResult.Rejected::class.java, result)
-        assertEquals(ScheduleWorkflowFailureCode.PROFILE_NOT_VERIFIED, rejected.code)
-        assertTrue(events.isEmpty())
+        assertInstanceOf(ScheduleWorkflowResult.Applied::class.java, result)
+        assertEquals(listOf("save", "stop", "start", "save"), events)
     }
 
     @Test

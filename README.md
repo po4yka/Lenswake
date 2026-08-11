@@ -34,10 +34,12 @@ Implemented now:
 - explicit START and STOP workflows that distinguish action dispatch from verified camera state;
 - write-ahead recording ownership, operation-specific timeouts, safe reconciliation after uncertain Record dispatch, and safe STOP recovery;
 - a pre-Record MediaStore generation baseline and post-STOP saved-file verification: only a newly generated, published Pixel Camera-owned external video with positive size and duration completes a session;
-- profile-driven selector scoring, meaningful-discriminant enforcement, ambiguity rejection, observable state signals, per-speed targets, and verified rear-main-lens selection;
+- profile-driven capture capabilities, selector scoring, meaningful-discriminant enforcement, ambiguity rejection,
+  observable state signals, per-speed targets, and verified lens selection;
 - selector-schema and environment compatibility checks that require a current, timestamped `VERIFIED` profile for unattended execution;
 - dynamically resolved secure Pixel Camera launch and a package-scoped, bounded Accessibility adapter;
-- create/edit/enable/disable/delete schedule workflows with transactional alarm rollback and active-camera ownership guards;
+- create/edit/enable/disable/delete schedule workflows with profile-constrained mode, Time Lapse speed, and lens
+  configuration, transactional alarm rollback, and active-camera ownership guards;
 - a durable production-stack rehearsal with a session-bound exact STOP backstop and profile promotion only after verified start and stop;
 - setup remediation actions, local alarm-failure diagnostics, and an honest Compose status UI that never invents readiness;
 - a bounded full-screen-notification `DEVICE_WAKE` implementation that preserves keyguard and fails closed when its capability is unavailable.
@@ -49,6 +51,10 @@ Still intentionally outside the implemented baseline:
 - optional Shizuku integration;
 - compatibility claims beyond the exact Pixel 8 Pro / Android 17 / Pixel Camera environment recorded in
   `docs/research/pixel-8-pro-baseline-2026-08-09.md`.
+
+The bundled physical-device profile currently exposes only the capture combination whose selectors and postconditions
+were calibrated on that exact environment. Scheduling is additionally constrained to the exact capture combination
+from the profile's latest successful production rehearsal; configured selectors alone never authorize unattended use.
 
 The debug APK can be built with:
 
