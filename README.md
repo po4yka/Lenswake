@@ -53,7 +53,7 @@ Still intentionally outside the implemented baseline:
 The debug APK can be built with:
 
 ```bash
-./gradlew test lintDebug assembleDebug
+./gradlew check assembleDebug
 ```
 
 Physical-device tests are an additional gate; a successful JVM build is not Pixel Camera reliability evidence.
