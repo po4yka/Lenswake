@@ -534,6 +534,9 @@ class DefaultAutomationEngineTest {
         })
     }
 
+}
+
+class DefaultAutomationEnginePickerTest {
     @Test
     fun `start accepts already open picker after opener reports no safe target`() = runTest {
         val session = session(status = SessionStatus.PENDING)
@@ -1063,6 +1066,9 @@ class DefaultAutomationEngineTest {
         )
     }
 
+}
+
+class DefaultAutomationEngineMediaTest {
     @Test
     fun `save verification resumes after process death without touching Pixel Camera`() = runTest {
         val session = session(status = SessionStatus.STOPPING).copy(
@@ -1551,6 +1557,9 @@ class DefaultAutomationEngineTest {
         assertEquals(listOf("stopRecording"), camera.calls)
     }
 
+}
+
+class DefaultAutomationEngineStopRecoveryTest {
     @Test
     fun `stop inspects before launching and launches only when Pixel Camera is not running`() = runTest {
         val session = session(status = SessionStatus.RECORDING).copy(
@@ -1830,7 +1839,9 @@ class DefaultAutomationEngineTest {
         assertEquals(emptyList<String>(), device.calls + camera.calls)
     }
 
-    private fun engine(
+}
+
+private fun engine(
         repository: FakeExecutionRepository,
         device: FakeDeviceControl,
         camera: FakePixelCamera,
@@ -2007,7 +2018,11 @@ class DefaultAutomationEngineTest {
         override suspend fun inspect(profileUse: ProfileUse): PortResult<PixelCameraState> {
             receivedProfileUses += profileUse
             trace += "inspect"
-            if (calls.lastOrNull() == "startRecording" && state is PixelCameraState.TimeLapse && !(state as PixelCameraState.TimeLapse).recording) {
+            if (
+                calls.lastOrNull() == "startRecording" &&
+                state is PixelCameraState.TimeLapse &&
+                !(state as PixelCameraState.TimeLapse).recording
+            ) {
                 verificationInspections += 1
                 if (recordingStartsOnVerificationInspection != null &&
                     verificationInspections >= recordingStartsOnVerificationInspection
@@ -2015,7 +2030,11 @@ class DefaultAutomationEngineTest {
                     state = (state as PixelCameraState.TimeLapse).copy(recording = true)
                 }
             }
-            if (calls.lastOrNull() == "stopRecording" && state is PixelCameraState.TimeLapse && (state as PixelCameraState.TimeLapse).recording) {
+            if (
+                calls.lastOrNull() == "stopRecording" &&
+                state is PixelCameraState.TimeLapse &&
+                (state as PixelCameraState.TimeLapse).recording
+            ) {
                 stopVerificationInspections += 1
                 if (
                     stopCompletesOnVerificationInspection != null &&
@@ -2234,23 +2253,23 @@ class DefaultAutomationEngineTest {
             event: AutomationEvent,
         ): ExecutionApplyResult {
             val current = execution.value
-            if (conflictOnNextApply) {
+            val conflict = when {
+                conflictOnNextApply -> {
                 conflictOnNextApply = false
-                return ExecutionApplyResult.RevisionConflict(change.expectedRevision, current?.revision)
+                    ExecutionApplyResult.RevisionConflict(change.expectedRevision, current?.revision)
+                }
+                current?.revision != change.expectedRevision ->
+                    ExecutionApplyResult.RevisionConflict(change.expectedRevision, current?.revision)
+                else -> null
             }
-            if (current?.revision != change.expectedRevision) {
-                return ExecutionApplyResult.RevisionConflict(change.expectedRevision, current?.revision)
+            return conflict ?: ExecutionApplyResult.Applied(change.updatedSession).also {
+                execution.value = change.updatedSession
+                allExecutions.value = listOf(change.updatedSession)
+                appliedChanges += change
+                events += event
+                allEvents.value = events.toList()
             }
-            execution.value = change.updatedSession
-            allExecutions.value = listOf(change.updatedSession)
-            appliedChanges += change
-            events += event
-            allEvents.value = events.toList()
-            return ExecutionApplyResult.Applied(change.updatedSession)
         }
     }
 
-    private companion object {
-        val NOW: Instant = Instant.parse("2026-08-09T12:00:00Z")
-    }
-}
+private val NOW: Instant = Instant.parse("2026-08-09T12:00:00Z")
