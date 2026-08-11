@@ -10,7 +10,11 @@ data class AutomationFailure(
         require(context.size <= MAX_CONTEXT_ENTRIES) {
             "Failure context may contain at most $MAX_CONTEXT_ENTRIES entries"
         }
-        require(context.all { (key, value) -> key.length <= MAX_CONTEXT_LENGTH && value.length <= MAX_CONTEXT_LENGTH }) {
+        require(
+            context.all { (key, value) ->
+                key.length <= MAX_CONTEXT_LENGTH && value.length <= MAX_CONTEXT_LENGTH
+            },
+        ) {
             "Failure context keys and values may contain at most $MAX_CONTEXT_LENGTH characters"
         }
     }
