@@ -155,6 +155,49 @@ class PixelCameraProfileTest {
         assertEquals(regionSelector, profile.speedTargets[TimeLapseSpeed.X120])
     }
 
+    @Test
+    fun `capture support is derived from calibrated mode speed and lens selectors`() {
+        val selector = UiSelectorSet(
+            selectors = listOf(UiSelector(environment().cameraPackage, text = "verified")),
+            minimumScore = 10,
+        )
+        val profile = PixelCameraProfile(
+            id = ProfileId("profile-capabilities"),
+            environment = environment(),
+            selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
+            targets = setOf(
+                AutomationAction.SELECT_VIDEO,
+                AutomationAction.SELECT_TIME_LAPSE,
+                AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL,
+                AutomationAction.SELECT_REAR_TELEPHOTO_LENS,
+                AutomationAction.START_RECORDING,
+                AutomationAction.STOP_RECORDING,
+            ).associateWith { selector },
+            speedTargets = mapOf(TimeLapseSpeed.X30 to selector),
+            stateSignals = setOf(
+                PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
+                PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
+                PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
+                PixelCameraStateSignal.TIME_LAPSE_SPEED_X30_ACTIVE,
+                PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN,
+                PixelCameraStateSignal.REAR_TELEPHOTO_LENS_ACTIVE,
+                PixelCameraStateSignal.RECORDING_ACTIVE,
+                PixelCameraStateSignal.NOT_RECORDING,
+            ).associateWith { selector },
+            compatibility = ProfileCompatibility.NEEDS_REHEARSAL,
+            verifiedAt = null,
+        )
+
+        assertEquals(
+            setOf(CaptureConfiguration.TimeLapse(TimeLapseSpeed.X30, LensSelection.REAR_TELEPHOTO)),
+            profile.supportedCaptureConfigurations(),
+        )
+        assertEquals(
+            false,
+            profile.supports(CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120, LensSelection.REAR_MAIN)),
+        )
+    }
+
     private fun environment(): PixelCameraEnvironment = PixelCameraEnvironment(
         deviceManufacturer = "Google",
         deviceModel = "Pixel 8 Pro",

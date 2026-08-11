@@ -10,6 +10,7 @@ import dev.po4yka.lenswake.automation.SelectorMatcher
 import dev.po4yka.lenswake.automation.UiNodeSnapshot
 import dev.po4yka.lenswake.core.AutomationAction
 import dev.po4yka.lenswake.core.AutomationFailureCode
+import dev.po4yka.lenswake.core.CaptureMode
 import dev.po4yka.lenswake.core.GestureProfile
 import dev.po4yka.lenswake.core.InteractionMethod
 import dev.po4yka.lenswake.core.LensSelection
@@ -40,7 +41,7 @@ class PixelCameraAccessibilityPortTest {
             ),
         )
 
-        val result = port(gateway = gateway).startRecording(profileUse(profile))
+        val result = port(gateway = gateway).startRecording(CaptureMode.TIME_LAPSE, profileUse(profile))
 
         val dispatched = assertInstanceOf(ActionDispatch.Dispatched::class.java, result)
         assertEquals(InteractionMethod.ACCESSIBILITY_PROFILE_GESTURE, dispatched.method)
@@ -81,7 +82,7 @@ class PixelCameraAccessibilityPortTest {
             ),
         )
 
-        val result = port(gateway = gateway).selectRearMainLens(profileUse(profile))
+        val result = port(gateway = gateway).selectLens(LensSelection.REAR_MAIN, profileUse(profile))
 
         val dispatched = assertInstanceOf(ActionDispatch.Dispatched::class.java, result)
         assertEquals(InteractionMethod.ACCESSIBILITY_PROFILE_GESTURE, dispatched.method)
@@ -104,7 +105,7 @@ class PixelCameraAccessibilityPortTest {
             ),
         )
 
-        val result = port(gateway = gateway).selectRearMainLens(profileUse(profile))
+        val result = port(gateway = gateway).selectLens(LensSelection.REAR_MAIN, profileUse(profile))
 
         val rejected = assertInstanceOf(ActionDispatch.Rejected::class.java, result)
         assertEquals(AutomationFailureCode.UI_TARGET_AMBIGUOUS, rejected.failure.code)
@@ -127,7 +128,7 @@ class PixelCameraAccessibilityPortTest {
             ),
         )
 
-        val result = port(gateway = gateway).selectRearMainLens(profileUse(profile))
+        val result = port(gateway = gateway).selectLens(LensSelection.REAR_MAIN, profileUse(profile))
 
         val rejected = assertInstanceOf(ActionDispatch.Rejected::class.java, result)
         assertEquals(AutomationFailureCode.UI_TARGET_CONFIDENCE_TOO_LOW, rejected.failure.code)
@@ -160,6 +161,146 @@ class PixelCameraAccessibilityPortTest {
     }
 
     @Test
+    fun `video-only profile is inspected without unrelated Time Lapse signals`() = runTest {
+        val videoProfile = profile().copy(
+            targets = mapOf(
+                AutomationAction.SELECT_VIDEO to selectorSet(VIDEO_ACTION_RESOURCE),
+                AutomationAction.SELECT_FRONT_LENS to selectorSet(FRONT_LENS_ACTION_RESOURCE),
+                AutomationAction.START_VIDEO_RECORDING to selectorSet(START_VIDEO_ACTION_RESOURCE),
+                AutomationAction.STOP_VIDEO_RECORDING to selectorSet(STOP_VIDEO_ACTION_RESOURCE),
+            ),
+            speedTargets = emptyMap(),
+            stateSignals = setOf(
+                PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
+                PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
+                PixelCameraStateSignal.FRONT_LENS_ACTIVE,
+                PixelCameraStateSignal.RECORDING_ACTIVE,
+                PixelCameraStateSignal.NOT_RECORDING,
+            ).associateWith { selectorSet(it.name) },
+        )
+        val gateway = FakeAccessibilityGateway(
+            activeSignals(
+                PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
+                PixelCameraStateSignal.FRONT_LENS_ACTIVE,
+                PixelCameraStateSignal.NOT_RECORDING,
+            ),
+        )
+
+        val result = port(gateway = gateway).inspect(profileUse(videoProfile))
+
+        val observed = assertInstanceOf(PortResult.Observed::class.java, result)
+        assertEquals(PixelCameraState.Video(recording = false, lens = LensSelection.FRONT), observed.value)
+    }
+
+    @Test
+    fun `video inspection and recording controls use video-specific profile routes`() = runTest {
+        val videoProfile = profile().copy(
+            targets = mapOf(
+                AutomationAction.SELECT_VIDEO to selectorSet(VIDEO_ACTION_RESOURCE),
+                AutomationAction.SELECT_FRONT_LENS to selectorSet(FRONT_LENS_ACTION_RESOURCE),
+                AutomationAction.START_VIDEO_RECORDING to selectorSet(START_VIDEO_ACTION_RESOURCE),
+                AutomationAction.STOP_VIDEO_RECORDING to selectorSet(STOP_VIDEO_ACTION_RESOURCE),
+            ),
+            speedTargets = emptyMap(),
+            stateSignals = setOf(
+                PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
+                PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
+                PixelCameraStateSignal.FRONT_LENS_ACTIVE,
+                PixelCameraStateSignal.RECORDING_ACTIVE,
+                PixelCameraStateSignal.NOT_RECORDING,
+            ).associateWith { selectorSet(it.name) },
+        )
+        val gateway = FakeAccessibilityGateway(
+            nodes = activeSignals(
+                PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
+                PixelCameraStateSignal.FRONT_LENS_ACTIVE,
+                PixelCameraStateSignal.RECORDING_ACTIVE,
+            ) + listOf(
+                node(START_VIDEO_ACTION_RESOURCE),
+                node(STOP_VIDEO_ACTION_RESOURCE),
+            ),
+            dispatchResult = AccessibilityDispatchResult.SemanticActionDispatched,
+        )
+        val port = port(gateway = gateway)
+
+        val observed = assertInstanceOf(
+            PortResult.Observed::class.java,
+            port.inspect(profileUse(videoProfile)),
+        )
+        assertEquals(PixelCameraState.Video(recording = true, lens = LensSelection.FRONT), observed.value)
+        assertInstanceOf(
+            ActionDispatch.Dispatched::class.java,
+            port.startRecording(CaptureMode.VIDEO, profileUse(videoProfile)),
+        )
+        assertInstanceOf(
+            ActionDispatch.Dispatched::class.java,
+            port.stopRecording(CaptureMode.VIDEO, profileUse(videoProfile)),
+        )
+        assertEquals(
+            listOf("node-$START_VIDEO_ACTION_RESOURCE", "node-$STOP_VIDEO_ACTION_RESOURCE"),
+            gateway.clickedNodes.map(UiNodeSnapshot::id),
+        )
+    }
+
+    @Test
+    fun `night sight inspection and recording controls use night-specific profile routes`() = runTest {
+        val nightProfile = profile().copy(
+            targets = mapOf(
+                AutomationAction.SELECT_NIGHT_SIGHT_TIME_LAPSE to selectorSet(NIGHT_ACTION_RESOURCE),
+                AutomationAction.SELECT_REAR_ULTRAWIDE_LENS to selectorSet(ULTRAWIDE_ACTION_RESOURCE),
+                AutomationAction.START_NIGHT_SIGHT_TIME_LAPSE_RECORDING to
+                    selectorSet(START_NIGHT_ACTION_RESOURCE),
+                AutomationAction.STOP_NIGHT_SIGHT_TIME_LAPSE_RECORDING to
+                    selectorSet(STOP_NIGHT_ACTION_RESOURCE),
+            ),
+            speedTargets = emptyMap(),
+            stateSignals = setOf(
+                PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
+                PixelCameraStateSignal.NIGHT_SIGHT_TIME_LAPSE_MODE_ACTIVE,
+                PixelCameraStateSignal.REAR_ULTRAWIDE_LENS_ACTIVE,
+                PixelCameraStateSignal.RECORDING_ACTIVE,
+                PixelCameraStateSignal.NOT_RECORDING,
+            ).associateWith { selectorSet(it.name) },
+        )
+        val gateway = FakeAccessibilityGateway(
+            nodes = activeSignals(
+                PixelCameraStateSignal.NIGHT_SIGHT_TIME_LAPSE_MODE_ACTIVE,
+                PixelCameraStateSignal.REAR_ULTRAWIDE_LENS_ACTIVE,
+                PixelCameraStateSignal.RECORDING_ACTIVE,
+            ) + listOf(
+                node(START_NIGHT_ACTION_RESOURCE),
+                node(STOP_NIGHT_ACTION_RESOURCE),
+            ),
+            dispatchResult = AccessibilityDispatchResult.SemanticActionDispatched,
+        )
+        val port = port(gateway = gateway)
+
+        val observed = assertInstanceOf(
+            PortResult.Observed::class.java,
+            port.inspect(profileUse(nightProfile)),
+        )
+        assertEquals(
+            PixelCameraState.NightSightTimeLapse(
+                recording = true,
+                lens = LensSelection.REAR_ULTRAWIDE,
+            ),
+            observed.value,
+        )
+        assertInstanceOf(
+            ActionDispatch.Dispatched::class.java,
+            port.startRecording(CaptureMode.NIGHT_SIGHT_TIME_LAPSE, profileUse(nightProfile)),
+        )
+        assertInstanceOf(
+            ActionDispatch.Dispatched::class.java,
+            port.stopRecording(CaptureMode.NIGHT_SIGHT_TIME_LAPSE, profileUse(nightProfile)),
+        )
+        assertEquals(
+            listOf("node-$START_NIGHT_ACTION_RESOURCE", "node-$STOP_NIGHT_ACTION_RESOURCE"),
+            gateway.clickedNodes.map(UiNodeSnapshot::id),
+        )
+    }
+
+    @Test
     fun `inspection rejects an accessibility snapshot whose root could not refresh`() = runTest {
         val result = port(
             gateway = FakeAccessibilityGateway(
@@ -178,7 +319,7 @@ class PixelCameraAccessibilityPortTest {
             dispatchResult = AccessibilityDispatchResult.RefreshFailed,
         )
 
-        val result = port(gateway = gateway).selectRearMainLens(profileUse())
+        val result = port(gateway = gateway).selectLens(LensSelection.REAR_MAIN, profileUse())
 
         val rejected = assertInstanceOf(ActionDispatch.Rejected::class.java, result)
         assertEquals(AutomationFailureCode.ACCESSIBILITY_REFRESH_FAILED, rejected.failure.code)
@@ -197,7 +338,7 @@ class PixelCameraAccessibilityPortTest {
             ),
         )
 
-        val result = port(gateway = gateway).selectRearMainLens(profileUse(profile))
+        val result = port(gateway = gateway).selectLens(LensSelection.REAR_MAIN, profileUse(profile))
 
         val rejected = assertInstanceOf(ActionDispatch.Rejected::class.java, result)
         assertEquals(AutomationFailureCode.UI_TARGET_CHANGED, rejected.failure.code)
@@ -217,7 +358,7 @@ class PixelCameraAccessibilityPortTest {
             ),
         )
 
-        val result = port(gateway = gateway).selectRearMainLens(profileUse(profile))
+        val result = port(gateway = gateway).selectLens(LensSelection.REAR_MAIN, profileUse(profile))
 
         val dispatched = assertInstanceOf(ActionDispatch.Dispatched::class.java, result)
         assertEquals(InteractionMethod.ACCESSIBILITY_ACTION, dispatched.method)
@@ -236,7 +377,7 @@ class PixelCameraAccessibilityPortTest {
             ),
         )
 
-        val result = port(gateway = gateway).startRecording(profileUse(profile))
+        val result = port(gateway = gateway).startRecording(CaptureMode.TIME_LAPSE, profileUse(profile))
 
         val rejected = assertInstanceOf(ActionDispatch.Rejected::class.java, result)
         assertEquals(AutomationFailureCode.PIXEL_CAMERA_NOT_FOREGROUND, rejected.failure.code)
@@ -347,7 +488,10 @@ class PixelCameraAccessibilityPortTest {
 
             val observed = assertInstanceOf(PortResult.Observed::class.java, result)
             assertEquals(PixelCameraState.RecordingUnknownMode, observed.value)
-            assertInstanceOf(ActionDispatch.Dispatched::class.java, port.stopRecording(profileUse()))
+            assertInstanceOf(
+                ActionDispatch.Dispatched::class.java,
+                port.stopRecording(CaptureMode.TIME_LAPSE, profileUse()),
+            )
             assertEquals(
                 "node-${PixelCameraStateSignal.RECORDING_ACTIVE.name}",
                 gateway.clickedNode?.id,
@@ -447,19 +591,27 @@ class PixelCameraAccessibilityPortTest {
     }
 
     @Test
-    fun `inspection fails closed when profile lacks rear main observation signal`() = runTest {
-        val withoutLensSignal = profile().copy(
-            stateSignals = profile().stateSignals - PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
+    fun `partially configured future lens does not break supported capture inspection`() = runTest {
+        val baseline = profile()
+        val partiallyConfiguredFrontVideo = baseline.copy(
+            targets = baseline.targets + mapOf(
+                AutomationAction.SELECT_FRONT_LENS to baseline.targets.getValue(AutomationAction.SELECT_VIDEO),
+                AutomationAction.START_VIDEO_RECORDING to baseline.targets.getValue(AutomationAction.START_RECORDING),
+                AutomationAction.STOP_VIDEO_RECORDING to baseline.targets.getValue(AutomationAction.STOP_RECORDING),
+            ),
+            stateSignals = baseline.stateSignals - PixelCameraStateSignal.FRONT_LENS_ACTIVE,
         )
 
-        val result = port(gateway = FakeAccessibilityGateway(activeSignals())).inspect(profileUse(withoutLensSignal))
-
-        val unavailable = assertInstanceOf(PortResult.Unavailable::class.java, result)
-        assertEquals(AutomationFailureCode.CAMERA_STATE_UNKNOWN, unavailable.failure.code)
-        assertEquals(
-            PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE.name,
-            unavailable.failure.context["missingSignals"],
+        val result = port(gateway = FakeAccessibilityGateway(activeSignals(
+            PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
+            PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE,
+            PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
+            PixelCameraStateSignal.NOT_RECORDING,
+        ))).inspect(
+            profileUse(partiallyConfiguredFrontVideo),
         )
+
+        assertInstanceOf(PortResult.Observed::class.java, result)
     }
 
     @Test
@@ -475,7 +627,7 @@ class PixelCameraAccessibilityPortTest {
             dispatchResult = AccessibilityDispatchResult.SemanticActionDispatched,
         )
 
-        val result = port(gateway = gateway).selectRearMainLens(profileUse())
+        val result = port(gateway = gateway).selectLens(LensSelection.REAR_MAIN, profileUse())
 
         assertInstanceOf(ActionDispatch.Dispatched::class.java, result)
         assertEquals(target, gateway.clickedNode)
@@ -550,21 +702,21 @@ class PixelCameraAccessibilityPortTest {
     }
 
     @Test
-    fun `inspection fails closed when profile lacks picker-open observation signal`() = runTest {
+    fun `inspection ignores incomplete unsupported time lapse capability`() = runTest {
         val withoutPickerSignal = profile().copy(
             stateSignals = profile().stateSignals - PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN,
         )
 
-        val result = port(gateway = FakeAccessibilityGateway(activeSignals())).inspect(
+        val result = port(gateway = FakeAccessibilityGateway(activeSignals(
+            PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
+            PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE,
+            PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
+            PixelCameraStateSignal.NOT_RECORDING,
+        ))).inspect(
             profileUse(withoutPickerSignal),
         )
 
-        val unavailable = assertInstanceOf(PortResult.Unavailable::class.java, result)
-        assertEquals(AutomationFailureCode.CAMERA_STATE_UNKNOWN, unavailable.failure.code)
-        assertEquals(
-            PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN.name,
-            unavailable.failure.context["missingSignals"],
-        )
+        assertInstanceOf(PortResult.Observed::class.java, result)
     }
 
     @Test
@@ -717,8 +869,11 @@ class PixelCameraAccessibilityPortTest {
             environment = environment(),
             selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
             targets = mapOf(
+                AutomationAction.SELECT_VIDEO to selectorSet(VIDEO_ACTION_RESOURCE),
+                AutomationAction.SELECT_TIME_LAPSE to selectorSet(TIME_LAPSE_ACTION_RESOURCE),
                 AutomationAction.SELECT_REAR_MAIN_LENS to selectorSet(LENS_ACTION_RESOURCE),
                 AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL to selectorSet(SPEED_CONTROL_ACTION_RESOURCE),
+                AutomationAction.START_RECORDING to selectorSet(START_RECORD_ACTION_RESOURCE),
                 AutomationAction.STOP_RECORDING to selectorSet(PixelCameraStateSignal.RECORDING_ACTIVE.name),
             ),
             speedTargets = mapOf(TimeLapseSpeed.X120 to selectorSet(SPEED_X120_ACTION_RESOURCE)),
@@ -813,8 +968,18 @@ class PixelCameraAccessibilityPortTest {
 
     private companion object {
         const val CAMERA_PACKAGE = "com.google.android.GoogleCamera"
+        const val VIDEO_ACTION_RESOURCE = "profile.mode.video"
+        const val TIME_LAPSE_ACTION_RESOURCE = "profile.mode.time-lapse"
+        const val NIGHT_ACTION_RESOURCE = "profile.mode.night-sight-time-lapse"
         const val LENS_ACTION_RESOURCE = "profile.lens.rear-main"
+        const val ULTRAWIDE_ACTION_RESOURCE = "profile.lens.rear-ultrawide"
+        const val FRONT_LENS_ACTION_RESOURCE = "profile.lens.front"
         const val SPEED_CONTROL_ACTION_RESOURCE = "profile.speed.open"
         const val SPEED_X120_ACTION_RESOURCE = "profile.speed.x120"
+        const val START_RECORD_ACTION_RESOURCE = "profile.record.start"
+        const val START_VIDEO_ACTION_RESOURCE = "profile.video.start"
+        const val STOP_VIDEO_ACTION_RESOURCE = "profile.video.stop"
+        const val START_NIGHT_ACTION_RESOURCE = "profile.night.start"
+        const val STOP_NIGHT_ACTION_RESOURCE = "profile.night.stop"
     }
 }

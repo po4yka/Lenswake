@@ -1,6 +1,7 @@
 package dev.po4yka.lenswake.automation
 
 import dev.po4yka.lenswake.core.AutomationEvent
+import dev.po4yka.lenswake.core.AutomationAction
 import dev.po4yka.lenswake.core.AutomationFailure
 import dev.po4yka.lenswake.core.AutomationFailureCode
 import dev.po4yka.lenswake.core.AutomationOperation
@@ -8,6 +9,7 @@ import dev.po4yka.lenswake.core.AutomationOutcome
 import dev.po4yka.lenswake.core.AutomationProfileRepository
 import dev.po4yka.lenswake.core.AutomationStateName
 import dev.po4yka.lenswake.core.CaptureConfiguration
+import dev.po4yka.lenswake.core.CaptureMode
 import dev.po4yka.lenswake.core.ExecutionApplyResult
 import dev.po4yka.lenswake.core.ExecutionChange
 import dev.po4yka.lenswake.core.ExecutionRepository
@@ -18,6 +20,7 @@ import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
+import dev.po4yka.lenswake.core.PixelCameraStateSignal
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.ScheduleId
@@ -26,6 +29,8 @@ import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.core.Zoom
+import dev.po4yka.lenswake.core.UiSelector
+import dev.po4yka.lenswake.core.UiSelectorSet
 import java.time.Instant
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.awaitCancellation
@@ -44,6 +49,61 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
 class DefaultAutomationEngineTest {
+    @Test
+    fun `video capture selects its configured lens without entering time lapse`() = runTest {
+        val capture = CaptureConfiguration.Video(lens = LensSelection.FRONT)
+        val session = session(status = SessionStatus.PENDING, capture = capture)
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(state = PixelCameraState.Photo)
+
+        val result = engine(repository, FakeDeviceControl(interactive = true), camera).start(session.id)
+
+        val succeeded = assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        assertEquals(SessionStatus.RECORDING, succeeded.session.status)
+        assertEquals(
+            listOf("launch", "selectVideo", "selectLens:FRONT", "startRecording"),
+            camera.calls,
+        )
+    }
+
+    @Test
+    fun `time lapse capture selects its configured telephoto lens`() = runTest {
+        val capture = CaptureConfiguration.TimeLapse(
+            speed = TimeLapseSpeed.X30,
+            lens = LensSelection.REAR_TELEPHOTO,
+        )
+        val session = session(status = SessionStatus.PENDING, capture = capture)
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(
+            state = PixelCameraState.TimeLapse(
+                speed = TimeLapseSpeed.X30,
+                recording = false,
+                lens = LensSelection.REAR_MAIN,
+            ),
+        )
+
+        val result = engine(repository, FakeDeviceControl(interactive = true), camera).start(session.id)
+
+        assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        assertEquals(listOf("launch", "selectLens:REAR_TELEPHOTO", "startRecording"), camera.calls)
+    }
+
+    @Test
+    fun `night sight time lapse selects its configured ultrawide lens`() = runTest {
+        val capture = CaptureConfiguration.NightSightTimeLapse(lens = LensSelection.REAR_ULTRAWIDE)
+        val session = session(status = SessionStatus.PENDING, capture = capture)
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(state = PixelCameraState.Photo)
+
+        val result = engine(repository, FakeDeviceControl(interactive = true), camera).start(session.id)
+
+        assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        assertEquals(
+            listOf("launch", "selectNightSightTimeLapse", "selectLens:REAR_ULTRAWIDE", "startRecording"),
+            camera.calls,
+        )
+    }
+
     @Test
     fun `start converges from sleeping Photo mode and persists confirmed recording`() = runTest {
         val session = session(status = SessionStatus.PENDING)
@@ -795,6 +855,56 @@ class DefaultAutomationEngineTest {
         assertEquals(listOf("wake", "stopRecording"), device.calls + camera.calls)
         assertEquals("inspect", camera.trace.first())
         assertEquals(0, camera.calls.count { it == "launch" })
+    }
+
+    @Test
+    fun `video stop dispatches the video recording control`() = runTest {
+        val capture = CaptureConfiguration.Video(lens = LensSelection.FRONT)
+        val session = session(status = SessionStatus.RECORDING, capture = capture).copy(
+            currentAutomationState = AutomationStateName.RECORDING,
+            recordActionAt = NOW.minusSeconds(60),
+            recordingVerifiedAt = NOW,
+        )
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(
+            state = PixelCameraState.Video(recording = true, lens = LensSelection.FRONT),
+        )
+
+        val result = engine(
+            repository,
+            FakeDeviceControl(interactive = true),
+            camera,
+        ).stop(session.id)
+
+        val succeeded = assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        assertEquals(SessionStatus.COMPLETED, succeeded.session.status)
+        assertEquals(listOf(CaptureMode.VIDEO), camera.stopModes)
+    }
+
+    @Test
+    fun `night sight recovery dispatches the night sight recording control`() = runTest {
+        val capture = CaptureConfiguration.NightSightTimeLapse(lens = LensSelection.REAR_ULTRAWIDE)
+        val session = session(status = SessionStatus.STARTING, capture = capture).copy(
+            currentAutomationState = AutomationStateName.VERIFYING_RECORDING,
+            recordActionAt = NOW.minusSeconds(60),
+        )
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(
+            state = PixelCameraState.RecordingUnknownMode,
+            stateAfterStop = PixelCameraState.NightSightTimeLapse(
+                recording = false,
+                lens = LensSelection.REAR_ULTRAWIDE,
+            ),
+        )
+
+        val result = engine(
+            repository,
+            FakeDeviceControl(interactive = true),
+            camera,
+        ).stop(session.id)
+
+        assertInstanceOf(AutomationRunResult.StopVerifiedAfterFailure::class.java, result)
+        assertEquals(listOf(CaptureMode.NIGHT_SIGHT_TIME_LAPSE), camera.stopModes)
     }
 
     @Test
@@ -1626,7 +1736,13 @@ class DefaultAutomationEngineTest {
         val repository = FakeExecutionRepository(session)
         val device = FakeDeviceControl(interactive = false)
         val camera = FakePixelCamera(PixelCameraState.NotRunning)
-        val engine = engine(repository, device, camera)
+        val configuredProfile = profile().let { profile ->
+            profile.copy(
+                targets = profile.targets - AutomationAction.SELECT_FRONT_LENS,
+                stateSignals = profile.stateSignals - PixelCameraStateSignal.FRONT_LENS_ACTIVE,
+            )
+        }
+        val engine = engine(repository, device, camera, profile = configuredProfile)
 
         val result = engine.start(session.id)
 
@@ -1802,7 +1918,12 @@ class DefaultAutomationEngineTest {
         updatedAt = Instant.parse("2026-08-09T00:00:00Z"),
     )
 
-    private fun profile() = PixelCameraProfile(
+    private fun profile(): PixelCameraProfile {
+        val selector = UiSelectorSet(
+            selectors = listOf(UiSelector("com.google.android.GoogleCamera", text = "verified")),
+            minimumScore = 10,
+        )
+        return PixelCameraProfile(
         id = ProfileId("profile"),
         environment = PixelCameraEnvironment(
             deviceManufacturer = "Google",
@@ -1817,9 +1938,13 @@ class DefaultAutomationEngineTest {
             densityDpi = 480,
         ),
         selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
+        targets = AutomationAction.entries.associateWith { selector },
+        speedTargets = TimeLapseSpeed.entries.associateWith { selector },
+        stateSignals = PixelCameraStateSignal.entries.associateWith { selector },
         compatibility = ProfileCompatibility.VERIFIED,
         verifiedAt = NOW,
     )
+    }
 
     private fun readyToRecordState() = PixelCameraState.TimeLapse(
         speed = TimeLapseSpeed.X120,
@@ -1873,6 +1998,7 @@ class DefaultAutomationEngineTest {
         var verificationInspections = 0
         var stopVerificationInspections = 0
         val receivedProfileUses = mutableListOf<ProfileUse>()
+        val stopModes = mutableListOf<CaptureMode>()
         val receivedProfiles: List<PixelCameraProfile>
             get() = receivedProfileUses.map(ProfileUse::profile)
         var lensWasRearMainWhenRecordStarted: Boolean = false
@@ -1914,7 +2040,7 @@ class DefaultAutomationEngineTest {
         override suspend fun selectVideo(profileUse: ProfileUse): ActionDispatch {
             receivedProfileUses += profileUse
             calls += "selectVideo"
-            state = PixelCameraState.Video(recording = false)
+            state = PixelCameraState.Video(recording = false, lens = null)
             return dispatched()
         }
 
@@ -1922,6 +2048,13 @@ class DefaultAutomationEngineTest {
             receivedProfileUses += profileUse
             calls += "selectTimeLapse"
             state = PixelCameraState.TimeLapse(speed = null, recording = false, lens = null)
+            return dispatched()
+        }
+
+        override suspend fun selectNightSightTimeLapse(profileUse: ProfileUse): ActionDispatch {
+            receivedProfileUses += profileUse
+            calls += "selectNightSightTimeLapse"
+            state = PixelCameraState.NightSightTimeLapse(recording = false, lens = null)
             return dispatched()
         }
 
@@ -1981,17 +2114,27 @@ class DefaultAutomationEngineTest {
             return dispatched()
         }
 
-        override suspend fun selectRearMainLens(profileUse: ProfileUse): ActionDispatch {
+        override suspend fun selectLens(
+            lens: LensSelection,
+            profileUse: ProfileUse,
+        ): ActionDispatch {
             receivedProfileUses += profileUse
-            calls += "selectRearMainLens"
+            calls += if (lens == LensSelection.REAR_MAIN) "selectRearMainLens" else "selectLens:$lens"
             if (confirmLens) {
-                val current = state as PixelCameraState.TimeLapse
-                state = current.copy(lens = LensSelection.REAR_MAIN)
+                state = when (val current = state) {
+                    is PixelCameraState.Video -> current.copy(lens = lens)
+                    is PixelCameraState.TimeLapse -> current.copy(lens = lens)
+                    is PixelCameraState.NightSightTimeLapse -> current.copy(lens = lens)
+                    else -> error("Lens selection requires a configurable capture state")
+                }
             }
             return dispatched()
         }
 
-        override suspend fun startRecording(profileUse: ProfileUse): ActionDispatch {
+        override suspend fun startRecording(
+            mode: CaptureMode,
+            profileUse: ProfileUse,
+        ): ActionDispatch {
             receivedProfileUses += profileUse
             calls += "startRecording"
             onStartRecording?.invoke()
@@ -2008,21 +2151,32 @@ class DefaultAutomationEngineTest {
                         lensWasRearMainWhenRecordStarted = current.lens == LensSelection.REAR_MAIN
                         state = current.copy(recording = true)
                     }
-                    else -> error("Record dispatch requires Time Lapse state")
+                    is PixelCameraState.Video -> state = current.copy(recording = true)
+                    is PixelCameraState.NightSightTimeLapse -> state = current.copy(recording = true)
+                    else -> error("Record dispatch requires a configurable capture state")
                 }
             }
             return dispatched()
         }
 
-        override suspend fun stopRecording(profileUse: ProfileUse): ActionDispatch {
+        override suspend fun stopRecording(
+            mode: CaptureMode,
+            profileUse: ProfileUse,
+        ): ActionDispatch {
             receivedProfileUses += profileUse
+            stopModes += mode
             calls += "stopRecording"
             trace += "stop"
             onStopRecording?.invoke()
             stopException?.let { throw it }
             stopDispatch?.let { return it }
             if (confirmStop && stopCompletesOnVerificationInspection == null) {
-                state = stateAfterStop ?: (state as PixelCameraState.TimeLapse).copy(recording = false)
+                state = stateAfterStop ?: when (val current = state) {
+                    is PixelCameraState.Video -> current.copy(recording = false)
+                    is PixelCameraState.TimeLapse -> current.copy(recording = false)
+                    is PixelCameraState.NightSightTimeLapse -> current.copy(recording = false)
+                    else -> error("Stop dispatch requires a recording capture state")
+                }
             }
             if (suspendStop) awaitCancellation()
             return dispatched()

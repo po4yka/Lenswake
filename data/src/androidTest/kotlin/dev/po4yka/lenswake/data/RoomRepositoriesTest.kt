@@ -130,6 +130,27 @@ class RoomRepositoriesTest {
     }
 
     @Test
+    fun roundTripsEveryConfigurableCaptureMode() = runBlocking {
+        val profile = profile()
+        profiles.save(profile)
+        val captures = listOf(
+            CaptureConfiguration.Video(LensSelection.FRONT),
+            CaptureConfiguration.TimeLapse(TimeLapseSpeed.X10, LensSelection.REAR_ULTRAWIDE),
+            CaptureConfiguration.NightSightTimeLapse(LensSelection.REAR_MAIN),
+        )
+
+        captures.forEachIndexed { index, capture ->
+            val schedule = schedule(profile.id).copy(
+                id = ScheduleId("capture-$index"),
+                capture = capture,
+            )
+            schedules.save(schedule)
+
+            assertEquals(capture, schedules.get(schedule.id)?.capture)
+        }
+    }
+
+    @Test
     fun previousProfileSelectorJsonSchemaIsRejected() {
         assertThrows(IllegalArgumentException::class.java) {
             JsonColumnCodec.decodeTargets("""{"schemaVersion":1,"targets":[]}""")

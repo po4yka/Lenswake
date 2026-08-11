@@ -14,6 +14,8 @@ import dev.po4yka.lenswake.automation.UiNodeSnapshot
 import dev.po4yka.lenswake.core.AutomationAction
 import dev.po4yka.lenswake.core.AutomationFailure
 import dev.po4yka.lenswake.core.AutomationFailureCode
+import dev.po4yka.lenswake.core.CaptureConfiguration
+import dev.po4yka.lenswake.core.CaptureMode
 import dev.po4yka.lenswake.core.InteractionMethod
 import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.NormalizedPoint
@@ -23,6 +25,7 @@ import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
 import dev.po4yka.lenswake.core.PixelCameraStateSignal
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.TimeLapseSpeed
+import dev.po4yka.lenswake.core.supportedCaptureConfigurations
 import dev.po4yka.lenswake.platform.CameraLaunchDispatch
 import dev.po4yka.lenswake.platform.PIXEL_CAMERA_PACKAGE
 import dev.po4yka.lenswake.platform.PlatformCapabilityCode
@@ -120,6 +123,9 @@ class PixelCameraAccessibilityPort internal constructor(
 
     override suspend fun selectTimeLapse(profileUse: ProfileUse): ActionDispatch =
         dispatch(AutomationAction.SELECT_TIME_LAPSE, profileUse)
+
+    override suspend fun selectNightSightTimeLapse(profileUse: ProfileUse): ActionDispatch =
+        dispatch(AutomationAction.SELECT_NIGHT_SIGHT_TIME_LAPSE, profileUse)
 
     override suspend fun openTimeLapseSpeedControl(profileUse: ProfileUse): ActionDispatch =
         dispatch(AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL, profileUse)
@@ -232,14 +238,22 @@ class PixelCameraAccessibilityPort internal constructor(
         }
     }
 
-    override suspend fun selectRearMainLens(profileUse: ProfileUse): ActionDispatch =
-        dispatch(AutomationAction.SELECT_REAR_MAIN_LENS, profileUse)
+    override suspend fun selectLens(
+        lens: LensSelection,
+        profileUse: ProfileUse,
+    ): ActionDispatch = dispatch(LENS_ACTIONS.getValue(lens), profileUse)
 
-    override suspend fun startRecording(profileUse: ProfileUse): ActionDispatch =
-        dispatch(AutomationAction.START_RECORDING, profileUse)
+    override suspend fun startRecording(
+        mode: CaptureMode,
+        profileUse: ProfileUse,
+    ): ActionDispatch =
+        dispatch(mode.startAction, profileUse)
 
-    override suspend fun stopRecording(profileUse: ProfileUse): ActionDispatch =
-        dispatch(AutomationAction.STOP_RECORDING, profileUse)
+    override suspend fun stopRecording(
+        mode: CaptureMode,
+        profileUse: ProfileUse,
+    ): ActionDispatch =
+        dispatch(mode.stopAction, profileUse)
 
     private suspend fun dispatch(
         action: AutomationAction,
@@ -395,22 +409,35 @@ class PixelCameraAccessibilityPort internal constructor(
         profile: PixelCameraProfile,
         nodes: List<UiNodeSnapshot>,
     ): PortResult<PixelCameraState> {
-        val requiredSignals = setOf(
-            PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
-            PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
-            PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
-            PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN,
-            PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
-            PixelCameraStateSignal.RECORDING_ACTIVE,
-            PixelCameraStateSignal.NOT_RECORDING,
-        )
+        val requiredSignals = buildSet {
+            add(PixelCameraStateSignal.PHOTO_MODE_ACTIVE)
+            add(PixelCameraStateSignal.RECORDING_ACTIVE)
+            add(PixelCameraStateSignal.NOT_RECORDING)
+            profile.supportedCaptureConfigurations().forEach { capture ->
+                add(LENS_SIGNALS.entries.single { it.value == capture.lens }.key)
+                when (capture) {
+                    is CaptureConfiguration.Video -> add(PixelCameraStateSignal.VIDEO_MODE_ACTIVE)
+                    is CaptureConfiguration.TimeLapse -> {
+                        add(PixelCameraStateSignal.VIDEO_MODE_ACTIVE)
+                        add(PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE)
+                        add(PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN)
+                        add(SPEED_SIGNALS.entries.single { it.value == capture.speed }.key)
+                    }
+                    is CaptureConfiguration.NightSightTimeLapse ->
+                        add(PixelCameraStateSignal.NIGHT_SIGHT_TIME_LAPSE_MODE_ACTIVE)
+                }
+            }
+        }
         val missingSignals = requiredSignals - profile.stateSignals.keys
         if (missingSignals.isNotEmpty()) {
             return PortResult.Unavailable(
                 AutomationFailure(
                     code = AutomationFailureCode.CAMERA_STATE_UNKNOWN,
                     message = "The profile lacks required observable Pixel Camera state signals",
-                    context = mapOf("missingSignals" to missingSignals.sortedBy { it.name }.joinToString(",") { it.name }),
+                    context = mapOf(
+                        "missingSignals" to missingSignals.sortedBy { it.name }
+                            .joinToString(",") { it.name },
+                    ),
                 ),
             )
         }
@@ -450,6 +477,8 @@ class PixelCameraAccessibilityPort internal constructor(
                 unavailableAmbiguousState(ambiguous)
             }
         }
+        val activeLenses = activeLensValues(active)
+        if (activeLenses.size > 1) return unavailableConflictingState("lens", activeLenses)
 
         if (PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN in active) {
             if (recording) return PortResult.Observed(PixelCameraState.RecordingUnknownMode)
@@ -459,11 +488,7 @@ class PixelCameraAccessibilityPort internal constructor(
                 PixelCameraState.TimeLapseSpeedPicker(
                     speed = activeSpeeds.singleOrNull(),
                     recording = recording,
-                    lens = if (PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE in active) {
-                        LensSelection.REAR_MAIN
-                    } else {
-                        null
-                    },
+                    lens = inferLens(active),
                 ),
             )
         }
@@ -473,6 +498,7 @@ class PixelCameraAccessibilityPort internal constructor(
                 PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
                 PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
                 PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
+                PixelCameraStateSignal.NIGHT_SIGHT_TIME_LAPSE_MODE_ACTIVE,
             ),
         )
         if (modeSignals.size != 1) {
@@ -489,10 +515,23 @@ class PixelCameraAccessibilityPort internal constructor(
             } else {
                 PortResult.Observed(PixelCameraState.Photo)
             }
-            PixelCameraStateSignal.VIDEO_MODE_ACTIVE -> PortResult.Observed(
-                PixelCameraState.Video(recording),
-            )
+            PixelCameraStateSignal.VIDEO_MODE_ACTIVE -> {
+                val lens = inferLens(active)
+                if (recording && lens == null) {
+                    PortResult.Observed(PixelCameraState.RecordingUnknownMode)
+                } else {
+                    PortResult.Observed(PixelCameraState.Video(recording, lens))
+                }
+            }
             PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE -> inferTimeLapse(active, recording)
+            PixelCameraStateSignal.NIGHT_SIGHT_TIME_LAPSE_MODE_ACTIVE -> {
+                val lens = inferLens(active)
+                if (recording && lens == null) {
+                    PortResult.Observed(PixelCameraState.RecordingUnknownMode)
+                } else {
+                    PortResult.Observed(PixelCameraState.NightSightTimeLapse(recording, lens))
+                }
+            }
             else -> error("Only mode signals are considered")
         }
     }
@@ -504,11 +543,7 @@ class PixelCameraAccessibilityPort internal constructor(
         val activeSpeeds = SPEED_SIGNALS.filterKeys(active::contains).values.toSet()
         if (activeSpeeds.size > 1) return unavailableConflictingState("timeLapseSpeed", activeSpeeds)
         val speed = activeSpeeds.singleOrNull()
-        val lens = if (PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE in active) {
-            LensSelection.REAR_MAIN
-        } else {
-            null
-        }
+        val lens = inferLens(active)
         if (recording && (speed == null || lens == null)) {
             return PortResult.Observed(PixelCameraState.RecordingUnknownMode)
         }
@@ -520,6 +555,12 @@ class PixelCameraAccessibilityPort internal constructor(
             ),
         )
     }
+
+    private fun activeLensValues(active: Set<PixelCameraStateSignal>): Set<LensSelection> =
+        LENS_SIGNALS.filterKeys(active::contains).values.toSet()
+
+    private fun inferLens(active: Set<PixelCameraStateSignal>): LensSelection? =
+        activeLensValues(active).singleOrNull()
 
     private fun unavailableConflictingState(
         dimension: String,
@@ -582,12 +623,24 @@ class PixelCameraAccessibilityPort internal constructor(
     private fun missingActionFailure(action: AutomationAction): AutomationFailure = failure(
         code = when (action) {
             AutomationAction.SELECT_VIDEO -> AutomationFailureCode.VIDEO_MODE_NOT_FOUND
-            AutomationAction.SELECT_TIME_LAPSE -> AutomationFailureCode.TIME_LAPSE_MODE_NOT_FOUND
+            AutomationAction.SELECT_TIME_LAPSE,
+            AutomationAction.SELECT_NIGHT_SIGHT_TIME_LAPSE,
+            -> AutomationFailureCode.TIME_LAPSE_MODE_NOT_FOUND
             AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL -> AutomationFailureCode.TIME_LAPSE_SPEED_NOT_FOUND
             AutomationAction.SELECT_TIME_LAPSE_SPEED -> AutomationFailureCode.TIME_LAPSE_SPEED_NOT_FOUND
-            AutomationAction.SELECT_REAR_MAIN_LENS -> AutomationFailureCode.LENS_NOT_FOUND
-            AutomationAction.START_RECORDING -> AutomationFailureCode.RECORD_CONTROL_NOT_FOUND
-            AutomationAction.STOP_RECORDING -> AutomationFailureCode.STOP_CONTROL_NOT_FOUND
+            AutomationAction.SELECT_REAR_MAIN_LENS,
+            AutomationAction.SELECT_REAR_ULTRAWIDE_LENS,
+            AutomationAction.SELECT_REAR_TELEPHOTO_LENS,
+            AutomationAction.SELECT_FRONT_LENS,
+            -> AutomationFailureCode.LENS_NOT_FOUND
+            AutomationAction.START_RECORDING,
+            AutomationAction.START_VIDEO_RECORDING,
+            AutomationAction.START_NIGHT_SIGHT_TIME_LAPSE_RECORDING,
+            -> AutomationFailureCode.RECORD_CONTROL_NOT_FOUND
+            AutomationAction.STOP_RECORDING,
+            AutomationAction.STOP_VIDEO_RECORDING,
+            AutomationAction.STOP_NIGHT_SIGHT_TIME_LAPSE_RECORDING,
+            -> AutomationFailureCode.STOP_CONTROL_NOT_FOUND
         },
         message = "No safe Pixel Camera target was available for $action",
     )
@@ -603,10 +656,35 @@ class PixelCameraAccessibilityPort internal constructor(
             PixelCameraStateSignal.TIME_LAPSE_SPEED_X30_ACTIVE to TimeLapseSpeed.X30,
             PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE to TimeLapseSpeed.X120,
         )
+        val LENS_SIGNALS = mapOf(
+            PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE to LensSelection.REAR_MAIN,
+            PixelCameraStateSignal.REAR_ULTRAWIDE_LENS_ACTIVE to LensSelection.REAR_ULTRAWIDE,
+            PixelCameraStateSignal.REAR_TELEPHOTO_LENS_ACTIVE to LensSelection.REAR_TELEPHOTO,
+            PixelCameraStateSignal.FRONT_LENS_ACTIVE to LensSelection.FRONT,
+        )
+        val LENS_ACTIONS = mapOf(
+            LensSelection.REAR_MAIN to AutomationAction.SELECT_REAR_MAIN_LENS,
+            LensSelection.REAR_ULTRAWIDE to AutomationAction.SELECT_REAR_ULTRAWIDE_LENS,
+            LensSelection.REAR_TELEPHOTO to AutomationAction.SELECT_REAR_TELEPHOTO_LENS,
+            LensSelection.FRONT to AutomationAction.SELECT_FRONT_LENS,
+        )
+        val CaptureMode.startAction: AutomationAction
+            get() = when (this) {
+                CaptureMode.VIDEO -> AutomationAction.START_VIDEO_RECORDING
+                CaptureMode.TIME_LAPSE -> AutomationAction.START_RECORDING
+                CaptureMode.NIGHT_SIGHT_TIME_LAPSE ->
+                    AutomationAction.START_NIGHT_SIGHT_TIME_LAPSE_RECORDING
+            }
+        val CaptureMode.stopAction: AutomationAction
+            get() = when (this) {
+                CaptureMode.VIDEO -> AutomationAction.STOP_VIDEO_RECORDING
+                CaptureMode.TIME_LAPSE -> AutomationAction.STOP_RECORDING
+                CaptureMode.NIGHT_SIGHT_TIME_LAPSE ->
+                    AutomationAction.STOP_NIGHT_SIGHT_TIME_LAPSE_RECORDING
+            }
         val STOP_OPTIONAL_SIGNALS = SPEED_SIGNALS.keys + setOf(
             PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN,
-            PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
-        )
+        ) + LENS_SIGNALS.keys
     }
 }
 

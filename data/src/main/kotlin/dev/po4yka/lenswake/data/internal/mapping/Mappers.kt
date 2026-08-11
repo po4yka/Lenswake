@@ -6,14 +6,12 @@ import dev.po4yka.lenswake.core.AutomationFailureCode
 import dev.po4yka.lenswake.core.AutomationOperation
 import dev.po4yka.lenswake.core.AutomationOutcome
 import dev.po4yka.lenswake.core.AutomationStateName
-import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.EnvironmentSnapshotId
 import dev.po4yka.lenswake.core.EnvironmentCapabilityStatus
 import dev.po4yka.lenswake.core.EnvironmentSnapshot
 import dev.po4yka.lenswake.core.EventId
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.InteractionMethod
-import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.ProfileCompatibility
@@ -23,8 +21,6 @@ import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
-import dev.po4yka.lenswake.core.TimeLapseSpeed
-import dev.po4yka.lenswake.core.Zoom
 import dev.po4yka.lenswake.data.internal.entity.AutomationProfileEntity
 import dev.po4yka.lenswake.data.internal.entity.EnvironmentSnapshotEntity
 import dev.po4yka.lenswake.data.internal.entity.ExecutionEventEntity
@@ -32,8 +28,6 @@ import dev.po4yka.lenswake.data.internal.entity.ExecutionSessionEntity
 import dev.po4yka.lenswake.data.internal.entity.ScheduleEntity
 import java.time.Instant
 import java.time.ZoneId
-
-private const val CAPTURE_TIME_LAPSE = "TIME_LAPSE"
 
 internal fun RecordingSchedule.toEntity(): ScheduleEntity {
     val captureColumns = capture.toColumns()
@@ -265,38 +259,6 @@ internal fun ExecutionEventEntity.toDomain(): AutomationEvent = AutomationEvent(
     failure = failureFromColumns(failureCode, failureMessage, failureContextJson),
     metadata = JsonColumnCodec.decodeStringMap(metadataJson),
 )
-
-private data class CaptureColumns(
-    val type: String,
-    val speed: String,
-    val lens: String,
-    val zoom: Float?,
-)
-
-private fun CaptureConfiguration.toColumns(): CaptureColumns = when (this) {
-    is CaptureConfiguration.TimeLapse -> CaptureColumns(
-        type = CAPTURE_TIME_LAPSE,
-        speed = speed.name,
-        lens = lens.name,
-        zoom = zoom?.factor,
-    )
-}
-
-private fun captureFromColumns(
-    type: String,
-    speed: String,
-    lens: String,
-    zoom: Float?,
-): CaptureConfiguration {
-    require(type == CAPTURE_TIME_LAPSE) { "Unsupported persisted capture type: $type" }
-    return CaptureConfiguration.TimeLapse(
-        speed = enumValueOf<TimeLapseSpeed>(speed),
-        lens = enumValueOf<LensSelection>(lens),
-        zoom = zoom?.let {
-            requireNotNull(Zoom.of(it)) { "Invalid persisted zoom factor: $it" }
-        },
-    )
-}
 
 private fun failureFromColumns(
     code: String?,

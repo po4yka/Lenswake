@@ -114,20 +114,122 @@ data class PixelCameraProfile(
     }
 }
 
+fun PixelCameraProfile.supportedCaptureConfigurations(): Set<CaptureConfiguration> = buildSet {
+    LensSelection.entries.forEach { lens ->
+        CaptureConfiguration.Video(lens).takeIf(::supports)?.let(::add)
+        CaptureConfiguration.NightSightTimeLapse(lens).takeIf(::supports)?.let(::add)
+        TimeLapseSpeed.entries.forEach { speed ->
+            CaptureConfiguration.TimeLapse(speed, lens).takeIf(::supports)?.let(::add)
+        }
+    }
+}
+
+fun PixelCameraProfile.supports(capture: CaptureConfiguration): Boolean {
+    if (!hasConfiguredActions(capture)) return false
+    val commonSignals = setOf(
+        PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
+        PixelCameraStateSignal.RECORDING_ACTIVE,
+        PixelCameraStateSignal.NOT_RECORDING,
+        capture.lens.stateSignal,
+    )
+    if (!stateSignals.keys.containsAll(commonSignals)) return false
+    return when (capture) {
+        is CaptureConfiguration.Video ->
+            PixelCameraStateSignal.VIDEO_MODE_ACTIVE in stateSignals
+        is CaptureConfiguration.TimeLapse ->
+            PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE in stateSignals &&
+                PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN in stateSignals &&
+                capture.speed.stateSignal in stateSignals
+        is CaptureConfiguration.NightSightTimeLapse ->
+            PixelCameraStateSignal.NIGHT_SIGHT_TIME_LAPSE_MODE_ACTIVE in stateSignals
+    }
+}
+
+private fun PixelCameraProfile.hasConfiguredActions(capture: CaptureConfiguration): Boolean {
+    if (capture.zoom != null) return false
+    val commonActions = setOf(
+        capture.mode.startAction,
+        capture.mode.stopAction,
+        capture.lens.selectionAction,
+    )
+    if (!commonActions.all(::hasAction)) return false
+    return when (capture) {
+        is CaptureConfiguration.Video -> hasAction(AutomationAction.SELECT_VIDEO)
+        is CaptureConfiguration.TimeLapse ->
+            hasAction(AutomationAction.SELECT_VIDEO) &&
+                hasAction(AutomationAction.SELECT_TIME_LAPSE) &&
+                hasAction(AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL) &&
+                capture.speed in speedTargets
+        is CaptureConfiguration.NightSightTimeLapse ->
+            hasAction(AutomationAction.SELECT_NIGHT_SIGHT_TIME_LAPSE)
+    }
+}
+
+private fun PixelCameraProfile.hasAction(action: AutomationAction): Boolean =
+    action in targets || action in fallbackGestures
+
+private val CaptureMode.startAction: AutomationAction
+    get() = when (this) {
+        CaptureMode.VIDEO -> AutomationAction.START_VIDEO_RECORDING
+        CaptureMode.TIME_LAPSE -> AutomationAction.START_RECORDING
+        CaptureMode.NIGHT_SIGHT_TIME_LAPSE -> AutomationAction.START_NIGHT_SIGHT_TIME_LAPSE_RECORDING
+    }
+
+private val CaptureMode.stopAction: AutomationAction
+    get() = when (this) {
+        CaptureMode.VIDEO -> AutomationAction.STOP_VIDEO_RECORDING
+        CaptureMode.TIME_LAPSE -> AutomationAction.STOP_RECORDING
+        CaptureMode.NIGHT_SIGHT_TIME_LAPSE -> AutomationAction.STOP_NIGHT_SIGHT_TIME_LAPSE_RECORDING
+    }
+
+private val LensSelection.selectionAction: AutomationAction
+    get() = when (this) {
+        LensSelection.REAR_MAIN -> AutomationAction.SELECT_REAR_MAIN_LENS
+        LensSelection.REAR_ULTRAWIDE -> AutomationAction.SELECT_REAR_ULTRAWIDE_LENS
+        LensSelection.REAR_TELEPHOTO -> AutomationAction.SELECT_REAR_TELEPHOTO_LENS
+        LensSelection.FRONT -> AutomationAction.SELECT_FRONT_LENS
+    }
+
+private val LensSelection.stateSignal: PixelCameraStateSignal
+    get() = when (this) {
+        LensSelection.REAR_MAIN -> PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE
+        LensSelection.REAR_ULTRAWIDE -> PixelCameraStateSignal.REAR_ULTRAWIDE_LENS_ACTIVE
+        LensSelection.REAR_TELEPHOTO -> PixelCameraStateSignal.REAR_TELEPHOTO_LENS_ACTIVE
+        LensSelection.FRONT -> PixelCameraStateSignal.FRONT_LENS_ACTIVE
+    }
+
+private val TimeLapseSpeed.stateSignal: PixelCameraStateSignal
+    get() = when (this) {
+        TimeLapseSpeed.AUTO -> PixelCameraStateSignal.TIME_LAPSE_SPEED_AUTO_ACTIVE
+        TimeLapseSpeed.X5 -> PixelCameraStateSignal.TIME_LAPSE_SPEED_X5_ACTIVE
+        TimeLapseSpeed.X10 -> PixelCameraStateSignal.TIME_LAPSE_SPEED_X10_ACTIVE
+        TimeLapseSpeed.X30 -> PixelCameraStateSignal.TIME_LAPSE_SPEED_X30_ACTIVE
+        TimeLapseSpeed.X120 -> PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE
+    }
+
 enum class AutomationAction {
     SELECT_VIDEO,
     SELECT_TIME_LAPSE,
+    SELECT_NIGHT_SIGHT_TIME_LAPSE,
     OPEN_TIME_LAPSE_SPEED_CONTROL,
     SELECT_TIME_LAPSE_SPEED,
     SELECT_REAR_MAIN_LENS,
+    SELECT_REAR_ULTRAWIDE_LENS,
+    SELECT_REAR_TELEPHOTO_LENS,
+    SELECT_FRONT_LENS,
     START_RECORDING,
     STOP_RECORDING,
+    START_VIDEO_RECORDING,
+    STOP_VIDEO_RECORDING,
+    START_NIGHT_SIGHT_TIME_LAPSE_RECORDING,
+    STOP_NIGHT_SIGHT_TIME_LAPSE_RECORDING,
 }
 
 enum class PixelCameraStateSignal {
     PHOTO_MODE_ACTIVE,
     VIDEO_MODE_ACTIVE,
     TIME_LAPSE_MODE_ACTIVE,
+    NIGHT_SIGHT_TIME_LAPSE_MODE_ACTIVE,
     TIME_LAPSE_SPEED_AUTO_ACTIVE,
     TIME_LAPSE_SPEED_X5_ACTIVE,
     TIME_LAPSE_SPEED_X10_ACTIVE,
@@ -135,6 +237,9 @@ enum class PixelCameraStateSignal {
     TIME_LAPSE_SPEED_X120_ACTIVE,
     TIME_LAPSE_SPEED_PICKER_OPEN,
     REAR_MAIN_LENS_ACTIVE,
+    REAR_ULTRAWIDE_LENS_ACTIVE,
+    REAR_TELEPHOTO_LENS_ACTIVE,
+    FRONT_LENS_ACTIVE,
     RECORDING_ACTIVE,
     NOT_RECORDING,
 }

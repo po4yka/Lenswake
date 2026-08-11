@@ -8,6 +8,7 @@ import dev.po4yka.lenswake.core.AutomationOutcome
 import dev.po4yka.lenswake.core.AutomationProfileRepository
 import dev.po4yka.lenswake.core.AutomationStateName
 import dev.po4yka.lenswake.core.CaptureConfiguration
+import dev.po4yka.lenswake.core.CaptureMode
 import dev.po4yka.lenswake.core.EventId
 import dev.po4yka.lenswake.core.ExecutionApplyResult
 import dev.po4yka.lenswake.core.ExecutionChange
@@ -21,6 +22,7 @@ import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.TimeLapseSpeed
+import dev.po4yka.lenswake.core.supports
 import java.time.Instant
 import java.util.concurrent.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
@@ -121,8 +123,8 @@ class DefaultAutomationEngine(
             -> Unit
         }
 
-        validateSupportedCapture(context)
         context.profileUse = loadProfileUse(context)
+        validateSupportedCapture(context)
 
         context.transition(
             state = AutomationStateName.START_TRIGGERED,
@@ -245,7 +247,7 @@ class DefaultAutomationEngine(
             beforeStop = launchAndObserveCamera(context, AutomationStateName.LOCATING_PIXEL_CAMERA)
         }
 
-        val capture = context.current.capture as CaptureConfiguration.TimeLapse
+        val capture = context.current.capture
         if (
             uncertainStopAtEntry &&
             (beforeStop.isConfirmedRecording(capture) || beforeStop is PixelCameraState.RecordingUnknownMode)
@@ -423,7 +425,7 @@ class DefaultAutomationEngine(
 
     private suspend fun reconcileUncertainStop(
         context: RunContext,
-        capture: CaptureConfiguration.TimeLapse,
+        capture: CaptureConfiguration,
     ): PixelCameraState {
         val operation = AutomationOperation.VERIFY_STOPPED
         val state = AutomationStateName.VERIFYING_STOPPED
@@ -503,7 +505,7 @@ class DefaultAutomationEngine(
     }
 
     private suspend fun convergeStart(context: RunContext): AutomationRunResult {
-        val capture = context.current.capture as CaptureConfiguration.TimeLapse
+        val capture = context.current.capture
         repeat(config.maxConvergenceSteps) {
             val state = observeCamera(
                 context = context,
@@ -515,61 +517,35 @@ class DefaultAutomationEngine(
 
             when (state) {
                 PixelCameraState.Photo -> {
-                    dispatchAndVerify(
-                        context = context,
-                        operation = AutomationOperation.SELECT_VIDEO,
-                        actionState = AutomationStateName.SELECTING_VIDEO,
-                        verificationState = AutomationStateName.VERIFYING_VIDEO,
-                        dispatchFailure = failure(
-                            AutomationFailureCode.VIDEO_MODE_NOT_FOUND,
-                            "Pixel Camera could not select Video mode",
-                        ),
-                        verificationFailure = failure(
-                            AutomationFailureCode.VIDEO_MODE_NOT_VERIFIED,
-                            "Pixel Camera did not confirm Video mode",
-                        ),
-                        action = { pixelCamera.selectVideo(context.profileUse) },
-                    ) { it is PixelCameraState.Video && !it.recording }
+                    selectCaptureMode(
+                        context,
+                        if (capture is CaptureConfiguration.TimeLapse) {
+                            CaptureMode.VIDEO
+                        } else {
+                            capture.mode
+                        },
+                    )
                 }
 
-                is PixelCameraState.Video -> {
-                    if (state.recording) {
-                        fail(
-                            context,
-                            failure(
-                                AutomationFailureCode.CAMERA_STATE_UNKNOWN,
-                                "Pixel Camera is recording in a mode that Lenswake must not alter",
-                            ),
-                        )
-                    }
-                    dispatchAndVerify(
-                        context = context,
-                        operation = AutomationOperation.SELECT_TIME_LAPSE,
-                        actionState = AutomationStateName.SELECTING_TIME_LAPSE,
-                        verificationState = AutomationStateName.VERIFYING_TIME_LAPSE,
-                        dispatchFailure = failure(
-                            AutomationFailureCode.TIME_LAPSE_MODE_NOT_FOUND,
-                            "Pixel Camera could not select Time Lapse mode",
-                        ),
-                        verificationFailure = failure(
-                            AutomationFailureCode.TIME_LAPSE_MODE_NOT_VERIFIED,
-                            "Pixel Camera did not confirm Time Lapse mode",
-                        ),
-                        action = { pixelCamera.selectTimeLapse(context.profileUse) },
-                    ) { it is PixelCameraState.TimeLapse && !it.recording }
+                is PixelCameraState.Video -> if (capture is CaptureConfiguration.Video) {
+                    convergeSimpleCapture(context, capture, state.recording, state.lens)
+                        ?.let { return it }
+                } else {
+                    refuseModeSwitchWhileRecording(context, state.recording)
+                    selectCaptureMode(context, capture.mode)
                 }
 
-                is PixelCameraState.TimeLapse -> when {
+                is PixelCameraState.TimeLapse -> if (capture is CaptureConfiguration.TimeLapse) when {
                     state.recording &&
                         state.speed == capture.speed &&
-                        state.lens == LensSelection.REAR_MAIN &&
+                        state.lens == capture.lens &&
                         context.current.recordActionAt != null -> {
                         return markRecordingVerified(context)
                     }
 
                     state.recording &&
                         state.speed == capture.speed &&
-                        state.lens == LensSelection.REAR_MAIN -> fail(
+                        state.lens == capture.lens -> fail(
                         context,
                         failure(
                             AutomationFailureCode.RECORDING_NOT_CONFIRMED,
@@ -585,28 +561,10 @@ class DefaultAutomationEngine(
                         ),
                     )
 
-                    state.lens != LensSelection.REAR_MAIN -> dispatchAndVerify(
-                        context = context,
-                        operation = AutomationOperation.SELECT_REAR_MAIN_LENS,
-                        actionState = AutomationStateName.SELECTING_REAR_MAIN_LENS,
-                        verificationState = AutomationStateName.VERIFYING_REAR_MAIN_LENS,
-                        dispatchFailure = failure(
-                            AutomationFailureCode.LENS_NOT_FOUND,
-                            "Pixel Camera could not select the rear main lens",
-                        ),
-                        verificationFailure = failure(
-                            AutomationFailureCode.LENS_NOT_VERIFIED,
-                            "Pixel Camera did not confirm the rear main lens",
-                        ),
-                        action = { pixelCamera.selectRearMainLens(context.profileUse) },
-                    ) {
-                        it is PixelCameraState.TimeLapse &&
-                            !it.recording &&
-                            it.lens == LensSelection.REAR_MAIN
-                    }
+                    state.lens != capture.lens -> dispatchConfiguredLens(context, capture)
 
                     state.speed != capture.speed -> {
-                        context.rearMainLensObservedBeforeSpeedPicker = true
+                        context.configuredLensObservedBeforeSpeedPicker = true
                         openTimeLapseSpeedControlAndVerify(
                             context = context,
                             dispatchFailure = failure(
@@ -622,34 +580,28 @@ class DefaultAutomationEngine(
                         }
                     }
 
-                    else -> {
-                        if (context.current.hasUncertainRecordDispatch()) {
-                            fail(
-                                context,
-                                failure(
-                                    AutomationFailureCode.RECORDING_NOT_CONFIRMED,
-                                    "An uncertain prior Record dispatch must be reconciled without redispatch",
-                                ),
-                            )
-                        }
-                        dispatchRecordingStart(context)
-                        observeCamera(
-                            context = context,
-                            operation = AutomationOperation.VERIFY_RECORDING,
-                            state = AutomationStateName.VERIFYING_RECORDING,
-                            failureCode = AutomationFailureCode.RECORDING_NOT_CONFIRMED,
-                            failureMessage = "Pixel Camera did not confirm Time Lapse recording",
-                        ) { observed ->
-                            observed is PixelCameraState.TimeLapse &&
-                                observed.recording &&
-                                observed.speed == capture.speed &&
-                                observed.lens == LensSelection.REAR_MAIN
-                        }
-                        return markRecordingVerified(context)
-                    }
+                    else -> return startAndVerifyRecording(context, capture)
+                } else {
+                    refuseModeSwitchWhileRecording(context, state.recording)
+                    selectCaptureMode(context, capture.mode)
                 }
 
+                is PixelCameraState.NightSightTimeLapse ->
+                    if (capture is CaptureConfiguration.NightSightTimeLapse) {
+                        convergeSimpleCapture(context, capture, state.recording, state.lens)
+                            ?.let { return it }
+                    } else {
+                        refuseModeSwitchWhileRecording(context, state.recording)
+                        selectCaptureMode(context, capture.mode)
+                    }
+
                 is PixelCameraState.TimeLapseSpeedPicker -> {
+                    val timeLapse = capture as? CaptureConfiguration.TimeLapse
+                    if (timeLapse == null) {
+                        if (state.recording) refuseModeSwitchWhileRecording(context, true)
+                        closeTimeLapseSpeedControlAndVerify(context, state.speed)
+                        return@repeat
+                    }
                     if (state.recording) {
                         fail(
                             context,
@@ -660,14 +612,14 @@ class DefaultAutomationEngine(
                         )
                     }
                     if (
-                        state.lens != LensSelection.REAR_MAIN &&
-                        !context.rearMainLensObservedBeforeSpeedPicker
+                        state.lens != timeLapse.lens &&
+                        !context.configuredLensObservedBeforeSpeedPicker
                     ) {
                         closeTimeLapseSpeedControlAndVerify(context, state.speed)
                         return@repeat
                     }
-                    if (state.speed == capture.speed) {
-                        closeTimeLapseSpeedControlAndVerify(context, capture.speed)
+                    if (state.speed == timeLapse.speed) {
+                        closeTimeLapseSpeedControlAndVerify(context, timeLapse.speed)
                         return@repeat
                     }
                     dispatchAndVerify(
@@ -683,15 +635,15 @@ class DefaultAutomationEngine(
                             AutomationFailureCode.TIME_LAPSE_SPEED_NOT_VERIFIED,
                             "Pixel Camera did not confirm the requested Time Lapse speed",
                         ),
-                        action = { pixelCamera.selectTimeLapseSpeed(capture.speed, context.profileUse) },
+                        action = { pixelCamera.selectTimeLapseSpeed(timeLapse.speed, context.profileUse) },
                     ) {
                         when (it) {
-                            is PixelCameraState.TimeLapse -> !it.recording && it.speed == capture.speed
+                            is PixelCameraState.TimeLapse -> !it.recording && it.speed == timeLapse.speed
                             is PixelCameraState.TimeLapseSpeedPicker ->
                                 !it.recording &&
-                                    it.speed == capture.speed &&
-                                    (it.lens == LensSelection.REAR_MAIN ||
-                                        context.rearMainLensObservedBeforeSpeedPicker)
+                                    it.speed == timeLapse.speed &&
+                                    (it.lens == timeLapse.lens ||
+                                        context.configuredLensObservedBeforeSpeedPicker)
                             else -> false
                         }
                     }
@@ -720,6 +672,148 @@ class DefaultAutomationEngine(
                 "Pixel Camera did not converge within ${config.maxConvergenceSteps} semantic transitions",
             ),
         )
+    }
+
+    private suspend fun selectCaptureMode(
+        context: RunContext,
+        mode: CaptureMode,
+    ) {
+        when (mode) {
+            CaptureMode.VIDEO -> dispatchAndVerify(
+                context = context,
+                operation = AutomationOperation.SELECT_VIDEO,
+                actionState = AutomationStateName.SELECTING_VIDEO,
+                verificationState = AutomationStateName.VERIFYING_VIDEO,
+                dispatchFailure = failure(
+                    AutomationFailureCode.VIDEO_MODE_NOT_FOUND,
+                    "Pixel Camera could not select Video mode",
+                ),
+                verificationFailure = failure(
+                    AutomationFailureCode.VIDEO_MODE_NOT_VERIFIED,
+                    "Pixel Camera did not confirm Video mode",
+                ),
+                action = { pixelCamera.selectVideo(context.profileUse) },
+            ) { it is PixelCameraState.Video && !it.recording }
+
+            CaptureMode.TIME_LAPSE -> dispatchAndVerify(
+                context = context,
+                operation = AutomationOperation.SELECT_TIME_LAPSE,
+                actionState = AutomationStateName.SELECTING_TIME_LAPSE,
+                verificationState = AutomationStateName.VERIFYING_TIME_LAPSE,
+                dispatchFailure = failure(
+                    AutomationFailureCode.TIME_LAPSE_MODE_NOT_FOUND,
+                    "Pixel Camera could not select Time Lapse mode",
+                ),
+                verificationFailure = failure(
+                    AutomationFailureCode.TIME_LAPSE_MODE_NOT_VERIFIED,
+                    "Pixel Camera did not confirm Time Lapse mode",
+                ),
+                action = { pixelCamera.selectTimeLapse(context.profileUse) },
+            ) { it is PixelCameraState.TimeLapse && !it.recording }
+
+            CaptureMode.NIGHT_SIGHT_TIME_LAPSE -> dispatchAndVerify(
+                context = context,
+                operation = AutomationOperation.SELECT_NIGHT_SIGHT_TIME_LAPSE,
+                actionState = AutomationStateName.SELECTING_NIGHT_SIGHT_TIME_LAPSE,
+                verificationState = AutomationStateName.VERIFYING_NIGHT_SIGHT_TIME_LAPSE,
+                dispatchFailure = failure(
+                    AutomationFailureCode.TIME_LAPSE_MODE_NOT_FOUND,
+                    "Pixel Camera could not select Night Sight Time Lapse mode",
+                ),
+                verificationFailure = failure(
+                    AutomationFailureCode.TIME_LAPSE_MODE_NOT_VERIFIED,
+                    "Pixel Camera did not confirm Night Sight Time Lapse mode",
+                ),
+                action = { pixelCamera.selectNightSightTimeLapse(context.profileUse) },
+            ) { it is PixelCameraState.NightSightTimeLapse && !it.recording }
+        }
+    }
+
+    private suspend fun convergeSimpleCapture(
+        context: RunContext,
+        capture: CaptureConfiguration,
+        recording: Boolean,
+        observedLens: LensSelection?,
+    ): AutomationRunResult? = when {
+        recording && observedLens == capture.lens && context.current.recordActionAt != null ->
+            markRecordingVerified(context)
+        recording && observedLens == capture.lens -> fail(
+            context,
+            failure(
+                AutomationFailureCode.RECORDING_NOT_CONFIRMED,
+                "Refusing to claim a recording Lenswake did not dispatch",
+            ),
+        )
+        recording -> fail(
+            context,
+            failure(
+                AutomationFailureCode.CAMERA_STATE_UNKNOWN,
+                "Pixel Camera is already recording with a different capture configuration",
+            ),
+        )
+        observedLens != capture.lens -> {
+            dispatchConfiguredLens(context, capture)
+            null
+        }
+        else -> startAndVerifyRecording(context, capture)
+    }
+
+    private suspend fun dispatchConfiguredLens(context: RunContext, capture: CaptureConfiguration) {
+        dispatchAndVerify(
+            context = context,
+            operation = AutomationOperation.SELECT_LENS,
+            actionState = AutomationStateName.SELECTING_LENS,
+            verificationState = AutomationStateName.VERIFYING_LENS,
+            dispatchFailure = failure(
+                AutomationFailureCode.LENS_NOT_FOUND,
+                "Pixel Camera could not select ${capture.lens}",
+            ),
+            verificationFailure = failure(
+                AutomationFailureCode.LENS_NOT_VERIFIED,
+                "Pixel Camera did not confirm ${capture.lens}",
+            ),
+            action = { pixelCamera.selectLens(capture.lens, context.profileUse) },
+        ) {
+            !it.isRecording() &&
+                it.observedLens() == capture.lens &&
+                it.observedMode() == capture.mode
+        }
+    }
+
+    private suspend fun startAndVerifyRecording(
+        context: RunContext,
+        capture: CaptureConfiguration,
+    ): AutomationRunResult.Succeeded {
+        if (context.current.hasUncertainRecordDispatch()) {
+            fail(
+                context,
+                failure(
+                    AutomationFailureCode.RECORDING_NOT_CONFIRMED,
+                    "An uncertain prior Record dispatch must be reconciled without redispatch",
+                ),
+            )
+        }
+        dispatchRecordingStart(context)
+        observeCamera(
+            context = context,
+            operation = AutomationOperation.VERIFY_RECORDING,
+            state = AutomationStateName.VERIFYING_RECORDING,
+            failureCode = AutomationFailureCode.RECORDING_NOT_CONFIRMED,
+            failureMessage = "Pixel Camera did not confirm ${capture.mode} recording",
+        ) { it.isConfirmedRecording(capture) }
+        return markRecordingVerified(context)
+    }
+
+    private suspend fun refuseModeSwitchWhileRecording(context: RunContext, recording: Boolean) {
+        if (recording) {
+            fail(
+                context,
+                failure(
+                    AutomationFailureCode.CAMERA_STATE_UNKNOWN,
+                    "Pixel Camera is recording in a mode that Lenswake must not alter",
+                ),
+            )
+        }
     }
 
     private suspend fun closeTimeLapseSpeedControlAndVerify(
@@ -753,13 +847,8 @@ class DefaultAutomationEngine(
         context: RunContext,
         observed: PixelCameraState,
     ): AutomationRunResult {
-        val capture = context.current.capture as CaptureConfiguration.TimeLapse
-        return if (
-            observed is PixelCameraState.TimeLapse &&
-            observed.recording &&
-            observed.speed == capture.speed &&
-            observed.lens == LensSelection.REAR_MAIN
-        ) {
+        val capture = context.current.capture
+        return if (observed.isConfirmedRecording(capture)) {
             markRecordingVerified(context)
         } else {
             fail(
@@ -1012,7 +1101,7 @@ class DefaultAutomationEngine(
             ) { session, now -> session.copy(recordActionAt = session.recordActionAt ?: now) }
 
             val invocation = try {
-                timed(operation) { pixelCamera.startRecording(context.profileUse) }
+                timed(operation) { pixelCamera.startRecording(context.current.capture.mode, context.profileUse) }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 fail(
@@ -1150,7 +1239,7 @@ class DefaultAutomationEngine(
             ) { session, now -> session.copy(stopActionAt = session.stopActionAt ?: now) }
 
             val invocation = try {
-                timed(operation) { pixelCamera.stopRecording(context.profileUse) }
+                timed(operation) { pixelCamera.stopRecording(context.current.capture.mode, context.profileUse) }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 fail(
@@ -1356,7 +1445,7 @@ class DefaultAutomationEngine(
         var current: ExecutionSession,
     ) {
         lateinit var profileUse: ProfileUse
-        var rearMainLensObservedBeforeSpeedPicker: Boolean = false
+        var configuredLensObservedBeforeSpeedPicker: Boolean = false
 
         suspend fun transition(
             state: AutomationStateName,
@@ -1542,13 +1631,13 @@ class DefaultAutomationEngine(
     )
 
     private suspend fun validateSupportedCapture(context: RunContext) {
-        val capture = context.current.capture as CaptureConfiguration.TimeLapse
-        if (capture.lens != LensSelection.REAR_MAIN || capture.zoom != null) {
+        val capture = context.current.capture
+        if (!context.profileUse.profile.supports(capture)) {
             fail(
                 context,
                 failure(
                     AutomationFailureCode.UNSUPPORTED_CAPTURE_CONFIGURATION,
-                    "Baseline automation supports only the rear main lens without zoom",
+                    "The Pixel Camera profile has no verified selectors for the capture configuration",
                     mapOf(
                         "lens" to capture.lens.name,
                         "zoom" to (capture.zoom?.factor?.toString() ?: "none"),
@@ -1588,21 +1677,57 @@ class DefaultAutomationEngine(
         else -> "automation.state.${state.name.lowercase()}"
     }
 
-    private fun PixelCameraState.isConfirmedRecording(capture: CaptureConfiguration.TimeLapse): Boolean =
-        this is PixelCameraState.TimeLapse &&
-            recording &&
-            speed == capture.speed &&
-            lens == LensSelection.REAR_MAIN
+    private fun PixelCameraState.isConfirmedRecording(capture: CaptureConfiguration): Boolean = when (capture) {
+        is CaptureConfiguration.Video ->
+            this is PixelCameraState.Video && recording && lens == capture.lens
+        is CaptureConfiguration.TimeLapse ->
+            this is PixelCameraState.TimeLapse &&
+                recording &&
+                speed == capture.speed &&
+                lens == capture.lens
+        is CaptureConfiguration.NightSightTimeLapse ->
+            this is PixelCameraState.NightSightTimeLapse && recording && lens == capture.lens
+    }
 
     private fun PixelCameraState.isConfirmedStopped(): Boolean = when (this) {
         PixelCameraState.Photo -> true
         is PixelCameraState.Video -> !recording
         is PixelCameraState.TimeLapse -> !recording
         is PixelCameraState.TimeLapseSpeedPicker -> !recording
+        is PixelCameraState.NightSightTimeLapse -> !recording
         PixelCameraState.NotRunning,
         PixelCameraState.Unknown,
         PixelCameraState.RecordingUnknownMode,
         -> false
+    }
+
+    private fun PixelCameraState.isRecording(): Boolean = when (this) {
+        is PixelCameraState.Video -> recording
+        is PixelCameraState.TimeLapse -> recording
+        is PixelCameraState.TimeLapseSpeedPicker -> recording
+        is PixelCameraState.NightSightTimeLapse -> recording
+        PixelCameraState.RecordingUnknownMode -> true
+        PixelCameraState.Photo,
+        PixelCameraState.NotRunning,
+        PixelCameraState.Unknown,
+        -> false
+    }
+
+    private fun PixelCameraState.observedLens(): LensSelection? = when (this) {
+        is PixelCameraState.Video -> lens
+        is PixelCameraState.TimeLapse -> lens
+        is PixelCameraState.TimeLapseSpeedPicker -> lens
+        is PixelCameraState.NightSightTimeLapse -> lens
+        else -> null
+    }
+
+    private fun PixelCameraState.observedMode(): CaptureMode? = when (this) {
+        is PixelCameraState.Video -> CaptureMode.VIDEO
+        is PixelCameraState.TimeLapse,
+        is PixelCameraState.TimeLapseSpeedPicker,
+        -> CaptureMode.TIME_LAPSE
+        is PixelCameraState.NightSightTimeLapse -> CaptureMode.NIGHT_SIGHT_TIME_LAPSE
+        else -> null
     }
 
     private fun ExecutionSession.hasUncertainRecordDispatch(): Boolean =

@@ -1,6 +1,7 @@
 package dev.po4yka.lenswake.automation
 
 import dev.po4yka.lenswake.core.AutomationFailure
+import dev.po4yka.lenswake.core.CaptureMode
 import dev.po4yka.lenswake.core.InteractionMethod
 import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.PixelCameraProfile
@@ -21,6 +22,7 @@ sealed interface PixelCameraState {
 
     data class Video(
         val recording: Boolean,
+        val lens: LensSelection? = null,
     ) : PixelCameraState
 
     data class TimeLapse(
@@ -31,6 +33,11 @@ sealed interface PixelCameraState {
 
     data class TimeLapseSpeedPicker(
         val speed: TimeLapseSpeed? = null,
+        val recording: Boolean,
+        val lens: LensSelection? = null,
+    ) : PixelCameraState
+
+    data class NightSightTimeLapse(
         val recording: Boolean,
         val lens: LensSelection? = null,
     ) : PixelCameraState
@@ -89,6 +96,8 @@ interface PixelCameraPort {
 
     suspend fun selectTimeLapse(profileUse: ProfileUse): ActionDispatch
 
+    suspend fun selectNightSightTimeLapse(profileUse: ProfileUse): ActionDispatch
+
     suspend fun openTimeLapseSpeedControl(profileUse: ProfileUse): ActionDispatch
 
     suspend fun selectTimeLapseSpeed(
@@ -101,11 +110,20 @@ interface PixelCameraPort {
         profileUse: ProfileUse,
     ): ActionDispatch
 
-    suspend fun selectRearMainLens(profileUse: ProfileUse): ActionDispatch
+    suspend fun selectLens(
+        lens: LensSelection,
+        profileUse: ProfileUse,
+    ): ActionDispatch
 
-    suspend fun startRecording(profileUse: ProfileUse): ActionDispatch
+    suspend fun startRecording(
+        mode: CaptureMode,
+        profileUse: ProfileUse,
+    ): ActionDispatch
 
-    suspend fun stopRecording(profileUse: ProfileUse): ActionDispatch
+    suspend fun stopRecording(
+        mode: CaptureMode,
+        profileUse: ProfileUse,
+    ): ActionDispatch
 }
 
 data class RecordingMediaBaseline(
