@@ -9,7 +9,6 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
@@ -25,7 +24,7 @@ internal fun shouldRetryStoppedRecovery(stopReason: Int): Boolean =
 /** Restores future alarms and re-arms durable delivery entries without invoking automation. */
 class AlarmRecoveryService : JobService() {
     private val serviceScope = CoroutineScope(
-        SupervisorJob() + Dispatchers.IO + CoroutineName("lenswake-alarm-recovery"),
+        SupervisorJob() + CoroutineName("lenswake-alarm-recovery"),
     )
     private val recoveryMutex = Mutex()
     private val terminalLock = Any()
@@ -118,6 +117,11 @@ class AlarmRecoveryService : JobService() {
         super.onDestroy()
     }
 
+    /**
+     * JobService is the terminal boundary for heterogeneous runtime failures from Room, Android
+     * alarm APIs, and recovery implementations; every such failure is durably requeued below.
+     */
+    @Suppress("TooGenericExceptionCaught")
     private suspend fun evaluateRecovery(action: String): RecoveryFailure? =
         try {
             withTimeout(RECOVERY_DEADLINE_MILLIS) { attemptRecovery(action) }
