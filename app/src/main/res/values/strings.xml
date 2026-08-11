@@ -155,8 +155,6 @@
     <string name="validation_schedule_form_invalid">Choose a valid name, start, end, and verified camera setup.</string>
 
     <string name="default_schedule_name">Time Lapse</string>
-    <string name="readiness_checking_title">Checking readiness</string>
-    <string name="readiness_checking_summary">Lenswake has not finished checking this device.</string>
     <string name="readiness_ready_title">Ready to schedule</string>
     <string name="readiness_ready_summary">This device is ready for scheduled recordings.</string>
     <string name="readiness_warnings_summary">Scheduling is ready, but some optional setup still needs attention.</string>
@@ -304,7 +302,6 @@
     <string name="rehearsal_unexpected_failure">The test recording stopped unexpectedly. Review Diagnostics, then try again.</string>
     <string name="rehearsal_passed">Lenswake started and stopped Pixel Camera successfully. This profile is ready for scheduling.</string>
     <string name="rehearsal_busy">Another test recording is already running.</string>
-    <string name="rehearsal_safety_stop_pending">%1$s Lenswake will keep trying to stop Pixel Camera automatically.</string>
     <string name="rehearsal_error_profile_not_found">The selected camera setup is no longer installed.</string>
     <string name="rehearsal_error_environment_unavailable">Lenswake could not inspect the current Pixel Camera setup.</string>
     <string name="rehearsal_error_environment_mismatch">This camera setup does not match the current device. Install a matching setup.</string>
