@@ -37,6 +37,8 @@ data class ExecutionSession(
     val savedMediaGeneration: Long? = null,
     val stopActionAt: Instant? = null,
     val stoppedVerifiedAt: Instant? = null,
+    /** Durable receipt issued only after a rehearsal's full capture verification succeeds. */
+    val rehearsalVerifiedAt: Instant? = null,
     /** Explicit ownership release when external STOP verification is impossible, such as reboot. */
     val cameraOwnershipReleasedAt: Instant? = null,
     val environmentSnapshotId: EnvironmentSnapshotId? = null,
@@ -231,7 +233,11 @@ data class AutomationEvent(
         require(metadata.size <= MAX_METADATA_ENTRIES) {
             "Event metadata may contain at most $MAX_METADATA_ENTRIES entries"
         }
-        require(metadata.all { (key, value) -> key.length <= MAX_METADATA_LENGTH && value.length <= MAX_METADATA_LENGTH }) {
+        require(
+            metadata.all { (key, value) ->
+                key.length <= MAX_METADATA_LENGTH && value.length <= MAX_METADATA_LENGTH
+            },
+        ) {
             "Event metadata keys and values may contain at most $MAX_METADATA_LENGTH characters"
         }
     }

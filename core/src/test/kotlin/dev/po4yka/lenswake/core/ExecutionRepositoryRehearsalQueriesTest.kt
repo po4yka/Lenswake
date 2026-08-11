@@ -30,13 +30,17 @@ class ExecutionRepositoryRehearsalQueriesTest {
             mediaStoreVersion = "version-1",
             stoppedVerifiedAt = Instant.ofEpochMilli(7_000),
         )
+        val awaitingReceipt = verifiedSession(
+            id = "awaiting-receipt",
+            stopAt = 9_000,
+        ).copy(rehearsalVerifiedAt = null)
         val repository = FakeExecutionRepository(
-            listOf(pending, stopping, failedOwned, failedUnowned, awaitingMedia),
+            listOf(pending, stopping, failedOwned, failedUnowned, awaitingMedia, awaitingReceipt),
         )
 
         assertEquals(
-            listOf(awaitingMedia.id, stopping.id, failedOwned.id),
-            repository.findActiveRehearsals(3).map(ExecutionSession::id),
+            listOf(awaitingMedia.id, awaitingReceipt.id, stopping.id, failedOwned.id),
+            repository.findActiveRehearsals(4).map(ExecutionSession::id),
         )
         assertTrue(
             runCatching { repository.findActiveRehearsals(0) }.exceptionOrNull() is IllegalArgumentException,
@@ -47,42 +51,41 @@ class ExecutionRepositoryRehearsalQueriesTest {
     }
 
     @Test
-    fun `default latest successful rehearsal requires recording stop and saved-media proofs`() = runTest {
+    fun `default latest successful rehearsal requires full proof and durable receipt`() = runTest {
         val profileId = ProfileId("profile")
-        val older = session(
-            "older",
-            SessionStatus.COMPLETED,
+        val older = verifiedSession(
+            id = "older",
             stopAt = 10_000,
             profileId = profileId,
-            recordingVerifiedAt = Instant.ofEpochMilli(7_000),
-            mediaSavedVerifiedAt = Instant.ofEpochMilli(7_500),
-            stoppedVerifiedAt = Instant.ofEpochMilli(8_000),
         )
-        val latest = session(
-            "latest",
-            SessionStatus.COMPLETED,
+        val latest = verifiedSession(
+            id = "latest",
             stopAt = 20_000,
             profileId = profileId,
-            recordingVerifiedAt = Instant.ofEpochMilli(17_000),
-            mediaSavedVerifiedAt = Instant.ofEpochMilli(17_500),
-            stoppedVerifiedAt = Instant.ofEpochMilli(18_000),
         )
-        val missingStop = session(
-            "missing-stop",
-            SessionStatus.COMPLETED,
+        val missingStop = verifiedSession(
+            id = "missing-stop",
             stopAt = 30_000,
             profileId = profileId,
-            recordingVerifiedAt = Instant.ofEpochMilli(27_000),
-        )
-        val missingMedia = session(
-            "missing-media",
-            SessionStatus.COMPLETED,
+        ).copy(stopActionAt = null)
+        val missingRecord = verifiedSession(
+            id = "missing-record",
+            stopAt = 35_000,
+            profileId = profileId,
+        ).copy(recordActionAt = null)
+        val missingMedia = verifiedSession(
+            id = "missing-media",
             stopAt = 40_000,
             profileId = profileId,
-            recordingVerifiedAt = Instant.ofEpochMilli(37_000),
-            stoppedVerifiedAt = Instant.ofEpochMilli(38_000),
+        ).copy(mediaSavedVerifiedAt = null)
+        val missingReceipt = verifiedSession(
+            id = "missing-receipt",
+            stopAt = 50_000,
+            profileId = profileId,
+        ).copy(rehearsalVerifiedAt = null)
+        val repository = FakeExecutionRepository(
+            listOf(older, latest, missingStop, missingRecord, missingMedia, missingReceipt),
         )
-        val repository = FakeExecutionRepository(listOf(older, latest, missingStop, missingMedia))
 
         assertEquals(latest, repository.latestSuccessfulRehearsal(profileId))
         assertEquals(
@@ -99,6 +102,58 @@ class ExecutionRepositoryRehearsalQueriesTest {
         assertEquals(null, repository.latestSuccessfulRehearsal(ProfileId("absent")))
     }
 
+    @Test
+    fun `exact rehearsal query rejects profile and capture mismatches`() = runTest {
+        val expectedCapture = CaptureConfiguration.TimeLapse(
+            speed = TimeLapseSpeed.X120,
+            lens = LensSelection.REAR_TELEPHOTO,
+        )
+        val verified = verifiedSession(
+            id = "verified",
+            stopAt = 10_000,
+            capture = expectedCapture,
+        )
+        val repository = FakeExecutionRepository(listOf(verified))
+
+        assertEquals(
+            verified,
+            repository.latestSuccessfulRehearsal(ProfileId("profile"), expectedCapture),
+        )
+        assertEquals(
+            null,
+            repository.latestSuccessfulRehearsal(
+                ProfileId("different-profile"),
+                expectedCapture,
+            ),
+        )
+        assertEquals(
+            null,
+            repository.latestSuccessfulRehearsal(
+                ProfileId("profile"),
+                expectedCapture.copy(lens = LensSelection.REAR_MAIN),
+            ),
+        )
+    }
+
+    private fun verifiedSession(
+        id: String,
+        stopAt: Long,
+        profileId: ProfileId = ProfileId("profile"),
+        capture: CaptureConfiguration = CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120),
+    ): ExecutionSession = session(
+        id = id,
+        status = SessionStatus.COMPLETED,
+        stopAt = stopAt,
+        profileId = profileId,
+        recordActionAt = Instant.ofEpochMilli(stopAt - 5_000),
+        recordingVerifiedAt = Instant.ofEpochMilli(stopAt - 4_000),
+        stopActionAt = Instant.ofEpochMilli(stopAt - 3_000),
+        stoppedVerifiedAt = Instant.ofEpochMilli(stopAt - 2_000),
+        mediaSavedVerifiedAt = Instant.ofEpochMilli(stopAt - 1_000),
+        rehearsalVerifiedAt = Instant.ofEpochMilli(stopAt),
+        capture = capture,
+    )
+
     private fun session(
         id: String,
         status: SessionStatus,
@@ -109,7 +164,10 @@ class ExecutionRepositoryRehearsalQueriesTest {
         mediaBaselineGeneration: Long? = null,
         mediaStoreVersion: String? = null,
         mediaSavedVerifiedAt: Instant? = null,
+        stopActionAt: Instant? = null,
         stoppedVerifiedAt: Instant? = null,
+        rehearsalVerifiedAt: Instant? = null,
+        capture: CaptureConfiguration = CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120),
     ): ExecutionSession = ExecutionSession(
         id = SessionId(id),
         executionKey = "rehearsal/$id",
@@ -117,7 +175,7 @@ class ExecutionRepositoryRehearsalQueriesTest {
         scheduleId = null,
         scheduleName = "Rehearsal",
         profileId = profileId,
-        capture = CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120),
+        capture = capture,
         expectedStartAt = Instant.ofEpochMilli(stopAt - 1_000),
         expectedStopAt = Instant.ofEpochMilli(stopAt),
         status = status,
@@ -126,9 +184,11 @@ class ExecutionRepositoryRehearsalQueriesTest {
         mediaBaselineGeneration = mediaBaselineGeneration,
         mediaStoreVersion = mediaStoreVersion,
         mediaSavedVerifiedAt = mediaSavedVerifiedAt,
+        stopActionAt = stopActionAt,
         stoppedVerifiedAt = stoppedVerifiedAt,
+        rehearsalVerifiedAt = rehearsalVerifiedAt,
         createdAt = Instant.ofEpochMilli(1_000),
-        updatedAt = stoppedVerifiedAt ?: Instant.ofEpochMilli(2_000),
+        updatedAt = rehearsalVerifiedAt ?: stoppedVerifiedAt ?: Instant.ofEpochMilli(2_000),
     )
 }
 

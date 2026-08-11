@@ -87,24 +87,25 @@ interface ExecutionRepository {
             .asSequence()
             .filter { session ->
                 session.kind == SessionKind.REHEARSAL &&
-                    (session.ownsPixelCamera || session.awaitsMediaSaveVerification)
+                    (
+                        session.ownsPixelCamera ||
+                            session.awaitsMediaSaveVerification ||
+                            session.awaitsRehearsalVerificationReceipt
+                    )
             }
             .sortedWith(compareBy(ExecutionSession::expectedStopAt, ExecutionSession::createdAt, { it.id.value }))
             .take(limit)
             .toList()
     }
 
-    /** Returns the latest rehearsal with start, stop, and saved-media verification for [profileId]. */
+    /** Returns the latest rehearsal with a durable full-verification receipt for [profileId]. */
     suspend fun latestSuccessfulRehearsal(profileId: ProfileId): ExecutionSession? =
         observeExecutions().first()
             .asSequence()
             .filter { session ->
                 session.kind == SessionKind.REHEARSAL &&
                     session.profileId == profileId &&
-                    session.status == SessionStatus.COMPLETED &&
-                    session.recordingVerifiedAt != null &&
-                    session.mediaSavedVerifiedAt != null &&
-                    session.stoppedVerifiedAt != null
+                    session.hasDurableRehearsalVerificationReceipt
             }
             .maxWithOrNull(
                 compareBy<ExecutionSession>(
@@ -114,7 +115,7 @@ interface ExecutionRepository {
                 ),
             )
 
-    /** Returns the latest fully verified rehearsal for one exact capture configuration. */
+    /** Returns the latest durably verified rehearsal for one exact capture configuration. */
     suspend fun latestSuccessfulRehearsal(
         profileId: ProfileId,
         capture: CaptureConfiguration,
@@ -125,10 +126,7 @@ interface ExecutionRepository {
                 session.kind == SessionKind.REHEARSAL &&
                     session.profileId == profileId &&
                     session.capture == capture &&
-                    session.status == SessionStatus.COMPLETED &&
-                    session.recordingVerifiedAt != null &&
-                    session.mediaSavedVerifiedAt != null &&
-                    session.stoppedVerifiedAt != null
+                    session.hasDurableRehearsalVerificationReceipt
             }
             .maxWithOrNull(
                 compareBy<ExecutionSession>(
@@ -143,6 +141,24 @@ interface ExecutionRepository {
 
     }
 }
+
+private val ExecutionSession.hasVerifiedRehearsalStart: Boolean
+    get() = recordActionAt != null && recordingVerifiedAt != null
+
+private val ExecutionSession.hasVerifiedRehearsalStop: Boolean
+    get() = stopActionAt != null && stoppedVerifiedAt != null
+
+private val ExecutionSession.hasFullRehearsalProof: Boolean
+    get() = status == SessionStatus.COMPLETED &&
+        hasVerifiedRehearsalStart &&
+        hasVerifiedRehearsalStop &&
+        mediaSavedVerifiedAt != null
+
+private val ExecutionSession.hasDurableRehearsalVerificationReceipt: Boolean
+    get() = hasFullRehearsalProof && rehearsalVerifiedAt != null
+
+private val ExecutionSession.awaitsRehearsalVerificationReceipt: Boolean
+    get() = hasFullRehearsalProof && rehearsalVerifiedAt == null
 
 /**
  * Persistence boundary for immutable execution diagnostics.
