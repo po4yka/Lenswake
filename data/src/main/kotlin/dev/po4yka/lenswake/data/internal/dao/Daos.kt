@@ -63,8 +63,7 @@ internal sealed interface ExecutionReservationEntityResult {
     ) : ExecutionReservationEntityResult
 }
 
-@Dao
-internal interface ExecutionDao {
+internal interface ExecutionQueryDao {
     @Query("SELECT * FROM execution_sessions ORDER BY created_at_epoch_ms DESC, id DESC")
     fun observeAll(): Flow<List<ExecutionSessionEntity>>
 
@@ -168,7 +167,9 @@ internal interface ExecutionDao {
         """,
     )
     suspend fun findInterruptedScheduledOwners(): List<ExecutionSessionEntity>
+}
 
+internal interface ExecutionMutationDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIgnoringConflict(session: ExecutionSessionEntity): Long
 
@@ -183,6 +184,10 @@ internal interface ExecutionDao {
 
     @Query("SELECT COALESCE(MAX(sequence), -1) + 1 FROM execution_events WHERE session_id = :sessionId")
     suspend fun nextEventSequence(sessionId: String): Long
+}
+
+@Dao
+internal interface ExecutionDao : ExecutionQueryDao, ExecutionMutationDao {
 
     @Transaction
     suspend fun reconcileInterruptedScheduledSessions(
@@ -235,24 +240,29 @@ internal interface ExecutionDao {
     ): ExecutionReservationEntityResult {
         val existingById = get(session.id)
         val existingByKey = getByExecutionKey(session.executionKey)
-        if (existingById != null || existingByKey != null) {
-            check(existingById?.executionKey == session.executionKey && existingByKey?.id == session.id) {
+        val existingReservation = if (existingById != null || existingByKey != null) {
+            check(
+                existingById?.executionKey == session.executionKey &&
+                    existingByKey?.id == session.id,
+            ) {
                 "Execution session conflicts with an existing id or execution key"
             }
-            return ExecutionReservationEntityResult.Reserved(
+            ExecutionReservationEntityResult.Reserved(
                 session = checkNotNull(existingById),
                 newlyCreated = false,
             )
+        } else {
+            null
         }
 
-        findPixelCameraOwner()?.let { owner ->
-            return ExecutionReservationEntityResult.CameraBusy(owner)
+        return existingReservation ?: findPixelCameraOwner()?.let { owner ->
+            ExecutionReservationEntityResult.CameraBusy(owner)
+        } ?: run {
+            check(insertIgnoringConflict(session) != -1L) {
+                "Execution reservation conflicted after the transactional ownership check"
+            }
+            ExecutionReservationEntityResult.Reserved(session, newlyCreated = true)
         }
-
-        check(insertIgnoringConflict(session) != -1L) {
-            "Execution reservation conflicted after the transactional ownership check"
-        }
-        return ExecutionReservationEntityResult.Reserved(session, newlyCreated = true)
     }
 
     @Transaction
