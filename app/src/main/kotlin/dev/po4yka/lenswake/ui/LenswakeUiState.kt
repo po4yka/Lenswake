@@ -1,7 +1,11 @@
 package dev.po4yka.lenswake.ui
 
 import androidx.compose.runtime.Immutable
+import dev.po4yka.lenswake.core.CaptureConfiguration
+import dev.po4yka.lenswake.core.CaptureMode
+import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.SetupRemediationAction
+import dev.po4yka.lenswake.core.TimeLapseSpeed
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -71,6 +75,9 @@ data class ScheduleFormUiState(
     val startLocal: LocalDateTime? = null,
     val stopLocal: LocalDateTime? = null,
     val zoneId: ZoneId = ZoneId.systemDefault(),
+    val captureMode: CaptureMode = CaptureMode.TIME_LAPSE,
+    val timeLapseSpeed: TimeLapseSpeed = TimeLapseSpeed.X120,
+    val lens: LensSelection = LensSelection.REAR_MAIN,
     val profileId: String = "",
     val enabled: Boolean = true,
 )
@@ -192,6 +199,7 @@ data class ScheduleSummaryUiState(
     val startLocal: LocalDateTime,
     val stopLocal: LocalDateTime,
     val zoneId: ZoneId,
+    val capture: CaptureConfiguration,
     val profileId: String,
     val enabled: Boolean,
 )
@@ -203,6 +211,7 @@ data class ProfileSummaryUiState(
     val environment: String,
     val compatibility: String,
     val verifiedForScheduling: Boolean,
+    val supportedCaptures: Set<CaptureConfiguration>,
 )
 
 @Immutable

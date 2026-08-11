@@ -66,6 +66,8 @@ internal object TestUiStringProvider : UiStringProvider {
         R.string.validation_schedule_start_future to
             "Start must be in the future while the schedule is active.",
         R.string.validation_schedule_profile_required to "Choose a camera setup verified for scheduling.",
+        R.string.validation_schedule_capture_unsupported to
+            "This profile has no verified selectors for the selected mode, speed, and lens.",
     )
 
     override fun get(

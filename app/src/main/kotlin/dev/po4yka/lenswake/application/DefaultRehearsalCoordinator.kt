@@ -13,6 +13,7 @@ import dev.po4yka.lenswake.core.AutomationFailureCode
 import dev.po4yka.lenswake.core.AutomationOutcome
 import dev.po4yka.lenswake.core.AutomationProfileRepository
 import dev.po4yka.lenswake.core.AutomationStateName
+import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.EnvironmentSnapshotCaptureResult
 import dev.po4yka.lenswake.core.EnvironmentSnapshotId
 import dev.po4yka.lenswake.core.EnvironmentSnapshotRepository
@@ -1310,12 +1311,12 @@ private fun AutomationRunResult.failureMessage(): String =
         is AutomationRunResult.Succeeded -> "Rehearsal result did not contain required ownership proof"
     }
 
-private fun ExecutionSession.testedProfileFingerprint(): String? =
+internal fun ExecutionSession.testedProfileFingerprint(): String? =
     executionKey
         .substringAfterLast('/', missingDelimiterValue = "")
         .takeIf { it.length == SHA_256_HEX_LENGTH && it.all(Char::isHexDigit) }
 
-private fun PixelCameraProfile.definitionFingerprint(): String {
+internal fun PixelCameraProfile.definitionFingerprint(): String {
     val bytes = ByteArrayOutputStream()
     DataOutputStream(bytes).use { output ->
         fun writeString(value: String?) {
@@ -1388,6 +1389,20 @@ private fun PixelCameraProfile.definitionFingerprint(): String {
         .digest(bytes.toByteArray())
         .joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and UNSIGNED_BYTE_MASK) }
 }
+
+internal fun ExecutionSession.qualifiesRehearsal(
+    profile: PixelCameraProfile,
+    capture: CaptureConfiguration,
+): Boolean =
+    kind == SessionKind.REHEARSAL &&
+        status == SessionStatus.COMPLETED &&
+        profileId == profile.id &&
+        this.capture == capture &&
+        recordingVerifiedAt != null &&
+        stopActionAt != null &&
+        stoppedVerifiedAt != null &&
+        mediaSavedVerifiedAt != null &&
+        testedProfileFingerprint() == profile.definitionFingerprint()
 
 private fun Char.isHexDigit(): Boolean = this in '0'..'9' || this in 'a'..'f'
 

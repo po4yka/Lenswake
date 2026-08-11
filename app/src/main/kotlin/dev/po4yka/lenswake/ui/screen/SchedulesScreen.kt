@@ -59,6 +59,7 @@ import dev.po4yka.lenswake.ui.ScheduleEditorMode
 import dev.po4yka.lenswake.ui.ScheduleEditorUiState
 import dev.po4yka.lenswake.ui.ScheduleFormUiState
 import dev.po4yka.lenswake.ui.ScheduleSummaryUiState
+import dev.po4yka.lenswake.ui.captureConfiguration
 import dev.po4yka.lenswake.ui.scaffoldContentViewport
 import dev.po4yka.lenswake.ui.screenContentPadding
 import dev.po4yka.lenswake.ui.validateForDisplay
@@ -229,6 +230,7 @@ private fun ScheduleEditor(
     val context = LocalContext.current
     val strings = remember(context) { AndroidUiStringProvider(context) }
     val validation = form.validateForDisplay(profiles, strings = strings)
+    val supportedCaptures = profiles.singleOrNull { it.id == form.profileId }?.supportedCaptures.orEmpty()
     val locale = LocalConfiguration.current.locales[0]
     var pickerTarget by rememberSaveable { mutableStateOf<SchedulePickerTarget?>(null) }
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -304,13 +306,32 @@ private fun ScheduleEditor(
                 text = stringResource(R.string.schedule_camera_setup_label),
                 style = MaterialTheme.typography.titleMedium,
             )
+            CaptureConfigurationEditor(
+                form = form,
+                supportedCaptures = supportedCaptures,
+                enabled = !busy,
+                validationError = validation.captureError,
+                onUpdateForm = onUpdateForm,
+            )
             Column(modifier = Modifier.selectableGroup()) {
                 profiles.forEachIndexed { index, profile ->
                     ProfileRadioOption(
                         profile = profile,
                         selected = form.profileId == profile.id,
                         enabled = !busy && profile.verifiedForScheduling,
-                        onSelect = { onUpdateForm(form.copy(profileId = profile.id)) },
+                        onSelect = {
+                            val selectedCapture = form.captureConfiguration()
+                                .takeIf { it in profile.supportedCaptures }
+                                ?: profile.supportedCaptures.preferredFor(form.captureMode, form)
+                                ?: profile.supportedCaptures.preferredForAny()
+                            onUpdateForm(
+                                if (selectedCapture == null) {
+                                    form.copy(profileId = profile.id)
+                                } else {
+                                    form.copy(profileId = profile.id).withCapture(selectedCapture)
+                                },
+                            )
+                        },
                     )
                     if (index < profiles.lastIndex) {
                         HorizontalDivider()
@@ -681,6 +702,7 @@ private fun ScheduleCard(
                 }
             }
             Text(schedule.timing, style = MaterialTheme.typography.bodyMedium)
+            Text(schedule.capture.label(), style = MaterialTheme.typography.bodyMedium)
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !busy,

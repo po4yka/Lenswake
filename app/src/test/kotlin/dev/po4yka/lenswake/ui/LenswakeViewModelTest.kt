@@ -2,11 +2,13 @@ package dev.po4yka.lenswake.ui
 
 import androidx.lifecycle.viewModelScope
 import dev.po4yka.lenswake.core.AutomationEvent
+import dev.po4yka.lenswake.core.AutomationAction
 import dev.po4yka.lenswake.core.AutomationOperation
 import dev.po4yka.lenswake.core.AutomationOutcome
 import dev.po4yka.lenswake.core.AutomationProfileRepository
 import dev.po4yka.lenswake.core.AutomationStateName
 import dev.po4yka.lenswake.core.CaptureConfiguration
+import dev.po4yka.lenswake.core.CaptureMode
 import dev.po4yka.lenswake.core.EventId
 import dev.po4yka.lenswake.core.ExecutionApplyResult
 import dev.po4yka.lenswake.core.ExecutionChange
@@ -15,6 +17,7 @@ import dev.po4yka.lenswake.core.ExecutionReservationResult
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
+import dev.po4yka.lenswake.core.PixelCameraStateSignal
 import dev.po4yka.lenswake.core.PreflightCheck
 import dev.po4yka.lenswake.core.PreflightCheckType
 import dev.po4yka.lenswake.core.PreflightReport
@@ -34,6 +37,8 @@ import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.TimeLapseSpeed
+import dev.po4yka.lenswake.core.UiSelector
+import dev.po4yka.lenswake.core.UiSelectorSet
 import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.application.RuntimePreflightProbe
 import dev.po4yka.lenswake.application.AlarmTransportIncident
@@ -44,6 +49,7 @@ import dev.po4yka.lenswake.application.RehearsalCoordinator
 import dev.po4yka.lenswake.application.RehearsalResult
 import dev.po4yka.lenswake.application.RehearsalResultCode
 import dev.po4yka.lenswake.application.ScheduleWorkflow
+import dev.po4yka.lenswake.application.definitionFingerprint
 import dev.po4yka.lenswake.automation.PortResult
 import java.time.Instant
 import java.time.Duration
@@ -113,6 +119,40 @@ class LenswakeViewModelTest {
         assertTrue(state.actions.canInstallCandidateProfile)
         assertTrue(state.actions.canExportDiagnostics)
         assertEquals("", state.actions.exportDiagnosticsUnavailableReason)
+    }
+
+    @Test
+    fun mapperExposesEveryCaptureWithProofForTheCurrentProfileDefinition() {
+        val promotedCapture = CaptureConfiguration.Video(
+            dev.po4yka.lenswake.core.LensSelection.FRONT,
+        )
+        val secondCaptureProof = verifiedRehearsal(
+            CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120),
+        ).copy(mediaSavedVerifiedAt = now.minusSeconds(601))
+        val wrongFingerprintProof = verifiedRehearsal(
+            CaptureConfiguration.Video(dev.po4yka.lenswake.core.LensSelection.REAR_MAIN),
+        ).copy(executionKey = "rehearsal/proof/${"0".repeat(64)}")
+
+        val state = LenswakeUiStateMapper.map(
+            schedules = emptyList(),
+            profiles = listOf(profile()),
+            events = emptyList(),
+            executions = listOf(
+                verifiedRehearsal(promotedCapture),
+                secondCaptureProof,
+                wrongFingerprintProof,
+            ),
+            preflight = scheduleEligiblePreflight(),
+            now = now,
+            strings = TestUiStringProvider,
+        )
+
+        assertEquals(
+            setOf(promotedCapture, secondCaptureProof.capture),
+            state.profiles.single().supportedCaptures,
+        )
+        assertTrue(state.profiles.single().verifiedForScheduling)
+        assertTrue(state.actions.canCreateSchedule)
     }
 
     @Test
@@ -428,7 +468,7 @@ class LenswakeViewModelTest {
         val pending = viewModel.state.first { it.rehearsal is RehearsalActionUiState.SafetyStopPending }
         assertEquals(profileId, received?.profileId)
         assertEquals(Duration.ofSeconds(10), received?.recordingDuration)
-        assertEquals(TimeLapseSpeed.X120, received?.capture?.speed)
+        assertEquals(TimeLapseSpeed.X120, received?.capture?.timeLapseSpeed)
         assertEquals(dev.po4yka.lenswake.core.LensSelection.REAR_MAIN, received?.capture?.lens)
         assertFalse(pending.actions.canRunRehearsal)
         assertTrue(
@@ -465,6 +505,41 @@ class LenswakeViewModelTest {
         )
         val reconciled = viewModel.state.first { it.activeSession == null }
         assertTrue(reconciled.actions.canRunRehearsal)
+    }
+
+    @Test
+    fun runRehearsalSelectsTheFirstCaptureWithoutCurrentProof() = runTest {
+        val profiles = FakeProfileRepository().also { it.save(profile()) }
+        val proof = verifiedRehearsal(
+            CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120),
+        )
+        val executions = FakeExecutionRepository(listOf(proof))
+        var received: RehearsalRequest? = null
+        val viewModel = LenswakeViewModel(
+            FakeScheduleRepository(),
+            profiles,
+            executions,
+            RuntimePreflightProbe { rehearsalEligiblePreflight() },
+            installUseCase(profiles),
+            RehearsalCoordinator { request ->
+                received = request
+                RehearsalResult.Rejected(RehearsalResultCode.START_FAILED, "Expected test stop")
+            },
+            scheduleWorkflow(FakeScheduleRepository(), profiles),
+            TestUiStringProvider,
+        )
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.state.collect()
+        }
+
+        viewModel.state.first { it.actions.canRunRehearsal }
+        viewModel.runRehearsal()
+        viewModel.state.first { it.rehearsal is RehearsalActionUiState.Failed }
+
+        assertEquals(
+            CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120, dev.po4yka.lenswake.core.LensSelection.FRONT),
+            received?.capture,
+        )
     }
 
     @Test
@@ -621,16 +696,18 @@ class LenswakeViewModelTest {
         val schedules = FakeScheduleRepository()
         val profiles = FakeProfileRepository().also { it.save(profile()) }
         val scheduler = FakeRecordingScheduler()
+        val proof = verifiedRehearsal(CaptureConfiguration.Video(dev.po4yka.lenswake.core.LensSelection.FRONT))
+        val executions = FakeExecutionRepository(listOf(proof))
         val viewModel = LenswakeViewModel(
             schedules,
             profiles,
-            FakeExecutionRepository(),
+            executions,
             RuntimePreflightProbe { scheduleEligiblePreflight() },
             installUseCase(profiles),
             unavailableRehearsalCoordinator(),
             ScheduleWorkflow(
                 scheduleRepository = schedules,
-                executionRepository = FakeExecutionRepository(),
+                executionRepository = executions,
                 profileRepository = profiles,
                 scheduler = scheduler,
                 clock = LenswakeClock { now.minusSeconds(60) },
@@ -663,6 +740,9 @@ class LenswakeViewModelTest {
                 startLocal = LocalDateTime.of(2026, 8, 9, 10, 30),
                 stopLocal = LocalDateTime.of(2026, 8, 9, 11, 30),
                 zoneId = ZoneId.of("Asia/Tbilisi"),
+                captureMode = CaptureMode.VIDEO,
+                timeLapseSpeed = TimeLapseSpeed.X5,
+                lens = dev.po4yka.lenswake.core.LensSelection.FRONT,
             ),
         )
         viewModel.submitSchedule()
@@ -675,6 +755,10 @@ class LenswakeViewModelTest {
         assertEquals(listOf("stop", "start"), scheduler.events)
         assertEquals("Dawn", succeeded.schedules.single().title)
         assertEquals("Enabled", succeeded.schedules.single().status)
+        assertEquals(
+            CaptureConfiguration.Video(dev.po4yka.lenswake.core.LensSelection.FRONT),
+            schedules.get(ScheduleId(succeeded.schedules.single().id))?.capture,
+        )
         assertInstanceOf(ScheduleEditorUiState.Closed::class.java, succeeded.scheduleEditor)
     }
 
@@ -713,8 +797,10 @@ class LenswakeViewModelTest {
         }
     }
 
-    private class FakeExecutionRepository : ExecutionRepository {
-        private val executions = MutableStateFlow<List<ExecutionSession>>(emptyList())
+    private class FakeExecutionRepository(
+        initial: List<ExecutionSession> = emptyList(),
+    ) : ExecutionRepository {
+        private val executions = MutableStateFlow(initial)
         private val events = mutableMapOf<SessionId, MutableStateFlow<List<AutomationEvent>>>()
 
         override fun observeExecutions(): Flow<List<ExecutionSession>> = executions
@@ -798,7 +884,12 @@ class LenswakeViewModelTest {
             updatedAt = now.minusSeconds(3_600),
         )
 
-        fun profile() = PixelCameraProfile(
+        fun profile(): PixelCameraProfile {
+            val selector = UiSelectorSet(
+                selectors = listOf(UiSelector("com.google.android.GoogleCamera", text = "verified")),
+                minimumScore = 10,
+            )
+            return PixelCameraProfile(
             id = profileId,
             environment = PixelCameraEnvironment(
                 deviceManufacturer = "Pixel",
@@ -813,9 +904,57 @@ class LenswakeViewModelTest {
                 densityDpi = 480,
             ),
             selectorSchemaVersion = 1,
+            targets = setOf(
+                AutomationAction.SELECT_VIDEO,
+                AutomationAction.SELECT_TIME_LAPSE,
+                AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL,
+                AutomationAction.SELECT_REAR_MAIN_LENS,
+                AutomationAction.SELECT_FRONT_LENS,
+                AutomationAction.START_RECORDING,
+                AutomationAction.STOP_RECORDING,
+                AutomationAction.START_VIDEO_RECORDING,
+                AutomationAction.STOP_VIDEO_RECORDING,
+            ).associateWith { selector },
+            speedTargets = mapOf(TimeLapseSpeed.X120 to selector),
+            stateSignals = setOf(
+                PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
+                PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
+                PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
+                PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE,
+                PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN,
+                PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
+                PixelCameraStateSignal.FRONT_LENS_ACTIVE,
+                PixelCameraStateSignal.RECORDING_ACTIVE,
+                PixelCameraStateSignal.NOT_RECORDING,
+            ).associateWith { selector },
             compatibility = ProfileCompatibility.VERIFIED,
             verifiedAt = now.minusSeconds(600),
         )
+        }
+
+        fun verifiedRehearsal(capture: CaptureConfiguration): ExecutionSession {
+            val verifiedProfile = profile()
+            val proofAt = checkNotNull(verifiedProfile.verifiedAt)
+            return ExecutionSession(
+                id = SessionId("rehearsal-${capture.mode.name}-${capture.lens.name}"),
+                executionKey = "rehearsal/proof/${verifiedProfile.definitionFingerprint()}",
+                kind = SessionKind.REHEARSAL,
+                scheduleId = null,
+                scheduleName = "Rehearsal",
+                profileId = verifiedProfile.id,
+                capture = capture,
+                expectedStartAt = proofAt.minusSeconds(10),
+                expectedStopAt = proofAt,
+                status = SessionStatus.COMPLETED,
+                recordActionAt = proofAt.minusSeconds(9),
+                recordingVerifiedAt = proofAt.minusSeconds(8),
+                stopActionAt = proofAt.minusSeconds(1),
+                stoppedVerifiedAt = proofAt,
+                mediaSavedVerifiedAt = proofAt,
+                createdAt = proofAt.minusSeconds(10),
+                updatedAt = proofAt,
+            )
+        }
 
         fun session() = ExecutionSession(
             id = sessionId,

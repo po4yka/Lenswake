@@ -1,5 +1,9 @@
 package dev.po4yka.lenswake.ui
 
+import dev.po4yka.lenswake.core.CaptureConfiguration
+import dev.po4yka.lenswake.core.CaptureMode
+import dev.po4yka.lenswake.core.LensSelection
+import dev.po4yka.lenswake.core.TimeLapseSpeed
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -70,6 +74,19 @@ class ScheduleFormTest {
     }
 
     @Test
+    fun captureOutsideTheSelectedProfileCapabilitiesCannotBeSubmitted() {
+        val validation = validForm()
+            .copy(captureMode = CaptureMode.VIDEO, lens = LensSelection.FRONT)
+            .validateForDisplay(listOf(verifiedProfile), now, TestUiStringProvider)
+
+        assertFalse(validation.canSubmit)
+        assertEquals(
+            "This profile has no verified selectors for the selected mode, speed, and lens.",
+            validation.captureError,
+        )
+    }
+
+    @Test
     fun defaultStartHasLeadTimeAndUsesTheNextQuarterHour() {
         assertEquals(
             LocalDateTime.of(2030, 1, 1, 10, 30),
@@ -96,6 +113,7 @@ class ScheduleFormTest {
             environment = "Android 17",
             compatibility = "Verified",
             verifiedForScheduling = true,
+            supportedCaptures = setOf(CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120)),
         )
     }
 }

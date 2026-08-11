@@ -3,10 +3,10 @@ package dev.po4yka.lenswake.application
 import dev.po4yka.lenswake.core.AutomationProfileRepository
 import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.ExecutionRepository
-import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.LenswakeClock
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.ProfileCompatibility
+import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.RecordingSchedule
 import dev.po4yka.lenswake.core.RecordingScheduler
 import dev.po4yka.lenswake.core.ScheduleId
@@ -14,7 +14,7 @@ import dev.po4yka.lenswake.core.ScheduleRepository
 import dev.po4yka.lenswake.core.ScheduleValidation
 import dev.po4yka.lenswake.core.ScheduleValidationError
 import dev.po4yka.lenswake.core.ScheduleValidator
-import dev.po4yka.lenswake.core.TimeLapseSpeed
+import dev.po4yka.lenswake.core.supports
 import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
@@ -28,6 +28,7 @@ data class ScheduleCommand(
     val startAt: Instant,
     val stopAt: Instant,
     val zoneId: ZoneId,
+    val capture: CaptureConfiguration,
     val profileId: ProfileId,
     val enabled: Boolean,
 )
@@ -43,6 +44,7 @@ enum class ScheduleWorkflowFailureCode {
     SCHEDULE_NOT_FOUND,
     PROFILE_NOT_FOUND,
     PROFILE_NOT_VERIFIED,
+    CAPTURE_NOT_SUPPORTED,
     RUNTIME_NOT_READY,
     PREFLIGHT_FAILED,
     INVALID_SCHEDULE,
@@ -119,14 +121,18 @@ class ScheduleWorkflow(
             startAt = command.startAt,
             stopAt = command.stopAt,
             zoneId = command.zoneId,
-            capture = supportedCapture,
+            capture = command.capture,
             profileId = command.profileId,
             enabled = command.enabled,
             createdAt = now,
             updatedAt = now,
         )
         validate(schedule, now)?.let { return it }
-        ensureProfileReady(schedule.profileId, requireRuntimeReady = schedule.enabled)?.let { return it }
+        ensureProfileReady(
+            schedule.profileId,
+            schedule.capture,
+            requireRuntimeReady = schedule.enabled,
+        )?.let { return it }
 
         return withContext(NonCancellable) {
             replace(previous = null, candidate = schedule, operation = ScheduleOperation.CREATED)
@@ -151,13 +157,17 @@ class ScheduleWorkflow(
             startAt = command.startAt,
             stopAt = command.stopAt,
             zoneId = command.zoneId,
-            capture = supportedCapture,
+            capture = command.capture,
             profileId = command.profileId,
             enabled = command.enabled,
             updatedAt = nextRevision(now, previous.updatedAt),
         )
         validate(candidate, now)?.let { return it }
-        ensureProfileReady(candidate.profileId, requireRuntimeReady = candidate.enabled)?.let { return it }
+        ensureProfileReady(
+            candidate.profileId,
+            candidate.capture,
+            requireRuntimeReady = candidate.enabled,
+        )?.let { return it }
 
         return withContext(NonCancellable) {
             replace(previous, candidate, ScheduleOperation.UPDATED)
@@ -188,7 +198,9 @@ class ScheduleWorkflow(
             updatedAt = nextRevision(now, previous.updatedAt),
         )
         validate(candidate, now)?.let { return it }
-        if (enabled) ensureProfileReady(candidate.profileId, requireRuntimeReady = true)?.let { return it }
+        if (enabled) {
+            ensureProfileReady(candidate.profileId, candidate.capture, requireRuntimeReady = true)?.let { return it }
+        }
 
         return withContext(NonCancellable) {
             replace(
@@ -416,6 +428,7 @@ class ScheduleWorkflow(
 
     private suspend fun ensureProfileReady(
         profileId: ProfileId,
+        capture: CaptureConfiguration,
         requireRuntimeReady: Boolean,
     ): ScheduleWorkflowResult? = try {
         when (val profile = profileRepository.get(profileId)) {
@@ -423,10 +436,12 @@ class ScheduleWorkflow(
                 code = ScheduleWorkflowFailureCode.PROFILE_NOT_FOUND,
                 message = "The selected Pixel Camera profile is not installed.",
             )
-            else -> if (profile.compatibility != ProfileCompatibility.VERIFIED || profile.verifiedAt == null) {
+            else -> profile.captureReadinessFailure(capture) ?: if (
+                !executionRepository.hasVerifiedRehearsal(profile, capture)
+            ) {
                 ScheduleWorkflowResult.Rejected(
                     code = ScheduleWorkflowFailureCode.PROFILE_NOT_VERIFIED,
-                    message = "The selected Pixel Camera profile has not passed a production rehearsal.",
+                    message = "The selected capture configuration has not passed a production rehearsal.",
                 )
             } else if (!requireRuntimeReady) {
                 null
@@ -524,10 +539,6 @@ class ScheduleWorkflow(
         }
 
     private companion object {
-        val supportedCapture = CaptureConfiguration.TimeLapse(
-            speed = TimeLapseSpeed.X120,
-            lens = LensSelection.REAR_MAIN,
-        )
         val requiredPreflightChecks = setOf(
             dev.po4yka.lenswake.core.PreflightCheckType.EXACT_ALARMS,
             dev.po4yka.lenswake.core.PreflightCheckType.NOTIFICATIONS,
@@ -546,4 +557,25 @@ class ScheduleWorkflow(
             dev.po4yka.lenswake.core.PreflightCheckType.STORAGE,
         )
     }
+}
+
+private suspend fun ExecutionRepository.hasVerifiedRehearsal(
+    profile: PixelCameraProfile,
+    capture: CaptureConfiguration,
+): Boolean = latestSuccessfulRehearsal(profile.id, capture)
+    ?.qualifiesRehearsal(profile, capture) == true
+
+private fun PixelCameraProfile.captureReadinessFailure(
+    capture: CaptureConfiguration,
+): ScheduleWorkflowResult.Rejected? = when {
+    !supports(capture) -> ScheduleWorkflowResult.Rejected(
+        code = ScheduleWorkflowFailureCode.CAPTURE_NOT_SUPPORTED,
+        message = "The selected profile has no verified selectors for $capture.",
+    )
+    compatibility != ProfileCompatibility.VERIFIED || verifiedAt == null ->
+        ScheduleWorkflowResult.Rejected(
+            code = ScheduleWorkflowFailureCode.PROFILE_NOT_VERIFIED,
+            message = "The selected Pixel Camera profile has not passed a production rehearsal.",
+        )
+    else -> null
 }

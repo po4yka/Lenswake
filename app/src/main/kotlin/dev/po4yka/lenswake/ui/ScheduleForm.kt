@@ -1,5 +1,8 @@
 package dev.po4yka.lenswake.ui
 
+import dev.po4yka.lenswake.core.CaptureConfiguration
+import dev.po4yka.lenswake.core.CaptureMode
+
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -10,9 +13,10 @@ internal data class ScheduleFormValidation(
     val nameError: String? = null,
     val timingError: String? = null,
     val profileError: String? = null,
+    val captureError: String? = null,
 ) {
     val canSubmit: Boolean
-        get() = nameError == null && timingError == null && profileError == null
+        get() = nameError == null && timingError == null && profileError == null && captureError == null
 }
 
 internal fun defaultScheduleStart(
@@ -52,16 +56,27 @@ internal fun ScheduleFormUiState.validateForDisplay(
             strings.get(dev.po4yka.lenswake.R.string.validation_schedule_start_future)
         else -> null
     }
-    val profileError = if (profiles.any { it.id == profileId && it.verifiedForScheduling }) {
+    val selectedProfile = profiles.singleOrNull { it.id == profileId && it.verifiedForScheduling }
+    val profileError = if (selectedProfile != null) {
         null
     } else {
         strings.get(dev.po4yka.lenswake.R.string.validation_schedule_profile_required)
+    }
+    val captureError = selectedProfile?.takeUnless { captureConfiguration() in it.supportedCaptures }?.let {
+        strings.get(dev.po4yka.lenswake.R.string.validation_schedule_capture_unsupported)
     }
     return ScheduleFormValidation(
         nameError = nameError,
         timingError = timingError,
         profileError = profileError,
+        captureError = captureError,
     )
+}
+
+internal fun ScheduleFormUiState.captureConfiguration(): CaptureConfiguration = when (captureMode) {
+    CaptureMode.VIDEO -> CaptureConfiguration.Video(lens)
+    CaptureMode.TIME_LAPSE -> CaptureConfiguration.TimeLapse(timeLapseSpeed, lens)
+    CaptureMode.NIGHT_SIGHT_TIME_LAPSE -> CaptureConfiguration.NightSightTimeLapse(lens)
 }
 
 internal fun ScheduleFormUiState.withStartDate(date: LocalDate): ScheduleFormUiState = copy(

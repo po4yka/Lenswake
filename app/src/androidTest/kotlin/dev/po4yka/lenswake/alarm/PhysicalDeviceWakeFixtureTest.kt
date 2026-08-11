@@ -86,6 +86,10 @@ class PhysicalDeviceWakeFixtureTest {
                 startAt = startAt,
                 stopAt = stopAt,
                 zoneId = ZoneId.systemDefault(),
+                capture = CaptureConfiguration.TimeLapse(
+                    speed = TimeLapseSpeed.X120,
+                    lens = LensSelection.REAR_MAIN,
+                ),
                 profileId = profile.id,
                 enabled = true,
             ),

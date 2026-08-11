@@ -42,6 +42,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -88,6 +89,38 @@ class DefaultRehearsalCoordinatorTest {
         assertEquals(completed.session.mediaSavedVerifiedAt, completed.verifiedProfile.verifiedAt)
         assertEquals(ProfileCompatibility.VERIFIED, fixture.profiles.saved.compatibility)
         assertEquals(listOf("schedule", "start", "delay", "stop", "cancel"), fixture.order)
+    }
+
+    @Test
+    fun promotedProofQualifiesOnlyItsCaptureAndTestedProfileDefinition() = runBlocking {
+        val completed = assertInstanceOf(
+            RehearsalResult.Completed::class.java,
+            fixture().coordinator.run(request),
+        )
+
+        assertTrue(
+            completed.session.qualifiesRehearsal(completed.verifiedProfile, request.capture),
+        )
+        assertTrue(
+            completed.session.qualifiesRehearsal(
+                completed.verifiedProfile.copy(
+                    verifiedAt = checkNotNull(completed.verifiedProfile.verifiedAt).plusSeconds(1),
+                ),
+                request.capture,
+            ),
+        )
+        assertFalse(
+            completed.session.qualifiesRehearsal(
+                completed.verifiedProfile,
+                CaptureConfiguration.Video(LensSelection.REAR_MAIN),
+            ),
+        )
+        assertFalse(
+            completed.session.qualifiesRehearsal(
+                completed.verifiedProfile.copy(selectorSchemaVersion = 2),
+                request.capture,
+            ),
+        )
     }
 
     @Test

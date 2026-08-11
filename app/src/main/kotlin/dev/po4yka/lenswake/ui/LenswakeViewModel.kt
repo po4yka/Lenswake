@@ -11,6 +11,7 @@ import dev.po4yka.lenswake.application.AlarmTransportIncidentAction
 import dev.po4yka.lenswake.application.AlarmTransportIncidentSource
 import dev.po4yka.lenswake.application.EmptyAlarmTransportIncidentSource
 import dev.po4yka.lenswake.application.RehearsalCoordinator
+import dev.po4yka.lenswake.application.qualifiesRehearsal
 import dev.po4yka.lenswake.application.RehearsalResult
 import dev.po4yka.lenswake.application.RehearsalResultCode
 import dev.po4yka.lenswake.application.RuntimePreflightProbe
@@ -25,7 +26,6 @@ import dev.po4yka.lenswake.core.AutomationProfileRepository
 import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.ExecutionRepository
 import dev.po4yka.lenswake.core.ExecutionSession
-import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.LenswakeClock
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PreflightCheck
@@ -44,6 +44,7 @@ import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.core.SystemLenswakeClock
 import dev.po4yka.lenswake.core.TimeLapseSpeed
+import dev.po4yka.lenswake.core.supportedCaptureConfigurations
 import dev.po4yka.lenswake.di.ApplicationGraph
 import java.time.Duration
 import java.time.LocalDateTime
@@ -164,6 +165,7 @@ class LenswakeViewModel internal constructor(
             alarmTransportIncidents,
             profilePersistenceIssues,
             observedActiveSession,
+            executions,
             ::DiagnosticsUiData,
         ),
         combine(profiles, preflightInvalidations) { currentProfiles, _ ->
@@ -177,6 +179,7 @@ class LenswakeViewModel internal constructor(
             events = diagnostics.events,
             incidents = diagnostics.incidents,
             profileIssues = diagnostics.profileIssues,
+            executions = diagnostics.executions,
             activeSession = diagnostics.activeSession.session,
             now = diagnostics.activeSession.observedAt,
             preflight = preflight,
@@ -233,16 +236,25 @@ class LenswakeViewModel internal constructor(
                 rehearsal.value = if (profile == null) {
                     RehearsalActionUiState.Failed(strings.get(R.string.rehearsal_profile_required))
                 } else {
-                    rehearsalCoordinator.run(
-                        RehearsalRequest(
-                            profileId = profile.id,
-                            capture = CaptureConfiguration.TimeLapse(
-                                speed = TimeLapseSpeed.X120,
-                                lens = LensSelection.REAR_MAIN,
+                    val supportedCaptures = profile.supportedCaptureConfigurations()
+                        .sortedWith(capturePreferenceComparator)
+                    val completedRehearsals = executions.first()
+                    val capture = supportedCaptures.firstOrNull { candidate ->
+                        completedRehearsals.none { it.qualifiesRehearsal(profile, candidate) }
+                    } ?: supportedCaptures.firstOrNull()
+                    if (capture == null) {
+                        RehearsalActionUiState.Failed(
+                            strings.get(R.string.schedule_error_capture_not_supported),
+                        )
+                    } else {
+                        rehearsalCoordinator.run(
+                            RehearsalRequest(
+                                profileId = profile.id,
+                                capture = capture,
+                                recordingDuration = Duration.ofSeconds(REHEARSAL_DURATION_SECONDS),
                             ),
-                            recordingDuration = Duration.ofSeconds(REHEARSAL_DURATION_SECONDS),
-                        ),
-                    ).toUiState(strings)
+                        ).toUiState(strings)
+                    }
                 }
                 refreshPreflight()
             } catch (cancelled: CancellationException) {
@@ -273,12 +285,21 @@ class LenswakeViewModel internal constructor(
         scheduleAction.value = ScheduleActionUiState.Idle
         val zoneId = ZoneId.systemDefault()
         val startLocal = defaultScheduleStart(clock.now(), zoneId)
+        val defaultCapture = profile.supportedCaptures.sortedWith(capturePreferenceComparator).firstOrNull() ?: run {
+            scheduleAction.value = ScheduleActionUiState.Failed(
+                strings.get(R.string.schedule_error_capture_not_supported),
+            )
+            return
+        }
         scheduleEditor.value = ScheduleEditorUiState.Open(
             mode = ScheduleEditorMode.Create,
             form = ScheduleFormUiState(
                 name = strings.get(R.string.default_schedule_name),
                 startLocal = startLocal,
                 stopLocal = startLocal.plusHours(DEFAULT_RECORDING_DURATION_HOURS),
+                captureMode = defaultCapture.mode,
+                timeLapseSpeed = defaultCapture.timeLapseSpeed ?: TimeLapseSpeed.X120,
+                lens = defaultCapture.lens,
                 profileId = profile.id,
                 zoneId = zoneId,
             ),
@@ -301,6 +322,9 @@ class LenswakeViewModel internal constructor(
                 startLocal = schedule.startLocal,
                 stopLocal = schedule.stopLocal,
                 zoneId = schedule.zoneId,
+                captureMode = schedule.capture.mode,
+                timeLapseSpeed = schedule.capture.timeLapseSpeed ?: TimeLapseSpeed.X120,
+                lens = schedule.capture.lens,
                 profileId = schedule.profileId,
                 enabled = schedule.enabled,
             ),
@@ -441,6 +465,17 @@ class LenswakeViewModel internal constructor(
     }
 
     private companion object {
+        val capturePreferenceComparator = compareBy<CaptureConfiguration>(
+            {
+                when (it.mode) {
+                    dev.po4yka.lenswake.core.CaptureMode.TIME_LAPSE -> 0
+                    dev.po4yka.lenswake.core.CaptureMode.VIDEO -> 1
+                    dev.po4yka.lenswake.core.CaptureMode.NIGHT_SIGHT_TIME_LAPSE -> 2
+                }
+            },
+            { it.lens.ordinal },
+            { it.timeLapseSpeed?.ordinal ?: -1 },
+        )
         const val MAX_OBSERVED_SESSIONS = 10
         const val MAX_VISIBLE_EVENTS = 50
         const val STOP_TIMEOUT_MILLIS = 5_000L
@@ -468,6 +503,7 @@ private data class DiagnosticsUiData(
     val incidents: List<AlarmTransportIncident>,
     val profileIssues: List<ProfilePersistenceIssue>,
     val activeSession: ObservedActiveSession,
+    val executions: List<ExecutionSession>,
 )
 
 private data class ObservedActiveSession(
@@ -497,6 +533,7 @@ private fun ScheduleFormUiState.toCommandOrNull(): ScheduleCommand? = runCatchin
         startAt = start.toUnambiguousInstant(zoneId),
         stopAt = stop.toUnambiguousInstant(zoneId),
         zoneId = zoneId,
+        capture = captureConfiguration(),
         profileId = dev.po4yka.lenswake.core.ProfileId(profileId.trim()),
         enabled = enabled,
     )
@@ -592,6 +629,7 @@ private fun ScheduleWorkflowFailureCode.messageResource(): Int = when (this) {
     ScheduleWorkflowFailureCode.SCHEDULE_NOT_FOUND -> R.string.schedule_error_not_found
     ScheduleWorkflowFailureCode.PROFILE_NOT_FOUND -> R.string.schedule_error_profile_not_found
     ScheduleWorkflowFailureCode.PROFILE_NOT_VERIFIED -> R.string.schedule_error_profile_not_verified
+    ScheduleWorkflowFailureCode.CAPTURE_NOT_SUPPORTED -> R.string.schedule_error_capture_not_supported
     ScheduleWorkflowFailureCode.RUNTIME_NOT_READY -> R.string.schedule_error_runtime_not_ready
     ScheduleWorkflowFailureCode.PREFLIGHT_FAILED -> R.string.schedule_error_preflight_failed
     ScheduleWorkflowFailureCode.INVALID_SCHEDULE -> R.string.schedule_error_invalid
@@ -643,6 +681,7 @@ internal object LenswakeUiStateMapper {
         events: List<AutomationEvent>,
         incidents: List<AlarmTransportIncident> = emptyList(),
         profileIssues: List<ProfilePersistenceIssue> = emptyList(),
+        executions: List<ExecutionSession> = emptyList(),
         preflight: PreflightReport,
         profileInstall: ProfileInstallUiState = ProfileInstallUiState.Idle,
         rehearsal: RehearsalActionUiState = RehearsalActionUiState.Idle,
@@ -660,7 +699,7 @@ internal object LenswakeUiStateMapper {
             .map { scheduleSummary(it, strings) },
         profiles = profiles
             .sortedWith(compareBy({ it.environment.deviceModel }, { it.id.value }))
-            .map { profileSummary(it, strings) },
+            .map { profileSummary(it, executions, strings) },
         capabilities = preflight.checks.map { capability(it, strings) },
         diagnosticEvents = events.map { eventSummary(it, strings) },
         alarmTransportIncidents = incidents.map { incidentSummary(it, strings) },
@@ -677,12 +716,12 @@ internal object LenswakeUiStateMapper {
         setupRemediationMessage = setupRemediationMessage,
         actions = UiActionAvailability(
             canCreateSchedule = preflight.hasAllScheduleChecksPassed() &&
-                profiles.any { it.compatibility == ProfileCompatibility.VERIFIED && it.verifiedAt != null } &&
+                profiles.any { profile -> verifiedCaptures(profile, executions).isNotEmpty() } &&
                 scheduleAction !is ScheduleActionUiState.Working,
             createScheduleUnavailableReason = when {
                 !preflight.hasAllScheduleChecksPassed() ->
                     strings.get(R.string.action_create_setup_required)
-                profiles.none { it.compatibility == ProfileCompatibility.VERIFIED && it.verifiedAt != null } ->
+                profiles.none { profile -> verifiedCaptures(profile, executions).isNotEmpty() } ->
                     strings.get(R.string.action_create_profile_required)
                 scheduleAction is ScheduleActionUiState.Working -> strings.get(R.string.action_create_busy)
                 else -> strings.get(R.string.action_create_available)
@@ -874,6 +913,7 @@ internal object LenswakeUiStateMapper {
             startLocal = startLocal,
             stopLocal = stopLocal,
             zoneId = schedule.zoneId,
+            capture = schedule.capture,
             profileId = schedule.profileId.value,
             enabled = schedule.enabled,
         )
@@ -881,6 +921,7 @@ internal object LenswakeUiStateMapper {
 
     private fun profileSummary(
         profile: PixelCameraProfile,
+        executions: List<ExecutionSession>,
         strings: UiStringProvider,
     ): ProfileSummaryUiState {
         val environment = profile.environment
@@ -906,9 +947,22 @@ internal object LenswakeUiStateMapper {
                 ProfileCompatibility.NEEDS_REHEARSAL -> strings.get(R.string.profile_compatibility_needs_test)
                 ProfileCompatibility.INCOMPATIBLE -> strings.get(R.string.profile_compatibility_incompatible)
             },
-            verifiedForScheduling = profile.compatibility == ProfileCompatibility.VERIFIED && profile.verifiedAt != null,
+            verifiedForScheduling = verifiedCaptures(profile, executions).isNotEmpty(),
+            supportedCaptures = verifiedCaptures(profile, executions),
         )
     }
+
+    private fun verifiedCaptures(
+        profile: PixelCameraProfile,
+        executions: List<ExecutionSession>,
+    ): Set<CaptureConfiguration> =
+        if (profile.compatibility != ProfileCompatibility.VERIFIED || profile.verifiedAt == null) {
+            emptySet()
+        } else {
+            profile.supportedCaptureConfigurations().filterTo(linkedSetOf()) { capture ->
+                executions.any { it.qualifiesRehearsal(profile, capture) }
+            }
+        }
 
     private fun eventSummary(
         event: AutomationEvent,

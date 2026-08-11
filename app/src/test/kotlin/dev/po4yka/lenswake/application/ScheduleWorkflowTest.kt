@@ -1,6 +1,7 @@
 package dev.po4yka.lenswake.application
 
 import dev.po4yka.lenswake.core.AutomationProfileRepository
+import dev.po4yka.lenswake.core.AutomationAction
 import dev.po4yka.lenswake.core.AutomationEvent
 import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.ExecutionApplyResult
@@ -12,6 +13,7 @@ import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.LenswakeClock
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
+import dev.po4yka.lenswake.core.PixelCameraStateSignal
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.RecordingSchedule
@@ -25,6 +27,9 @@ import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.ScheduleRepository
 import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.TimeLapseSpeed
+import dev.po4yka.lenswake.core.UiSelector
+import dev.po4yka.lenswake.core.UiSelectorSet
+import dev.po4yka.lenswake.core.supports
 import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.CompletableDeferred
@@ -45,17 +50,122 @@ class ScheduleWorkflowTest {
     @Test
     fun createPersistsThenArmsIndependentStartAndStopAlarms() = runTest {
         val fixture = fixture()
+        val requestedCapture = CaptureConfiguration.TimeLapse(
+            speed = TimeLapseSpeed.X30,
+            lens = LensSelection.FRONT,
+        )
 
-        val result = fixture.workflow.create(command())
+        val result = fixture.workflow.create(command(capture = requestedCapture))
 
         val applied = assertInstanceOf(ScheduleWorkflowResult.Applied::class.java, result)
-        val capture = applied.schedule.capture as CaptureConfiguration.TimeLapse
         assertEquals(ScheduleOperation.CREATED, applied.operation)
         assertEquals(listOf("save", "stop", "start", "save"), fixture.events)
-        assertEquals(TimeLapseSpeed.X120, capture.speed)
-        assertEquals(LensSelection.REAR_MAIN, capture.lens)
+        assertEquals(requestedCapture, applied.schedule.capture)
         assertEquals(profileId, applied.schedule.profileId)
         assertTrue(applied.schedule.enabled)
+    }
+
+    @Test
+    fun createRejectsCaptureCombinationWithoutProfileSelectors() = runTest {
+        val fixture = fixture()
+
+        val result = fixture.workflow.create(
+            command(capture = CaptureConfiguration.Video(LensSelection.FRONT)),
+        )
+
+        val rejected = assertInstanceOf(ScheduleWorkflowResult.Rejected::class.java, result)
+        assertEquals(ScheduleWorkflowFailureCode.CAPTURE_NOT_SUPPORTED, rejected.code)
+        assertEquals(emptyList<String>(), fixture.events)
+    }
+
+    @Test
+    fun createRejectsSupportedCaptureWithoutExactRehearsalProof() = runTest {
+        val events = mutableListOf<String>()
+        val profiles = FakeProfileRepository(listOf(profile()))
+        val workflow = ScheduleWorkflow(
+            scheduleRepository = FakeScheduleRepository(emptyList(), events),
+            executionRepository = FakeExecutionRepository(rehearsedProfile = null),
+            profileRepository = profiles,
+            scheduler = FakeRecordingScheduler(events),
+            clock = LenswakeClock { now },
+            preflightProbe = RuntimePreflightProbe { readyPreflight() },
+        )
+
+        val result = workflow.create(command())
+
+        val rejected = assertInstanceOf(ScheduleWorkflowResult.Rejected::class.java, result)
+        assertEquals(ScheduleWorkflowFailureCode.PROFILE_NOT_VERIFIED, rejected.code)
+        assertTrue(rejected.message.contains("capture configuration"))
+        assertTrue(events.isEmpty())
+    }
+
+    @Test
+    fun createRejectsRehearsalPromotedForDifferentCapture() = runTest {
+        val events = mutableListOf<String>()
+        val workflow = ScheduleWorkflow(
+            scheduleRepository = FakeScheduleRepository(emptyList(), events),
+            executionRepository = FakeExecutionRepository(
+                proofTransform = { proof ->
+                    proof.copy(capture = CaptureConfiguration.Video(LensSelection.REAR_MAIN))
+                },
+            ),
+            profileRepository = FakeProfileRepository(listOf(profile())),
+            scheduler = FakeRecordingScheduler(events),
+            clock = LenswakeClock { now },
+            preflightProbe = RuntimePreflightProbe { readyPreflight() },
+        )
+
+        val result = workflow.create(command())
+
+        val rejected = assertInstanceOf(ScheduleWorkflowResult.Rejected::class.java, result)
+        assertEquals(ScheduleWorkflowFailureCode.PROFILE_NOT_VERIFIED, rejected.code)
+        assertTrue(events.isEmpty())
+    }
+
+    @Test
+    fun createRejectsRehearsalForDifferentProfileDefinition() = runTest {
+        val events = mutableListOf<String>()
+        val workflow = ScheduleWorkflow(
+            scheduleRepository = FakeScheduleRepository(emptyList(), events),
+            executionRepository = FakeExecutionRepository(
+                proofTransform = { proof ->
+                    proof.copy(executionKey = "rehearsal/proof/${"0".repeat(64)}")
+                },
+            ),
+            profileRepository = FakeProfileRepository(listOf(profile())),
+            scheduler = FakeRecordingScheduler(events),
+            clock = LenswakeClock { now },
+            preflightProbe = RuntimePreflightProbe { readyPreflight() },
+        )
+
+        val result = workflow.create(command())
+
+        val rejected = assertInstanceOf(ScheduleWorkflowResult.Rejected::class.java, result)
+        assertEquals(ScheduleWorkflowFailureCode.PROFILE_NOT_VERIFIED, rejected.code)
+        assertTrue(events.isEmpty())
+    }
+
+    @Test
+    fun createRejectsRehearsalNotPromotedAtProfileVerificationTime() = runTest {
+        val events = mutableListOf<String>()
+        val workflow = ScheduleWorkflow(
+            scheduleRepository = FakeScheduleRepository(emptyList(), events),
+            executionRepository = FakeExecutionRepository(
+                proofTransform = { proof ->
+                    proof.copy(mediaSavedVerifiedAt = proof.mediaSavedVerifiedAt?.minusSeconds(1))
+                },
+            ),
+            profileRepository = FakeProfileRepository(listOf(profile())),
+            scheduler = FakeRecordingScheduler(events),
+            clock = LenswakeClock { now },
+            preflightProbe = RuntimePreflightProbe { readyPreflight() },
+        )
+
+        val result = workflow.create(command())
+
+        val rejected = assertInstanceOf(ScheduleWorkflowResult.Rejected::class.java, result)
+        assertEquals(ScheduleWorkflowFailureCode.PROFILE_NOT_VERIFIED, rejected.code)
+        assertTrue(events.isEmpty())
     }
 
     @Test
@@ -577,9 +687,11 @@ class ScheduleWorkflowTest {
         override suspend fun delete(id: ProfileId) = error("Not used")
     }
 
-    private class FakeExecutionRepository(
+    private inner class FakeExecutionRepository(
         private val owner: ExecutionSession? = null,
         private val queryFailure: Exception? = null,
+        private val rehearsedProfile: PixelCameraProfile? = profile(),
+        private val proofTransform: (ExecutionSession) -> ExecutionSession = { it },
     ) : ExecutionRepository {
         override fun observeExecutions(): Flow<List<ExecutionSession>> = MutableStateFlow(emptyList())
         override fun observeExecution(id: SessionId): Flow<ExecutionSession?> = MutableStateFlow(null)
@@ -593,6 +705,36 @@ class ScheduleWorkflowTest {
             error("Not used by ScheduleWorkflow tests")
         override suspend fun apply(change: ExecutionChange, event: AutomationEvent): ExecutionApplyResult =
             error("Not used by ScheduleWorkflow tests")
+
+        override suspend fun latestSuccessfulRehearsal(
+            profileId: ProfileId,
+            capture: CaptureConfiguration,
+        ): ExecutionSession? = rehearsedProfile
+            ?.takeIf { it.id == profileId && it.supports(capture) }
+            ?.let { verifiedProfile ->
+                val proofAt = checkNotNull(verifiedProfile.verifiedAt)
+                proofTransform(
+                    ExecutionSession(
+                        id = SessionId("rehearsal-proof"),
+                        executionKey = "rehearsal/rehearsal-proof/${verifiedProfile.definitionFingerprint()}",
+                        kind = dev.po4yka.lenswake.core.SessionKind.REHEARSAL,
+                        scheduleId = null,
+                        scheduleName = "Rehearsal",
+                        profileId = profileId,
+                        capture = capture,
+                        expectedStartAt = proofAt.minusSeconds(10),
+                        expectedStopAt = proofAt,
+                        status = dev.po4yka.lenswake.core.SessionStatus.COMPLETED,
+                        recordActionAt = proofAt.minusSeconds(9),
+                        recordingVerifiedAt = proofAt.minusSeconds(8),
+                        stopActionAt = proofAt.minusSeconds(1),
+                        stoppedVerifiedAt = proofAt,
+                        mediaSavedVerifiedAt = proofAt,
+                        createdAt = proofAt.minusSeconds(10),
+                        updatedAt = proofAt,
+                    ),
+                )
+            }
     }
 
     private class FakeRecordingScheduler(
@@ -642,11 +784,16 @@ class ScheduleWorkflowTest {
             name: String = "Morning capture",
             startAt: Instant = now.plusSeconds(3_600),
             stopAt: Instant = now.plusSeconds(10_800),
+            capture: CaptureConfiguration = CaptureConfiguration.TimeLapse(
+                TimeLapseSpeed.X120,
+                LensSelection.REAR_MAIN,
+            ),
         ) = ScheduleCommand(
             name = name,
             startAt = startAt,
             stopAt = stopAt,
             zoneId = ZoneId.of("UTC"),
+            capture = capture,
             profileId = profileId,
             enabled = true,
         )
@@ -680,7 +827,12 @@ class ScheduleWorkflowTest {
             updatedAt = schedule.updatedAt,
         )
 
-        fun profile() = PixelCameraProfile(
+        fun profile(): PixelCameraProfile {
+            val selector = UiSelectorSet(
+                selectors = listOf(UiSelector("com.google.android.GoogleCamera", text = "verified")),
+                minimumScore = 10,
+            )
+            return PixelCameraProfile(
             id = profileId,
             environment = PixelCameraEnvironment(
                 deviceManufacturer = "Google",
@@ -695,9 +847,35 @@ class ScheduleWorkflowTest {
                 densityDpi = 480,
             ),
             selectorSchemaVersion = 1,
+            targets = setOf(
+                AutomationAction.SELECT_VIDEO,
+                AutomationAction.SELECT_TIME_LAPSE,
+                AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL,
+                AutomationAction.SELECT_REAR_MAIN_LENS,
+                AutomationAction.SELECT_FRONT_LENS,
+                AutomationAction.START_RECORDING,
+                AutomationAction.STOP_RECORDING,
+            ).associateWith { selector },
+            speedTargets = mapOf(
+                TimeLapseSpeed.X30 to selector,
+                TimeLapseSpeed.X120 to selector,
+            ),
+            stateSignals = setOf(
+                PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
+                PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
+                PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
+                PixelCameraStateSignal.TIME_LAPSE_SPEED_X30_ACTIVE,
+                PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE,
+                PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN,
+                PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
+                PixelCameraStateSignal.FRONT_LENS_ACTIVE,
+                PixelCameraStateSignal.RECORDING_ACTIVE,
+                PixelCameraStateSignal.NOT_RECORDING,
+            ).associateWith { selector },
             compatibility = ProfileCompatibility.VERIFIED,
             verifiedAt = now.minusSeconds(60),
         )
+        }
 
         fun readyPreflight() = PreflightReport(
             listOf(

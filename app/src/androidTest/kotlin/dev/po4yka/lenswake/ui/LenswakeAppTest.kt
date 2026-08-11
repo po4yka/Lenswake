@@ -18,6 +18,9 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.platform.LocalContext
 import dev.po4yka.lenswake.core.SetupRemediationAction
+import dev.po4yka.lenswake.core.CaptureConfiguration
+import dev.po4yka.lenswake.core.CaptureMode
+import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.ui.theme.LenswakeTheme
 import java.time.Instant
 import java.time.LocalDateTime
@@ -287,6 +290,7 @@ class LenswakeAppTest {
                         environment = "Android 17 · Pixel Camera version 69481630 · English (United States)",
                         compatibility = "Needs test",
                         verifiedForScheduling = false,
+                        supportedCaptures = TEST_SUPPORTED_CAPTURES,
                     ),
                 ),
                 actions = UiActionAvailability(canRunRehearsal = true),
@@ -409,6 +413,7 @@ class LenswakeAppTest {
                         environment = "Android 17 - Pixel Camera 69481630 - en-US",
                         compatibility = "Persisted as verified; see current compatibility in Setup",
                         verifiedForScheduling = true,
+                        supportedCaptures = TEST_SUPPORTED_CAPTURES,
                     ),
                 ),
                 scheduleEditor = ScheduleEditorUiState.Open(
@@ -444,6 +449,7 @@ class LenswakeAppTest {
                         environment = "Android 17 - Pixel Camera 69481630 - en-US",
                         compatibility = "Verified",
                         verifiedForScheduling = true,
+                        supportedCaptures = TEST_SUPPORTED_CAPTURES,
                     ),
                 ),
                 scheduleEditor = ScheduleEditorUiState.Open(
@@ -479,6 +485,7 @@ class LenswakeAppTest {
                 environment = "Android 17 · Pixel Camera version 700000 · English",
                 compatibility = "Verified for scheduling",
                 verifiedForScheduling = true,
+                supportedCaptures = TEST_SUPPORTED_CAPTURES,
             ),
             ProfileSummaryUiState(
                 id = "profile-9",
@@ -486,6 +493,7 @@ class LenswakeAppTest {
                 environment = "Android 17 · Pixel Camera version 710000 · English",
                 compatibility = "Verified for scheduling",
                 verifiedForScheduling = true,
+                supportedCaptures = TEST_SUPPORTED_CAPTURES,
             ),
         )
         var updatedForm: ScheduleFormUiState? = null
@@ -520,6 +528,39 @@ class LenswakeAppTest {
     }
 
     @Test
+    fun scheduleCaptureModeUsesSingleChoiceRadioOptions() {
+        var updatedForm: ScheduleFormUiState? = null
+        val form = ScheduleFormUiState(
+            name = "Dawn",
+            startLocal = LocalDateTime.of(2030, 1, 1, 6, 0),
+            stopLocal = LocalDateTime.of(2030, 1, 1, 8, 0),
+            profileId = "profile-verified",
+        )
+        setContent(
+            state = LenswakeUiState(
+                profiles = listOf(
+                    ProfileSummaryUiState(
+                        id = "profile-verified",
+                        title = "Pixel 8 Pro",
+                        environment = "Android 17",
+                        compatibility = "Verified",
+                        verifiedForScheduling = true,
+                        supportedCaptures = TEST_SUPPORTED_CAPTURES,
+                    ),
+                ),
+                scheduleEditor = ScheduleEditorUiState.Open(ScheduleEditorMode.Create, form),
+            ),
+            onUpdateScheduleForm = { updatedForm = it },
+        )
+        val radioButtonRole = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton)
+
+        composeRule.onNode(hasText("Time Lapse") and radioButtonRole).performScrollTo().assertIsSelected()
+        composeRule.onNode(hasText("Video") and radioButtonRole).performScrollTo().performClick()
+
+        composeRule.runOnIdle { assertEquals(CaptureMode.VIDEO, updatedForm?.captureMode) }
+    }
+
+    @Test
     fun scheduleDeleteUsesModalConfirmation() {
         val schedule = ScheduleSummaryUiState(
             id = "schedule-1",
@@ -529,6 +570,7 @@ class LenswakeAppTest {
             startLocal = LocalDateTime.of(2030, 1, 1, 6, 0),
             stopLocal = LocalDateTime.of(2030, 1, 1, 8, 0),
             zoneId = ZoneId.of("Asia/Tbilisi"),
+            capture = CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120),
             profileId = "profile-verified",
             enabled = true,
         )
@@ -580,6 +622,7 @@ class LenswakeAppTest {
                         environment = "Android 17 - Pixel Camera 69481630 - en-US",
                         compatibility = "Verified",
                         verifiedForScheduling = true,
+                        supportedCaptures = TEST_SUPPORTED_CAPTURES,
                     ),
                 ),
                 scheduleEditor = ScheduleEditorUiState.Open(
@@ -612,3 +655,8 @@ class LenswakeAppTest {
         composeRule.onNodeWithText("Use time").assertExists()
     }
 }
+
+private val TEST_SUPPORTED_CAPTURES = setOf(
+    CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120),
+    CaptureConfiguration.Video(dev.po4yka.lenswake.core.LensSelection.FRONT),
+)

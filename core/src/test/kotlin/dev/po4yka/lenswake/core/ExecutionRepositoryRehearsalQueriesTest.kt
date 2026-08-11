@@ -85,6 +85,17 @@ class ExecutionRepositoryRehearsalQueriesTest {
         val repository = FakeExecutionRepository(listOf(older, latest, missingStop, missingMedia))
 
         assertEquals(latest, repository.latestSuccessfulRehearsal(profileId))
+        assertEquals(
+            latest,
+            repository.latestSuccessfulRehearsal(
+                profileId,
+                CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120),
+            ),
+        )
+        assertEquals(
+            null,
+            repository.latestSuccessfulRehearsal(profileId, CaptureConfiguration.Video()),
+        )
         assertEquals(null, repository.latestSuccessfulRehearsal(ProfileId("absent")))
     }
 

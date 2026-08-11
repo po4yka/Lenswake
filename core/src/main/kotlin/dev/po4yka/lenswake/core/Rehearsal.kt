@@ -4,7 +4,7 @@ import java.time.Duration
 
 data class RehearsalRequest(
     val profileId: ProfileId,
-    val capture: CaptureConfiguration.TimeLapse,
+    val capture: CaptureConfiguration,
     val recordingDuration: Duration,
 ) {
     init {

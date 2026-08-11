@@ -114,6 +114,30 @@ interface ExecutionRepository {
                 ),
             )
 
+    /** Returns the latest fully verified rehearsal for one exact capture configuration. */
+    suspend fun latestSuccessfulRehearsal(
+        profileId: ProfileId,
+        capture: CaptureConfiguration,
+    ): ExecutionSession? =
+        observeExecutions().first()
+            .asSequence()
+            .filter { session ->
+                session.kind == SessionKind.REHEARSAL &&
+                    session.profileId == profileId &&
+                    session.capture == capture &&
+                    session.status == SessionStatus.COMPLETED &&
+                    session.recordingVerifiedAt != null &&
+                    session.mediaSavedVerifiedAt != null &&
+                    session.stoppedVerifiedAt != null
+            }
+            .maxWithOrNull(
+                compareBy<ExecutionSession>(
+                    { checkNotNull(it.stoppedVerifiedAt) },
+                    ExecutionSession::updatedAt,
+                    { it.id.value },
+                ),
+            )
+
     companion object {
         const val MAX_ACTIVE_REHEARSAL_LIMIT: Int = 100
 
