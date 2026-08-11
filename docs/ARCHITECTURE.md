@@ -1258,11 +1258,15 @@ Input:
 
 ```kotlin
 data class RehearsalRequest(
-    val capture: CaptureConfiguration,
-    val duration: Duration,
     val profileId: ProfileId,
+    val capture: CaptureConfiguration,
+    val recordingDuration: Duration,
+    val scheduleId: ScheduleId? = null,
 )
 ```
+
+`scheduleId` is present for a schedule-bound `Test now` and is persisted on the
+execution session; profile calibration rehearsals leave it `null`.
 
 Flow:
 

@@ -547,12 +547,16 @@ class LenswakeViewModelProfileActionsTest : LenswakeViewModelTestSupport() {
 
         viewModel.state.first { it.actions.canRunRehearsal }
         viewModel.runScheduleRehearsal(requestedSchedule.id.value)
-        viewModel.state.first { it.rehearsal is RehearsalActionUiState.Failed }
+        val failed = viewModel.state.first { it.rehearsal is RehearsalActionUiState.Failed }
 
         assertEquals(requestedSchedule.profileId, received?.profileId)
         assertEquals(requestedSchedule.capture, received?.capture)
         assertEquals(Duration.ofSeconds(10), received?.recordingDuration)
         assertEquals(requestedSchedule.id, received?.scheduleId)
+        assertEquals(
+            RehearsalTargetUiState.Schedule(requestedSchedule.id.value),
+            failed.rehearsalTarget,
+        )
     }
 
     @Test
@@ -579,9 +583,13 @@ class LenswakeViewModelProfileActionsTest : LenswakeViewModelTestSupport() {
 
         viewModel.state.first { it.actions.canRunRehearsal }
         viewModel.runScheduleRehearsal("missing-schedule")
-        viewModel.state.first { it.rehearsal is RehearsalActionUiState.Failed }
+        val failed = viewModel.state.first { it.rehearsal is RehearsalActionUiState.Failed }
 
         assertEquals(0, coordinatorCalls)
+        assertEquals(
+            RehearsalTargetUiState.Schedule("missing-schedule"),
+            failed.rehearsalTarget,
+        )
     }
 
     @Test
@@ -689,6 +697,7 @@ class LenswakeViewModelProfileActionsTest : LenswakeViewModelTestSupport() {
         assertEquals(Duration.ofSeconds(10), received?.recordingDuration)
         assertEquals(TimeLapseSpeed.X120, received?.capture?.timeLapseSpeed)
         assertEquals(dev.po4yka.lenswake.core.LensSelection.REAR_MAIN, received?.capture?.lens)
+        assertEquals(RehearsalTargetUiState.Profile(profileId.value), pending.rehearsalTarget)
         assertFalse(pending.actions.canRunRehearsal)
         assertTrue(pending.actions.rehearsalUnavailableReason.contains(activeSession.id.value))
     }

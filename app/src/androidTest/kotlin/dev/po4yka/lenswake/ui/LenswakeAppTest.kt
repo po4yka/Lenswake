@@ -3,6 +3,7 @@ package dev.po4yka.lenswake.ui
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasText
@@ -294,6 +295,14 @@ class LenswakeAppTest {
                         verifiedForScheduling = false,
                         supportedCaptures = TEST_SUPPORTED_CAPTURES,
                     ),
+                    ProfileSummaryUiState(
+                        id = "profile-2",
+                        title = "Pixel 9 Pro",
+                        environment = "Android 17 · Pixel Camera version 70000000 · English (United States)",
+                        compatibility = "Needs test",
+                        verifiedForScheduling = false,
+                        supportedCaptures = TEST_SUPPORTED_CAPTURES,
+                    ),
                 ),
                 actions = UiActionAvailability(canRunRehearsal = true),
             ),
@@ -301,8 +310,10 @@ class LenswakeAppTest {
         )
 
         composeRule.onNodeWithText("Profiles").performClick()
-        composeRule.onNode(hasText("Test recording") and hasClickAction()).performClick()
-        composeRule.runOnIdle { assertEquals("profile-1", rehearsedProfileId) }
+        composeRule.onNodeWithContentDescription("Test recording, Pixel 9 Pro")
+            .performScrollTo()
+            .performClick()
+        composeRule.runOnIdle { assertEquals("profile-2", rehearsedProfileId) }
     }
 
     @Test
@@ -357,18 +368,21 @@ class LenswakeAppTest {
         var rehearsedScheduleId: String? = null
         setContent(
             state = LenswakeUiState(
-                schedules = listOf(testSchedule()),
+                schedules = listOf(
+                    testSchedule(id = "schedule-dawn", title = "Dawn"),
+                    testSchedule(id = "schedule-sunset", title = "Sunset"),
+                ),
                 actions = UiActionAvailability(canRunRehearsal = true),
             ),
             onRunScheduleRehearsal = { rehearsedScheduleId = it },
         )
 
-        composeRule.onNodeWithContentDescription("Test now, Dawn")
-            .performScrollTo()
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(4)
+        composeRule.onNodeWithContentDescription("Test now, Sunset")
             .assertIsEnabled()
             .performClick()
 
-        composeRule.runOnIdle { assertEquals("schedule-dawn", rehearsedScheduleId) }
+        composeRule.runOnIdle { assertEquals("schedule-sunset", rehearsedScheduleId) }
     }
 
     @Test
@@ -390,11 +404,48 @@ class LenswakeAppTest {
     }
 
     @Test
+    fun schedulesRouteMarksOnlyTheTargetScheduleAsTesting() {
+        setContent(
+            state = LenswakeUiState(
+                schedules = listOf(
+                    testSchedule(id = "schedule-dawn", title = "Dawn"),
+                    testSchedule(id = "schedule-sunset", title = "Sunset"),
+                ),
+                rehearsal = RehearsalActionUiState.Running,
+                rehearsalTarget = RehearsalTargetUiState.Schedule("schedule-sunset"),
+                actions = UiActionAvailability(
+                    canRunRehearsal = false,
+                    rehearsalUnavailableReason = "A test recording is already running.",
+                ),
+            ),
+        )
+
+        composeRule.onNodeWithText("Test recording: Sunset").assertExists()
+        composeRule.onNodeWithContentDescription("Test now, Dawn")
+            .performScrollTo()
+            .assertTextContains("Test now")
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(5)
+        composeRule.onNodeWithContentDescription("Test now, Sunset")
+            .assertTextContains("Testing camera")
+    }
+
+    @Test
     fun profileBusyActionsShowProgressWithoutUnavailableCopy() {
         setContent(
             state = LenswakeUiState(
+                profiles = listOf(
+                    ProfileSummaryUiState(
+                        id = "profile-1",
+                        title = "Pixel 8 Pro",
+                        environment = "Android 17",
+                        compatibility = "Needs test",
+                        verifiedForScheduling = false,
+                        supportedCaptures = TEST_SUPPORTED_CAPTURES,
+                    ),
+                ),
                 profileInstall = ProfileInstallUiState.Installing,
                 rehearsal = RehearsalActionUiState.Running,
+                rehearsalTarget = RehearsalTargetUiState.Profile("profile-1"),
                 actions = UiActionAvailability(
                     installCandidateProfileUnavailableReason =
                         "Camera profile installation is in progress.",
@@ -695,9 +746,12 @@ class LenswakeAppTest {
     }
 }
 
-private fun testSchedule() = ScheduleSummaryUiState(
-    id = "schedule-dawn",
-    title = "Dawn",
+private fun testSchedule(
+    id: String = "schedule-dawn",
+    title: String = "Dawn",
+) = ScheduleSummaryUiState(
+    id = id,
+    title = title,
     timing = "Jan 1, 2030 06:00 - Jan 1, 2030 08:00",
     status = "Enabled",
     startLocal = LocalDateTime.of(2030, 1, 1, 6, 0),

@@ -24,6 +24,7 @@ data class LenswakeUiState(
     val profilePersistenceIssues: List<ProfilePersistenceIssueUiState> = emptyList(),
     val profileInstall: ProfileInstallUiState = ProfileInstallUiState.Idle,
     val rehearsal: RehearsalActionUiState = RehearsalActionUiState.Idle,
+    val rehearsalTarget: RehearsalTargetUiState? = null,
     val activeSession: ActiveSessionUiState? = null,
     val scheduleEditor: ScheduleEditorUiState = ScheduleEditorUiState.Closed,
     val scheduleAction: ScheduleActionUiState = ScheduleActionUiState.Idle,
@@ -142,6 +143,15 @@ sealed interface RehearsalActionUiState {
         val sessionId: String,
         val message: String,
     ) : RehearsalActionUiState
+}
+
+@Immutable
+sealed interface RehearsalTargetUiState {
+    @Immutable
+    data class Profile(val profileId: String) : RehearsalTargetUiState
+
+    @Immutable
+    data class Schedule(val scheduleId: String) : RehearsalTargetUiState
 }
 
 @Immutable

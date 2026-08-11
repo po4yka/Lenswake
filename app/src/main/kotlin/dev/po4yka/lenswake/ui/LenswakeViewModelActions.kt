@@ -63,6 +63,7 @@ internal class LenswakeViewModelActionState {
     val preflightRefresh = MutableStateFlow(0L)
     val profileInstall = MutableStateFlow<ProfileInstallUiState>(ProfileInstallUiState.Idle)
     val rehearsal = MutableStateFlow<RehearsalActionUiState>(RehearsalActionUiState.Idle)
+    val rehearsalTarget = MutableStateFlow<RehearsalTargetUiState?>(null)
     val scheduleEditor = MutableStateFlow<ScheduleEditorUiState>(ScheduleEditorUiState.Closed)
     val scheduleAction = MutableStateFlow<ScheduleActionUiState>(ScheduleActionUiState.Idle)
     val pendingDeleteScheduleId = MutableStateFlow<String?>(null)
@@ -105,7 +106,7 @@ internal class LenswakeProfileActionsImpl(
     }
 
     override fun runProfileRehearsal(profileId: String) {
-        launchRehearsal {
+        launchRehearsal(RehearsalTargetUiState.Profile(profileId)) {
             val profile = profileRepository.get(ProfileId(profileId))
                 ?: return@launchRehearsal RehearsalPreparation.Failed(
                     strings.get(R.string.rehearsal_profile_required),
@@ -130,7 +131,7 @@ internal class LenswakeProfileActionsImpl(
     }
 
     override fun runScheduleRehearsal(scheduleId: String) {
-        launchRehearsal {
+        launchRehearsal(RehearsalTargetUiState.Schedule(scheduleId)) {
             val schedule = scheduleRepository.get(ScheduleId(scheduleId))
                 ?: return@launchRehearsal RehearsalPreparation.Failed(
                     strings.get(R.string.rehearsal_schedule_missing),
@@ -147,6 +148,7 @@ internal class LenswakeProfileActionsImpl(
     }
 
     private fun launchRehearsal(
+        target: RehearsalTargetUiState,
         prepare: suspend () -> RehearsalPreparation,
     ) {
         if (
@@ -156,6 +158,7 @@ internal class LenswakeProfileActionsImpl(
             return
         }
 
+        actionState.rehearsalTarget.value = target
         actionState.rehearsal.value = RehearsalActionUiState.Running
         actionState.scope.launch {
             val attempt = runCatching {

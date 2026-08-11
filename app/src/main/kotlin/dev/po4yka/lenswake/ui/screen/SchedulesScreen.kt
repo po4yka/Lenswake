@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.ui.LenswakeUiState
 import dev.po4yka.lenswake.ui.RehearsalActionUiState
+import dev.po4yka.lenswake.ui.RehearsalTargetUiState
 import dev.po4yka.lenswake.ui.ScheduleActionUiState
 import dev.po4yka.lenswake.ui.ScheduleEditorUiState
 import dev.po4yka.lenswake.ui.ScheduleFormUiState
@@ -132,8 +133,15 @@ private fun LazyListScope.overviewItems(
     if (state.scheduleAction !is ScheduleActionUiState.Idle) {
         item { ScheduleOutcome(action = state.scheduleAction, onDismiss = onClearOutcome) }
     }
-    if (state.rehearsal !is RehearsalActionUiState.Idle) {
-        item { RehearsalOutcome(state.rehearsal) }
+    val rehearsalScheduleId =
+        (state.rehearsalTarget as? RehearsalTargetUiState.Schedule)?.scheduleId
+    if (state.rehearsal !is RehearsalActionUiState.Idle && rehearsalScheduleId != null) {
+        item {
+            RehearsalOutcome(
+                rehearsal = state.rehearsal,
+                scheduleTitle = state.schedules.firstOrNull { it.id == rehearsalScheduleId }?.title,
+            )
+        }
     }
 }
 
@@ -180,6 +188,7 @@ private fun LazyListScope.scheduleItems(
             schedule = schedule,
             busy = busy,
             rehearsal = state.rehearsal,
+            rehearsalTarget = state.rehearsalTarget,
             canRunRehearsal = state.actions.canRunRehearsal,
             rehearsalUnavailableReason = state.actions.rehearsalUnavailableReason,
             onEdit = { onBeginEdit(schedule.id) },

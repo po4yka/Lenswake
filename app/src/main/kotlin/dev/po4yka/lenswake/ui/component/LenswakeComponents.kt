@@ -179,6 +179,7 @@ fun ActionSection(
     onAction: () -> Unit,
     modifier: Modifier = Modifier,
     actionInProgress: Boolean = false,
+    actionContentDescription: String? = null,
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -199,6 +200,7 @@ fun ActionSection(
             modifier = Modifier
                 .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                 .semantics {
+                    actionContentDescription?.let { contentDescription = it }
                     if (actionInProgress) {
                         liveRegion = LiveRegionMode.Polite
                         stateDescription = actionLabel

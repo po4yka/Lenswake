@@ -20,6 +20,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.ui.RehearsalActionUiState
+import dev.po4yka.lenswake.ui.RehearsalTargetUiState
 import dev.po4yka.lenswake.ui.ScheduleSummaryUiState
 import dev.po4yka.lenswake.ui.component.StatusIcon
 import dev.po4yka.lenswake.ui.component.SummaryCard
@@ -29,6 +30,7 @@ internal fun ScheduleCard(
     schedule: ScheduleSummaryUiState,
     busy: Boolean,
     rehearsal: RehearsalActionUiState,
+    rehearsalTarget: RehearsalTargetUiState?,
     canRunRehearsal: Boolean,
     rehearsalUnavailableReason: String,
     onEdit: () -> Unit,
@@ -46,8 +48,10 @@ internal fun ScheduleCard(
             Text(schedule.capture.label(), style = MaterialTheme.typography.bodyMedium)
             ScheduleRehearsalAction(
                 scheduleTitle = schedule.title,
+                scheduleId = schedule.id,
                 busy = busy,
                 rehearsal = rehearsal,
+                rehearsalTarget = rehearsalTarget,
                 canRunRehearsal = canRunRehearsal,
                 unavailableReason = rehearsalUnavailableReason,
                 onRunRehearsal = onRunRehearsal,
@@ -84,13 +88,17 @@ private fun ScheduleCardHeader(schedule: ScheduleSummaryUiState) {
 @Composable
 private fun ScheduleRehearsalAction(
     scheduleTitle: String,
+    scheduleId: String,
     busy: Boolean,
     rehearsal: RehearsalActionUiState,
+    rehearsalTarget: RehearsalTargetUiState?,
     canRunRehearsal: Boolean,
     unavailableReason: String,
     onRunRehearsal: () -> Unit,
 ) {
     val testNowDescription = stringResource(R.string.schedule_test_now_content_description, scheduleTitle)
+    val testInProgress = rehearsal is RehearsalActionUiState.Running &&
+        rehearsalTarget == RehearsalTargetUiState.Schedule(scheduleId)
     OutlinedButton(
         modifier = Modifier
             .fillMaxWidth()
@@ -100,7 +108,7 @@ private fun ScheduleRehearsalAction(
     ) {
         Text(
             stringResource(
-                if (rehearsal is RehearsalActionUiState.Running) {
+                if (testInProgress) {
                     R.string.profiles_testing
                 } else {
                     R.string.action_test_now
@@ -108,7 +116,7 @@ private fun ScheduleRehearsalAction(
             ),
         )
     }
-    if (showRehearsalUnavailableReason(busy, canRunRehearsal, rehearsal, unavailableReason)) {
+    if (showRehearsalUnavailableReason(busy, canRunRehearsal, testInProgress, unavailableReason)) {
         Text(
             text = unavailableReason,
             style = MaterialTheme.typography.bodySmall,
@@ -139,35 +147,41 @@ private fun ScheduleCardActions(
 private fun showRehearsalUnavailableReason(
     busy: Boolean,
     canRunRehearsal: Boolean,
-    rehearsal: RehearsalActionUiState,
+    testInProgress: Boolean,
     unavailableReason: String,
 ): Boolean {
     if (busy || canRunRehearsal) return false
-    if (rehearsal is RehearsalActionUiState.Running) return false
+    if (testInProgress) return false
     return unavailableReason.isNotBlank()
 }
 
 @Composable
-internal fun RehearsalOutcome(rehearsal: RehearsalActionUiState) {
+internal fun RehearsalOutcome(
+    rehearsal: RehearsalActionUiState,
+    scheduleTitle: String?,
+) {
+    val targetTitle = scheduleTitle?.let {
+        stringResource(R.string.schedule_rehearsal_title, it)
+    }
     when (rehearsal) {
         RehearsalActionUiState.Idle -> Unit
         RehearsalActionUiState.Running -> SummaryCard(
-            title = stringResource(R.string.profiles_test_title),
+            title = targetTitle ?: stringResource(R.string.profiles_test_title),
             detail = stringResource(R.string.profiles_test_running_detail),
             status = stringResource(R.string.status_working),
         )
         is RehearsalActionUiState.Passed -> SummaryCard(
-            title = stringResource(R.string.profiles_test_passed_title),
+            title = targetTitle ?: stringResource(R.string.profiles_test_passed_title),
             detail = rehearsal.message,
             status = stringResource(R.string.status_passed),
         )
         is RehearsalActionUiState.Failed -> SummaryCard(
-            title = stringResource(R.string.profiles_test_failed_title),
+            title = targetTitle ?: stringResource(R.string.profiles_test_failed_title),
             detail = rehearsal.message,
             status = stringResource(R.string.status_failed),
         )
         is RehearsalActionUiState.SafetyStopPending -> SummaryCard(
-            title = stringResource(R.string.profiles_waiting_for_stop_title),
+            title = targetTitle ?: stringResource(R.string.profiles_waiting_for_stop_title),
             detail = rehearsal.message,
             status = stringResource(R.string.status_safety_alarm_armed),
         )

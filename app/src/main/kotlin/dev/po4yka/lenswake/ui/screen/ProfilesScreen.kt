@@ -15,6 +15,7 @@ import dev.po4yka.lenswake.ui.ActiveSessionKind
 import dev.po4yka.lenswake.ui.LenswakeUiState
 import dev.po4yka.lenswake.ui.ProfileInstallUiState
 import dev.po4yka.lenswake.ui.RehearsalActionUiState
+import dev.po4yka.lenswake.ui.RehearsalTargetUiState
 import dev.po4yka.lenswake.ui.component.ActionSection
 import dev.po4yka.lenswake.ui.component.ScreenHeader
 import dev.po4yka.lenswake.ui.component.SummaryCard
@@ -44,7 +45,7 @@ fun ProfilesScreen(
         installedProfiles(state, onRunRehearsal)
         profileInstallOutcome(state.profileInstall)
         activeRehearsal(state)
-        rehearsalOutcome(state.rehearsal)
+        rehearsalOutcome(state)
     }
 }
 
@@ -91,6 +92,8 @@ private fun LazyListScope.installedProfiles(
         item {
             ProfileRehearsalAction(
                 state = state,
+                profileId = null,
+                profileTitle = null,
                 onRunRehearsal = {},
             )
         }
@@ -105,6 +108,8 @@ private fun LazyListScope.installedProfiles(
         )
         ProfileRehearsalAction(
             state = state,
+            profileId = profile.id,
+            profileTitle = profile.title,
             onRunRehearsal = { onRunRehearsal(profile.id) },
         )
         if (index < state.profiles.lastIndex) {
@@ -139,13 +144,20 @@ private fun LazyListScope.profileInstallOutcome(install: ProfileInstallUiState) 
 @Composable
 private fun ProfileRehearsalAction(
     state: LenswakeUiState,
+    profileId: String?,
+    profileTitle: String?,
     onRunRehearsal: () -> Unit,
 ) {
     val active = state.activeSession?.takeIf { it.kind == ActiveSessionKind.REHEARSAL }
-    val inProgress = state.rehearsal is RehearsalActionUiState.Running
+    val targeted = profileId != null &&
+        state.rehearsalTarget == RehearsalTargetUiState.Profile(profileId)
+    val inProgress = state.rehearsal is RehearsalActionUiState.Running && targeted
+    val actionDescription = profileTitle?.let {
+        stringResource(R.string.profile_test_content_description, it)
+    }
     ActionSection(
         title = stringResource(R.string.profiles_test_title),
-        detail = active?.detail ?: if (inProgress) {
+        detail = active?.takeIf { targeted }?.detail ?: if (inProgress) {
             stringResource(R.string.profiles_test_running_detail)
         } else {
             stringResource(R.string.profiles_test_detail)
@@ -157,6 +169,7 @@ private fun ProfileRehearsalAction(
         },
         actionEnabled = state.actions.canRunRehearsal,
         actionInProgress = inProgress,
+        actionContentDescription = actionDescription,
         unavailableReason = state.actions.rehearsalUnavailableReason,
         onAction = onRunRehearsal,
     )
@@ -175,8 +188,9 @@ private fun LazyListScope.activeRehearsal(state: LenswakeUiState) {
     }
 }
 
-private fun LazyListScope.rehearsalOutcome(rehearsal: RehearsalActionUiState) {
-    when (rehearsal) {
+private fun LazyListScope.rehearsalOutcome(state: LenswakeUiState) {
+    if (state.rehearsalTarget !is RehearsalTargetUiState.Profile) return
+    when (val rehearsal = state.rehearsal) {
         RehearsalActionUiState.Idle -> Unit
         RehearsalActionUiState.Running -> Unit
         is RehearsalActionUiState.Passed -> item {
