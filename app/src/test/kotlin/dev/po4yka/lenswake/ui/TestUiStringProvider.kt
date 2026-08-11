@@ -57,6 +57,7 @@ internal object TestUiStringProvider : UiStringProvider {
             "Stored profile entry “%1\$s” is corrupt and was excluded. Lenswake cannot repair this entry.",
         R.string.profile_unsupported_environment to
             "No camera profile is available for %1\$s with this Pixel Camera version and language.",
+        R.string.rehearsal_schedule_missing to "The selected schedule no longer exists.",
         R.string.status_enabled to "Enabled",
         R.string.validation_schedule_name_required to "Add a name so you can recognize this schedule.",
         R.string.validation_schedule_times_required to "Choose a start and end date and time.",
