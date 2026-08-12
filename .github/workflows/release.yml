@@ -128,12 +128,7 @@ jobs:
           profile: pixel_7_pro
           ram-size: ${{ matrix.ram-size }}
           disk-size: 6G
-          script: >-
-            ./gradlew
-            :data:connectedDebugAndroidTest
-            :app:connectedDebugAndroidTest
-            --rerun-tasks
-            --console=plain
+          script: scripts/ci/run-instrumentation.sh
       - name: Upload failure reports
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
