@@ -1,5 +1,11 @@
 # Pixel 8 Pro baseline — 2026-08-09
 
+> [!IMPORTANT]
+> This is historical, artifact-bound evidence. It proves the named commits/APK hashes and the
+> profile generation exercised below; it does not validate current `main`, selector schema v4,
+> mandatory saved-media verification, capture-specific rehearsal receipts, or typed dialog recovery.
+> See [`docs/STATUS.md`](../STATUS.md) for the current acceptance boundary.
+
 ## Purpose
 
 Verify the current Lenswake foundation, runtime preflight, and Pixel Camera automation signals on
@@ -29,6 +35,8 @@ Lenswake version:        0.1.0 debug
 
 The exact ADB serial was selected for every command through `ANDROID_SERIAL` or `adb -s`; it is not
 stored in this note.
+
+All epoch values are Unix milliseconds in UTC. ISO timestamps shown later use `Z` (UTC).
 
 Initial observed state:
 

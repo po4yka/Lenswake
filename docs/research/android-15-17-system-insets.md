@@ -1,5 +1,10 @@
 # Android 15–17 system insets and edge-to-edge — 2026-08-10
 
+> [!NOTE]
+> Last reviewed against the current Lenswake layout contract on 2026-08-12. This remains dated
+> platform/runtime evidence; later UI changes require their own validation, and the Pixel 8 Pro
+> physical IME/navigation-mode matrix below is still open.
+
 ## Purpose
 
 Establish the platform requirements that an audit of Lenswake's top and bottom layout insets must

@@ -226,19 +226,19 @@ class PhysicalDeviceWakeFixtureTest {
 
     private suspend fun requireCurrentVerifiedProfileWithRehearsal() = application.graph.let { graph ->
         val profile = checkNotNull(graph.profileRepository.get(CURRENT_PROFILE.id)) {
-            "Current v3 Pixel Camera profile is not installed; complete the physical rehearsal first"
+            "Current v4 Pixel Camera profile is not installed; complete the physical rehearsal first"
         }
         check(profile == CURRENT_PROFILE.copy(
             compatibility = ProfileCompatibility.VERIFIED,
             verifiedAt = profile.verifiedAt,
         )) {
-            "Installed profile is not the exact current v3 Pixel Camera profile"
+            "Installed profile is not the exact current v4 Pixel Camera profile"
         }
         check(profile.compatibility == ProfileCompatibility.VERIFIED && profile.verifiedAt != null) {
-            "Current v3 Pixel Camera profile must be VERIFIED with a verification timestamp"
+            "Current v4 Pixel Camera profile must be VERIFIED with a verification timestamp"
         }
         val rehearsal = checkNotNull(graph.executionRepository.latestSuccessfulRehearsal(profile.id)) {
-            "Current v3 Pixel Camera profile has no qualifying successful rehearsal"
+            "Current v4 Pixel Camera profile has no qualifying successful rehearsal"
         }
         check(
             rehearsal.kind == SessionKind.REHEARSAL &&
@@ -247,7 +247,7 @@ class PhysicalDeviceWakeFixtureTest {
                 rehearsal.stoppedVerifiedAt != null &&
                 rehearsal.mediaSavedVerifiedAt == profile.verifiedAt,
         ) {
-            "Current v3 Pixel Camera profile rehearsal evidence is not qualifying"
+            "Current v4 Pixel Camera profile rehearsal evidence is not qualifying"
         }
         profile
     }
@@ -284,7 +284,7 @@ class PhysicalDeviceWakeFixtureTest {
 
     private companion object {
         const val LOG_TAG = "LenswakePhysicalWake"
-        const val FIXTURE_SCHEDULE_NAME = "Lenswake physical DEVICE_WAKE proof v3"
+        const val FIXTURE_SCHEDULE_NAME = "Lenswake physical DEVICE_WAKE proof v4"
         const val DEFAULT_START_DELAY_SECONDS = 120L
         const val DEFAULT_RECORDING_WINDOW_SECONDS = 120L
         val START_DELAY_SECONDS_RANGE = 120L..900L

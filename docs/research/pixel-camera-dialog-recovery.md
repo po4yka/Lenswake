@@ -1,5 +1,10 @@
 # Pixel Camera dialog recovery evidence
 
+> [!IMPORTANT]
+> This note records source-derived candidate dialog selectors from one Pixel 7 Pixel Camera package
+> variant. Matching `versionCode` does not prove binary identity, Accessibility exposure, or behavior
+> on the supported Pixel 8 Pro. Physical Pixel 8 Pro acceptance remains open.
+
 Date: 2026-08-11
 
 ## Environment
@@ -7,11 +12,12 @@ Date: 2026-08-11
 - Connected device: Google Pixel 7 (`panther`), Android 17.
 - Installed package: `com.google.android.GoogleCamera`.
 - Pixel Camera version: `10.4.117.936816638.14` (`versionCode=69481630`).
-- Lenswake baseline: `main@0539fd7` plus the typed-dialog recovery change.
+- Lenswake implementation: `e5390c0`.
 
 The bundled production profile remains scoped to its exact Pixel 8 Pro environment and requires a
-successful rehearsal. The Pixel 7 inspection below establishes the Pixel Camera package contract
-for the same camera version; it is not Pixel 8 Pro end-to-end proof.
+successful rehearsal. The Pixel 7 inspection below provides candidate strings and call-site behavior
+for one package variant with the same reported Camera version. Static resource/code inspection does
+not establish the Pixel 8 Pro Accessibility contract or end-to-end behavior.
 
 ## Reproducible inspection
 
