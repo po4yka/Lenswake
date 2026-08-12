@@ -94,6 +94,7 @@ jobs:
           target: aosp_atd
           arch: x86_64
           profile: pixel_7_pro
+          disk-size: 6G
           script: >-
             ./gradlew
             :data:connectedDebugAndroidTest
@@ -158,6 +159,7 @@ jobs:
           channel: ${{ matrix.channel }}
           arch: x86_64
           profile: pixel_7_pro
+          disk-size: 6G
           script: >-
             ./gradlew
             :data:connectedDebugAndroidTest

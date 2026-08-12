@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isHeading
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -126,7 +127,7 @@ class LenswakeAppTest {
 
         composeRule.onNodeWithText("Diagnostics").performClick()
 
-        composeRule.onNodeWithText("Needs attention").assertExists()
+        composeRule.onNode(hasText("Needs attention") and isHeading()).assertExists()
         composeRule.onNodeWithText("Hidden setup check").assertDoesNotExist()
         composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(5)
         composeRule.onNodeWithText("Sessions").assertExists()
@@ -472,7 +473,7 @@ class LenswakeAppTest {
         }
 
         composeRule.onNodeWithText("Diagnostics").performClick()
-        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(9)
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(2)
         composeRule.onNodeWithText("No activity yet").assertExists()
         composeRule.onNodeWithText("persisted", substring = true, ignoreCase = true).assertDoesNotExist()
     }
@@ -598,7 +599,7 @@ class LenswakeAppTest {
             .performScrollTo()
             .assertIsSelected()
         composeRule.onNodeWithText("Pixel Camera version 710000", substring = true).assertExists()
-        composeRule.onNode(hasText("Pixel 9 Pro") and radioButtonRole).performClick()
+        composeRule.onNode(hasText("Pixel 9 Pro") and radioButtonRole).performScrollTo().performClick()
 
         composeRule.runOnIdle { assertEquals("profile-9", updatedForm?.profileId) }
     }

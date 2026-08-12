@@ -2,6 +2,7 @@ package dev.po4yka.lenswake.integration
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import dev.po4yka.lenswake.automation.PortResult
 import dev.po4yka.lenswake.core.EnvironmentCapabilityStatus
 import dev.po4yka.lenswake.core.EnvironmentSnapshotId
 import dev.po4yka.lenswake.core.LenswakeClock
@@ -18,12 +19,14 @@ import java.time.Instant
 @RunWith(AndroidJUnit4::class)
 class AndroidEnvironmentSnapshotCollectorTest {
     @Test
-    fun capturesBoundedOperationalStateWithoutUiContent() = runBlocking {
+    fun capturesBoundedOperationalStateOrReportsCameraUnavailability() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val capturedAt = Instant.parse("2026-08-10T05:30:01Z")
+        val cameraEnvironmentProbe = AndroidPixelCameraEnvironmentProbe(context)
+        val cameraInspection = cameraEnvironmentProbe.inspect()
         val collector = AndroidEnvironmentSnapshotCollector(
             context = context,
-            cameraEnvironmentProbe = AndroidPixelCameraEnvironmentProbe(context),
+            cameraEnvironmentProbe = cameraEnvironmentProbe,
             privilegedBridge = UnavailablePrivilegedBridge(),
             clock = LenswakeClock { capturedAt },
         )
@@ -33,7 +36,15 @@ class AndroidEnvironmentSnapshotCollectorTest {
             sessionId = SessionId("session"),
         )
 
-        assertTrue(result.isSuccess)
+        when (cameraInspection) {
+            is PortResult.Unavailable -> {
+                assertTrue(result.isFailure)
+                assertEquals(cameraInspection.failure.message, result.exceptionOrNull()?.message)
+                return@runBlocking
+            }
+
+            is PortResult.Observed -> assertTrue(result.isSuccess)
+        }
         val snapshot = result.getOrThrow()
         assertEquals(capturedAt, snapshot.capturedAt)
         assertEquals("session", snapshot.sessionId.value)
