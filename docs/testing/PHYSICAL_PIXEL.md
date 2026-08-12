@@ -84,9 +84,15 @@ as part of an unreviewed broad suite.
 - `physicalProfileRehearsal=true`: performs a real production rehearsal.
 - `physicalWake=true`: persists a future schedule and arms START plus STOP alarms.
 - `physicalWakeCleanup=true`: removes the persisted fixture and alarms.
+- `physicalSelectorProbe=true` plus `physicalSelectorExpectedDescription`: observes one manually
+  exposed `Stop video` or `Stop time lapse` node without dispatching an action.
 
 The scheduled fixture also accepts bounded start-delay and recording-window arguments. Read the
 current test source before invocation; test contracts may change.
+
+The selector probe starts only after the operator has manually exposed the requested recording
+state. Instrumentation force-stops the target app, so re-enable Lenswake Accessibility after the
+test starts, then stop the recording and clean up its media explicitly.
 
 Example wake-only invocation:
 
@@ -97,6 +103,29 @@ adb -s "$PIXEL_SERIAL" shell am instrument -w \
   'dev.po4yka.lenswake.alarm.PhysicalDeviceWakeFixtureTest#wakeLockedDisplayOnlyWhenExplicitlyRequested' \
   dev.po4yka.lenswake.test/androidx.test.runner.AndroidJUnitRunner
 ```
+
+## Explicit beta calibration exception
+
+A beta Pixel may be used only when the user explicitly authorizes that exact connected device for
+selector-template calibration. This exception permits bounded Camera launch, semantic UI
+inspection, a short capture needed to expose Record/Stop postconditions, and a guarded diagnostic
+Accessibility probe. It does not admit the beta fingerprint into the supported runtime.
+
+Beta calibration evidence must:
+
+- record the full beta fingerprint, Camera package/version/signer, display, locale, source commit,
+  diagnostic APK hash, exact actions, observations, created media, and cleanup;
+- contribute only selectors and state signals observed on that device; omit absent or unobserved
+  controls and typed dialogs instead of copying them from another template;
+- remain `EXPERIMENTAL` and require a fresh exact stable-environment profile plus exact-combination
+  rehearsal before scheduling;
+- never count as a stable-build rehearsal, release acceptance, certification, or reliability
+  validation for this or another model; a registry may reuse observed semantic candidates on an
+  `EXPERIMENTAL` model, but that model still has no physical evidence until tested itself;
+- never transfer normalized gestures or geometry to another model.
+
+Profile installation, preflight, action dispatch, certification, and release workflows must remain
+fail-closed for the beta fingerprint even when its semantic selectors seed a template.
 
 ## Acceptance scenarios
 

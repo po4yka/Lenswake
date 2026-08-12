@@ -22,9 +22,10 @@ import dev.po4yka.lenswake.platform.SUPPORTED_PIXEL_CAMERA_IDENTITY
  * Version-pinned semantic selector candidates documented in
  * `docs/research/pixel-6-10a-template-provenance.md`.
  *
- * Static APK resources and historical observations are not physical certification. A catalog entry
- * is offered only for an exact environment identity, and production use still requires a successful
- * rehearsal of the exact capture configuration on that device.
+ * The standard definition comes from an explicitly authorized live Pixel 7 beta calibration; the
+ * telephoto definition remains version-pinned static APK evidence. Neither is physical
+ * certification. A catalog entry is offered only for an admitted exact stable environment, and
+ * production use still requires a successful rehearsal of the exact capture configuration there.
  */
 object KnownPixelCameraProfileCatalog {
     private val ACTIVE_MODE_REGION = NormalizedBounds(0.35f, 0.80f, 0.65f, 0.90f)
@@ -315,17 +316,7 @@ object KnownPixelCameraProfileCatalog {
         verifiedAt = null,
     )
 
-    private val pixel7SemanticTemplate: PixelCameraProfile =
-        pixel8ProAndroid17Camera69481630.copy(
-            id = ProfileId("pixel-7-semantic-static-template-v5"),
-            supportTier = SupportTier.EXPERIMENTAL,
-            source = ProfileSource.STATIC_RESOURCE_TEMPLATE,
-            selectorTemplate = PixelCameraTemplateKind.SEMANTIC_STANDARD.reference,
-            targets = pixel8ProAndroid17Camera69481630.targets -
-                AutomationAction.SELECT_REAR_TELEPHOTO_LENS,
-            stateSignals = pixel8ProAndroid17Camera69481630.stateSignals -
-                PixelCameraStateSignal.REAR_TELEPHOTO_LENS_ACTIVE,
-        )
+    internal val pixel7SemanticTemplate: PixelCameraProfile = Pixel7SemanticTemplate.profile
 
     fun exactMatch(environment: PixelCameraEnvironment): PixelCameraProfile? {
         val model = SupportedPixelModelRegistry.find(
@@ -348,7 +339,7 @@ object KnownPixelCameraProfileCatalog {
         )
     }
 
-    /** True when [profile] is this catalog entry, allowing rehearsal status to differ. */
+    /** True when [profile] has the current catalog definition, allowing runtime evidence to differ. */
     fun containsDefinition(profile: PixelCameraProfile): Boolean {
         val known = exactMatch(profile.environment)?.takeIf { it.id == profile.id } ?: return false
         val installableStatuses = setOf(
@@ -359,6 +350,8 @@ object KnownPixelCameraProfileCatalog {
             return false
         }
         return profile.copy(
+            supportTier = known.supportTier,
+            certification = known.certification,
             compatibility = known.compatibility,
             verifiedAt = known.verifiedAt,
         ) == known

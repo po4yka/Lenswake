@@ -112,6 +112,23 @@ class InstallKnownPixelCameraProfileTest {
     }
 
     @Test
+    fun `authorized beta calibration environment cannot install`() = runBlocking {
+        val repository = FakeProfileRepository()
+        val beta = KnownPixelCameraProfileCatalog.pixel7SemanticTemplate.environment
+        val installer = InstallKnownPixelCameraProfile(
+            environmentProbe = { PortResult.Observed(beta) },
+            profileRepository = repository,
+        )
+
+        assertInstanceOf(
+            InstallKnownPixelCameraProfileResult.UnsupportedEnvironment::class.java,
+            installer(experimentalRiskAccepted = true),
+        )
+        assertEquals(0, repository.getCount)
+        assertEquals(0, repository.saveCount)
+    }
+
+    @Test
     fun `experimental environment requires explicit consent before persistence`() = runBlocking {
         val repository = FakeProfileRepository()
         val environment = candidate.environment.copy(

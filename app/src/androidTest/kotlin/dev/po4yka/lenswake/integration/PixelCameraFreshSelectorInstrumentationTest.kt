@@ -155,6 +155,7 @@ class PixelCameraFreshSelectorInstrumentationTest {
         selectorMatcher = SelectorMatcher(),
         environmentProbe = { PortResult.Observed(profile.environment) },
         accessibilityGateway = gateway,
+        definitionPolicy = PixelCameraProfileDefinitionPolicy { true },
     )
 
     private fun actionCase(

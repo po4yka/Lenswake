@@ -74,6 +74,22 @@ class InstallReleaseCertificationTest {
     }
 
     @Test
+    fun `authorized beta calibration environment cannot be certified`() = runBlocking {
+        val repository = FakeRepository(candidate)
+        val installer = InstallReleaseCertification(
+            bundleReader = ReleaseCertificationBundleReader { bundle(candidate) },
+            environmentProbe = { KnownPixelCameraProfileCatalog.pixel7SemanticTemplate.environment },
+            profileRepository = repository,
+        )
+
+        assertEquals(
+            InstallReleaseCertificationResult.UnsupportedTarget,
+            installer("content://certification"),
+        )
+        assertEquals(0, repository.saveCount)
+    }
+
+    @Test
     fun `persistence cancellation is never converted to a certification failure`() {
         val repository = object : AutomationProfileRepository by FakeRepository(candidate) {
             override suspend fun save(profile: PixelCameraProfile) {

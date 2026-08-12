@@ -3,11 +3,14 @@ package dev.po4yka.lenswake.application
 import dev.po4yka.lenswake.core.SelectorTemplateReference
 import dev.po4yka.lenswake.core.SupportTier
 
+private const val STANDARD_TEMPLATE_VERSION = 3
+private const val TELEPHOTO_TEMPLATE_VERSION = 2
+
 enum class PixelCameraTemplateKind(
     val reference: SelectorTemplateReference,
 ) {
-    SEMANTIC_STANDARD(SelectorTemplateReference("pixel-7-semantic", 2)),
-    SEMANTIC_TELEPHOTO(SelectorTemplateReference("pixel-8-pro-telephoto", 2)),
+    SEMANTIC_STANDARD(SelectorTemplateReference("pixel-7-semantic", STANDARD_TEMPLATE_VERSION)),
+    SEMANTIC_TELEPHOTO(SelectorTemplateReference("pixel-8-pro-telephoto", TELEPHOTO_TEMPLATE_VERSION)),
 }
 
 data class PixelSystemBuildIdentity(

@@ -67,7 +67,7 @@ class SupportedPixelModelRegistryTest {
 
     @Test
     fun `selector templates use the provenance-corrected version`() {
-        assertEquals(2, PixelCameraTemplateKind.SEMANTIC_STANDARD.reference.version)
+        assertEquals(3, PixelCameraTemplateKind.SEMANTIC_STANDARD.reference.version)
         assertEquals(2, PixelCameraTemplateKind.SEMANTIC_TELEPHOTO.reference.version)
     }
 }

@@ -23,7 +23,7 @@ MediaRecorder, custom encoding, root, a cloud service, or a hidden recording pat
 | --- | --- |
 | Application | `0.1.0`, active development |
 | Platform | `minSdk 35`, `compileSdk/targetSdk 37` |
-| Profile catalog | 17 fixed Pixel model/codename pairs · selector schema v5 · standard/telephoto templates |
+| Profile catalog | 17 fixed Pixel model/codename pairs · selector schema v5 · physical Pixel 7 standard template · static telephoto template |
 | Capture contract | Video 4K/60; Time Lapse Auto/5×/10×/30×/120×; discovered Night Sight Time Lapse; exact lens-specific receipts |
 | Local implementation | Schedules, profiles, rehearsal, durable alarms, wake, START/STOP automation, saved-media verification, recovery, diagnostics |
 | Historical device proof | Locked/Doze and reboot scenarios passed for explicitly recorded older v3 artifacts |
@@ -168,6 +168,10 @@ Dependency direction is `:app → :automation/:core/:data`, `:automation → :co
   the exact build ID and incremental. New monthly, beta, carrier-suffixed, custom, and malformed
   fingerprints fail closed until the full fingerprint provenance is reviewed.
   This local check is not cryptographic attestation against a hostile image spoofing public properties.
+- An explicitly authorized Pixel 7 beta may supply bounded live semantic selector calibration only.
+  That evidence does not make the beta installable, rehearseable, Certified, or acceptable for a
+  release gate; the resulting template still requires a fresh exact stable-environment profile and
+  per-combination rehearsal.
 - `CERTIFIED` is an immutable release-evidence result limited to Pixel 7/Pixel 8 Pro. The app accepts
   it only from a release-key-signed bundle whose APK SHA-256 and exact Experimental profile fingerprint
   match locally. Changing the APK demotes the effective tier; rehearsal never promotes it.

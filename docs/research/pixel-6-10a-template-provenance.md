@@ -1,5 +1,11 @@
 # Pixel 6-10a selector-template provenance
 
+> **Superseded for the standard template:** the later authorized live Pixel 7 calibration in
+> [pixel-7-beta-template-calibration-2026-08-12.md](pixel-7-beta-template-calibration-2026-08-12.md)
+> replaces the standard version 2 static candidate with an independent physical version 3
+> definition. This record remains the provenance boundary for telephoto template version 2 and the
+> earlier static package analysis.
+
 **Observed:** 2026-08-12 19:11-19:18 +04:00
 
 **Lenswake source inspected:** `main@1be1b90241d795827ab0a4b1057457b8f9f2a910`
@@ -303,8 +309,9 @@ Not confirmed by this record:
 - Lenswake APK identity, physical rehearsal, saved-media proof, locked/Doze/reboot scenarios,
   Android instrumentation, hosted CI, or the same signed release APK on both certification targets.
 
-Consequently both version 2 templates remain `STATIC_RESOURCE_TEMPLATE`, `EXPERIMENTAL`,
-`NEEDS_REHEARSAL`, with `verifiedAt=null`. Static package resources and a source contract test must
-not be presented as physical certification. Every exact capture combination remains unavailable to
-schedules until its current exact-environment rehearsal verifies configuration, recording, stopping,
-and saved media.
+At the time of this static inspection both version 2 templates remained
+`STATIC_RESOURCE_TEMPLATE`, `EXPERIMENTAL`, `NEEDS_REHEARSAL`, with `verifiedAt=null`. Static package
+resources and a source contract test must not be presented as physical certification. The later
+Pixel 7 record supersedes only the standard-template selector source; every exact capture
+combination still remains unavailable to schedules until its current exact-environment rehearsal
+verifies configuration, recording, stopping, and saved media.

@@ -8,6 +8,7 @@ import dev.po4yka.lenswake.automation.PortResult
 import dev.po4yka.lenswake.automation.ProfileUse
 import dev.po4yka.lenswake.automation.SelectorMatcher
 import dev.po4yka.lenswake.automation.UiNodeSnapshot
+import dev.po4yka.lenswake.application.KnownPixelCameraProfileCatalog
 import dev.po4yka.lenswake.core.AutomationAction
 import dev.po4yka.lenswake.core.AutomationFailureCode
 import dev.po4yka.lenswake.core.CaptureMode
@@ -891,6 +892,26 @@ class PixelCameraAccessibilityActionRoutingTest : PixelCameraAccessibilityPortTe
 
 class PixelCameraAccessibilityProfileValidationTest : PixelCameraAccessibilityPortTestFixture() {
     @Test
+    fun `beta calibration profile is rejected before action dispatch`() = runTest {
+        val beta = KnownPixelCameraProfileCatalog.pixel7SemanticTemplate
+        val gateway = FakeAccessibilityGateway(activeSignals())
+        val productionPort = PixelCameraAccessibilityPort(
+            cameraLauncher = { error("Camera launch is outside this action validation test") },
+            selectorMatcher = SelectorMatcher(),
+            environmentProbe = { PortResult.Observed(beta.environment) },
+            accessibilityGateway = gateway,
+        )
+
+        val result = productionPort.selectTimeLapse(
+            ProfileUse(beta, ProfileUse.Kind.REHEARSAL),
+        )
+
+        val rejected = assertInstanceOf(ActionDispatch.Rejected::class.java, result)
+        assertEquals(AutomationFailureCode.PROFILE_INCOMPATIBLE, rejected.failure.code)
+        assertEquals(0, gateway.snapshotCalls)
+    }
+
+    @Test
     fun `unapproved system build is incompatible before accessibility inspection`() = runTest {
         val gateway = FakeAccessibilityGateway(activeSignals())
         val current = environment().copy(
@@ -1002,6 +1023,7 @@ class PixelCameraAccessibilityProfileValidationTest : PixelCameraAccessibilityPo
                 PortResult.Observed(environment())
             },
             accessibilityGateway = gateway,
+            definitionPolicy = PixelCameraProfileDefinitionPolicy { true },
         )
 
         val result = port.inspect(profileUse(wrongPackage, ProfileUse.Kind.REHEARSAL))
@@ -1023,6 +1045,7 @@ abstract class PixelCameraAccessibilityPortTestFixture {
         selectorMatcher = SelectorMatcher(),
         environmentProbe = { PortResult.Observed(currentEnvironment) },
         accessibilityGateway = gateway,
+        definitionPolicy = PixelCameraProfileDefinitionPolicy { true },
     )
 
     protected fun profileUse(

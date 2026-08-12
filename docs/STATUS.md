@@ -33,23 +33,28 @@ Selector schema:     historical v4; current implementation v5
 Capture exposed:     receipt-gated matrix; no current signed-release physical receipts
 ```
 
-On 2026-08-12 read-only probes observed Pixel 8 Pro on the stable fingerprint above and Pixel 7 on
-a beta fingerprint, both with Pixel Camera versionCode 69481630. Profile installation, preflight,
-and action dispatch now accept only the complete dated Android 17 tuple
+On 2026-08-12 a read-only probe observed Pixel 8 Pro on the stable fingerprint above. A separately
+authorized bounded calibration used Pixel 7 on the exact beta fingerprint
+`google/panther_beta/panther:DEV/CP41.260717.006/15938186:user/release-keys`, also with Pixel Camera
+versionCode 69481630. Profile installation, preflight, and action dispatch still accept only the
+complete dated Android 17 tuple
 `CP2A.260705.006/15641320`; the product and device must also exactly equal the registered codename.
 The listed August build ID is not admitted until its full fingerprint has reproducible provenance.
 The observed beta plus carrier-suffixed, custom, older, and substituted-incremental fingerprints are
-rejected. These probes are not installation, rehearsal, saved-media, or acceptance, and the local
-fingerprint check is not remote or hardware-backed OS attestation.
+rejected. The beta session was selector-template calibration only: it cannot install a profile,
+qualify a rehearsal, certify a release, or satisfy stable-device acceptance. The local fingerprint
+check is not remote or hardware-backed OS attestation.
 
 The same read-only session pinned both installed Pixel Camera 10.4.117 variants by package-part,
 base-APK, signer, resources, and DEX identity. The resulting
 [selector provenance record](research/pixel-6-10a-template-provenance.md) maps every new 4K/60,
 Time Lapse speed, lens, and Night Sight candidate to its exact resource and code construction where
 available. It also corrected the 60 FPS candidate to visible text `60` plus content description
-`60 FPS`; both templates are consequently version 2. This is static implementation evidence only:
-current Accessibility exposure, uniqueness, selected/checked state, and combination availability
-remain subject to a fresh exact-environment rehearsal.
+`60 FPS`. The telephoto template remains static version 2. The independent standard template is now
+version 3 and uses the live Pixel 7 observations recorded in
+[pixel-7-beta-template-calibration-2026-08-12.md](research/pixel-7-beta-template-calibration-2026-08-12.md).
+It is still Experimental calibration evidence: exact stable-environment exposure, combination
+availability, saved-media verification, and reliability remain subject to fresh rehearsals.
 
 ## Evidence matrix
 
@@ -61,7 +66,7 @@ remain subject to a fresh exact-environment rehearsal.
 | Locked display `DEVICE_WAKE` | Yes | Instrumentation fixtures | Passed for historical named APK |
 | Secure Pixel Camera launch | Yes | Dynamic resolver tests | Passed for historical named APK |
 | Exact environment/profile admission | Yes | Instrumentation covers complete environment collection, signer rejection, exact install/preflight, and v5 Room round-trip | Current signed-release device gate open |
-| Fresh capture-control resolution | Yes | Instrumentation covers fresh semantic snapshots and changed-identity rejection for 4K, 60 FPS, every Time Lapse speed, every lens, and Night Sight | Current Accessibility exposure/rehearsal open |
+| Fresh capture-control resolution | Yes | Instrumentation covers fresh semantic snapshots and changed-identity rejection for 4K, 60 FPS, every Time Lapse speed, every lens, and Night Sight | Pixel 7 beta live nodes observed for standard-template controls; stable exact-environment rehearsal remains open |
 | Time Lapse 120× rear-main START/STOP | Yes | Engine/adapter tests | Passed for historical profile schema v3 artifact |
 | Process-death rehearsal STOP backstop | Yes | Coordinator/alarm tests | Passed for historical named APK |
 | Saved-media verification | Yes | Android integration tests cover permission/version/ambiguity/no-candidate behavior | Real current-HEAD Pixel Camera media publication open |
@@ -120,7 +125,8 @@ Hosted evidence for the CI/CD implementation on 2026-08-12 currently includes:
   empty validation PR was then closed and its branch deleted;
 - GitHub Dependency Graph is enabled so Dependency Review is supported.
 
-No production tag or release workflow has run. Connected opt-in physical suites were not run.
+No production tag or release workflow has run. A guarded selector-only probe ran on the explicitly
+authorized Pixel 7 beta; ordinary connected and production rehearsal suites were not run.
 
 ## Historical physical artifacts
 

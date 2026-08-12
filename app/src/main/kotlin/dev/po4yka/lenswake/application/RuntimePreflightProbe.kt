@@ -86,7 +86,7 @@ class RuntimePreflightEvaluator(
                 type = PreflightCheckType.STORAGE,
                 knownFailureSeverity = PreflightSeverity.WARNING,
             ),
-            profileAvailableCheck(profiles),
+            profileAvailableCheck(profiles.filter(KnownPixelCameraProfileCatalog::containsDefinition)),
             profileCompatibilityCheck(profiles, observation.cameraEnvironment),
             rehearsalCurrentCheck(observation, profiles),
             PreflightCheck(
@@ -245,5 +245,6 @@ class RuntimePreflightEvaluator(
             environment.cameraPackage == current.cameraPackage
 
     private fun PixelCameraProfile.isSupportedRuntimeProfile(): Boolean =
-        isSupportedPixelCameraRuntime(environment)
+        KnownPixelCameraProfileCatalog.containsDefinition(this) &&
+            isSupportedPixelCameraRuntime(environment)
 }

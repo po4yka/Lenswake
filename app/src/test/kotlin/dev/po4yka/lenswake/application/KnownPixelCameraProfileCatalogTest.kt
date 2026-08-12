@@ -5,7 +5,14 @@ import dev.po4yka.lenswake.core.PixelCameraDialogKind
 import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
 import dev.po4yka.lenswake.core.PixelCameraStateSignal
 import dev.po4yka.lenswake.core.ProfileCompatibility
+import dev.po4yka.lenswake.core.ProfileCertification
+import dev.po4yka.lenswake.core.ProfileSource
+import dev.po4yka.lenswake.core.SupportTier
 import dev.po4yka.lenswake.core.TimeLapseSpeed
+import dev.po4yka.lenswake.core.definitionFingerprint
+import dev.po4yka.lenswake.automation.SelectorMatchResult
+import dev.po4yka.lenswake.automation.SelectorMatcher
+import dev.po4yka.lenswake.automation.UiNodeSnapshot
 import java.time.Instant
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -15,6 +22,66 @@ import org.junit.jupiter.api.Test
 
 class KnownPixelCameraProfileCatalogTest {
     private val profile = KnownPixelCameraProfileCatalog.pixel8ProAndroid17Camera69481630
+
+    @Test
+    fun `standard template is a separate physical Pixel 7 definition`() {
+        val standard = KnownPixelCameraProfileCatalog.pixel7SemanticTemplate
+
+        assertEquals("Pixel 7", standard.environment.deviceModel)
+        assertEquals("panther", standard.environment.deviceCodename)
+        assertTrue(standard.environment.androidBuildFingerprint.orEmpty().contains("panther_beta"))
+        assertEquals(ProfileSource.PHYSICAL_TEMPLATE, standard.source)
+        assertEquals(SupportTier.EXPERIMENTAL, standard.supportTier)
+        assertEquals(PixelCameraTemplateKind.SEMANTIC_STANDARD.reference, standard.selectorTemplate)
+        assertEquals(3, standard.selectorTemplate.version)
+        assertEquals(
+            "dac75095dca416bf08e2bc713f41a689d90f7bccb5188e9b90eee8c51788e83c",
+            standard.definitionFingerprint(),
+        )
+        assertFalse(AutomationAction.SELECT_REAR_TELEPHOTO_LENS in standard.targets)
+        assertFalse(AutomationAction.SELECT_NIGHT_SIGHT_TIME_LAPSE in standard.targets)
+        assertFalse(PixelCameraStateSignal.REAR_TELEPHOTO_LENS_ACTIVE in standard.stateSignals)
+        assertFalse(PixelCameraStateSignal.NIGHT_SIGHT_TIME_LAPSE_MODE_ACTIVE in standard.stateSignals)
+        assertTrue(standard.dialogProfiles.isEmpty())
+
+        val resolution = standard.targets
+            .getValue(AutomationAction.SELECT_VIDEO_RESOLUTION_4K)
+            .selectors.single()
+        assertEquals("4K Ultra HD", resolution.contentDescription)
+        assertNull(resolution.text)
+
+        val stop = standard.targets
+            .getValue(AutomationAction.STOP_RECORDING)
+            .selectors.single()
+        assertEquals("com.google.android.GoogleCamera:id/shutter_button", stop.resourceId)
+        assertEquals("Stop time lapse", stop.contentDescription)
+    }
+
+    @Test
+    fun `physical rear main selector reaches its exact matcher threshold`() {
+        val standard = KnownPixelCameraProfileCatalog.pixel7SemanticTemplate
+        val match = SelectorMatcher().match(
+            AutomationAction.SELECT_REAR_MAIN_LENS,
+            standard,
+            listOf(
+                UiNodeSnapshot(
+                    id = "rear-main",
+                    packageName = standard.environment.cameraPackage,
+                    resourceId = "zoom_toggle_1",
+                    role = "android.widget.TextView",
+                    contentDescription = null,
+                    text = "1",
+                    bounds = null,
+                    visible = true,
+                    clickable = false,
+                    selected = false,
+                    enabled = true,
+                ),
+            ),
+        )
+
+        assertEquals(130, (match as SelectorMatchResult.Match).score)
+    }
 
     @Test
     fun `returns candidate only for the exact calibrated environment`() {
@@ -240,8 +307,21 @@ class KnownPixelCameraProfileCatalogTest {
         )
         val changedSelector = profile.copy(targets = profile.targets - AutomationAction.STOP_RECORDING)
         val incompatible = profile.copy(compatibility = ProfileCompatibility.INCOMPATIBLE)
+        val certified = rehearsed.copy(
+            supportTier = SupportTier.CERTIFIED,
+            certification = ProfileCertification(
+                releaseTag = "v1.0.0",
+                releaseCommit = "1".repeat(40),
+                candidateRunId = 1,
+                lenswakeApkSha256 = "2".repeat(64),
+                bundleSha256 = "3".repeat(64),
+                pixel7EvidenceSha256 = "4".repeat(64),
+                pixel8ProEvidenceSha256 = "5".repeat(64),
+            ),
+        )
 
         assertTrue(KnownPixelCameraProfileCatalog.containsDefinition(rehearsed))
+        assertTrue(KnownPixelCameraProfileCatalog.containsDefinition(certified))
         assertFalse(KnownPixelCameraProfileCatalog.containsDefinition(changedSelector))
         assertFalse(KnownPixelCameraProfileCatalog.containsDefinition(incompatible))
     }

@@ -2,7 +2,7 @@
 
 **Status:** current implementation architecture
 
-**Reviewed against:** `main@f33d15c` on 2026-08-12
+**Reviewed against:** implementation working tree based on `main@6d80050` on 2026-08-12
 
 **Target:** fixed non-folding Pixel 6–10a registry · Google Pixel Camera · exact environment
 
@@ -227,12 +227,16 @@ Selectors are package-scoped, scored, and required to have meaningful discrimina
 top matches, insufficient score, environment drift, and schema drift fail closed. The current
 schema is v5. A fixed 17-entry model/codename registry selects separate standard (Pixel 7 class)
 or telephoto (Pixel 8 Pro class) semantic-only templates and derives a deterministic
-exact-environment profile. Their current selectors are static package-resource candidates, not
-physical certification evidence. Template version 2 is tied to the dated, version-pinned APK
-resource and call-site record in
-[pixel-6-10a-template-provenance.md](research/pixel-6-10a-template-provenance.md); changing these
-candidates invalidates prior definition fingerprints and rehearsal receipts. No normalized
-coordinate gesture is copied between models.
+exact-environment profile. Standard template version 3 is an independent Pixel 7 definition built
+from explicitly authorized live semantic observations on an exact beta environment; the beta is
+provenance, not an installable profile. It contains no copied telephoto, Night Sight Time Lapse,
+typed-dialog, normalized-gesture, or geometry contract that was not observed on that Pixel 7.
+Telephoto template version 2 remains a version-pinned static package-resource candidate. The two
+evidence records are
+[pixel-7-beta-template-calibration-2026-08-12.md](research/pixel-7-beta-template-calibration-2026-08-12.md)
+and [pixel-6-10a-template-provenance.md](research/pixel-6-10a-template-provenance.md). Neither is
+physical certification. Changing either template invalidates prior definition fingerprints and
+rehearsal receipts. No normalized coordinate gesture is copied between models.
 
 Both catalog targets begin as `EXPERIMENTAL`. A normal rehearsal changes compatibility only. After
 the unchanged signed APK passes both physical gates, publication creates a JAR-signed certification
@@ -253,6 +257,10 @@ monthly release is added only after both its official OTA ID and full fingerprin
 matching a public fingerprint remains a local contract check, not cryptographic attestation against
 a hostile custom image that spoofs every public build property.
 
+An explicit user authorization can permit a beta Pixel as a bounded calibration instrument for a
+semantic template. That exception does not modify build admission and cannot produce an exact
+profile, rehearsal receipt, certification receipt, or release-acceptance record for the beta.
+
 The domain can represent Video, Time Lapse, Night Sight Time Lapse, five speeds, four lenses, and
 zoom. Runtime authorization comes only from selectors, state signals, and a qualifying rehearsal.
 Schedules see only capture combinations with a current receipt. The domain contract requires Video
@@ -261,9 +269,10 @@ semantic mode signal is present and the exact combination has passed rehearsal.
 
 ### Typed dialogs
 
-The current profile describes duration-limit, 100 GB file-size-limit, storage-exhausted,
-camera-disabled, and unknown Pixel Camera dialogs. Only the first two have an automatic `OK`
-target. Recovery requires:
+The telephoto template describes duration-limit, 100 GB file-size-limit, storage-exhausted,
+camera-disabled, and unknown Pixel Camera dialogs. The Pixel 7 standard template omits dialog
+profiles because no typed dialog was induced in its calibration session. Where a profile contains
+them, only the first two have an automatic `OK` target. Recovery requires:
 
 1. typed profile match;
 2. fresh dialog-presence recheck;

@@ -16,6 +16,14 @@ class PixelCameraRuntimeBuildPolicyTest {
     }
 
     @Test
+    fun `authorized beta calibration environment never becomes an installable runtime`() {
+        val betaCalibration = KnownPixelCameraProfileCatalog.pixel7SemanticTemplate.environment
+
+        assertFalse(isSupportedPixelCameraRuntime(betaCalibration))
+        assertNull(KnownPixelCameraProfileCatalog.exactMatch(betaCalibration))
+    }
+
+    @Test
     fun `every supported model accepts its current exact global stable build`() {
         SupportedPixelModelRegistry.entries.forEach { model ->
             val candidate = environment.copy(
