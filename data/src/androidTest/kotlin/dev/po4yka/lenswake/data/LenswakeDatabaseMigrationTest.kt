@@ -30,7 +30,7 @@ class LenswakeDatabaseMigrationTest {
 
     private val databaseName: String
         get() = File(
-            ApplicationProvider.getApplicationContext<Context>().cacheDir,
+            ApplicationProvider.getApplicationContext<Context>().dataDir,
             DATABASE_FILE_NAME,
         ).absolutePath
 
