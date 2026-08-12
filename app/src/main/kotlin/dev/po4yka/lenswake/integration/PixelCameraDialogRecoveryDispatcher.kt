@@ -21,40 +21,52 @@ internal class PixelCameraDialogRecoveryDispatcher(
         dialog: PixelCameraDialogKind,
         profileUse: ProfileUse,
         validator: PixelCameraProfileValidator,
-    ): ActionDispatch {
-        validator.validate(profileUse)?.let { return ActionDispatch.Rejected(it) }
-        val rule = profileUse.profile.dialogProfiles[dialog]
-            ?: return unsupported(dialog, "The profile does not recognize this Pixel Camera dialog")
-        val target = rule.recoveryTarget
-            ?: return unsupported(dialog, "The recognized Pixel Camera dialog has no safe recovery target")
-        return when (val snapshot = gateway.snapshot()) {
-            is AccessibilitySnapshotResult.Available -> if (snapshot.truncated) {
-                rejected(
-                    AutomationFailureCode.CAMERA_STATE_UNKNOWN,
-                    "The bounded Pixel Camera accessibility snapshot was truncated",
-                    dialog,
-                )
-            } else {
-                recoverInSnapshot(dialog, rule.presence, target, profileUse, snapshot.nodes)
-            }
-            AccessibilitySnapshotResult.ServiceDisconnected -> rejected(
-                AutomationFailureCode.ACCESSIBILITY_DISABLED,
-                "Lenswake Accessibility Service is not connected",
-                dialog,
-            )
-            AccessibilitySnapshotResult.RefreshFailed -> rejected(
-                AutomationFailureCode.ACCESSIBILITY_REFRESH_FAILED,
-                "The active Pixel Camera accessibility window could not be refreshed",
-                dialog,
-            )
-            AccessibilitySnapshotResult.NoActiveWindow,
-            AccessibilitySnapshotResult.PixelCameraNotForeground,
-            -> rejected(
-                AutomationFailureCode.PIXEL_CAMERA_NOT_FOREGROUND,
-                "Pixel Camera is not the active accessibility window",
-                dialog,
-            )
+    ): ActionDispatch = validator.validate(profileUse)?.let(ActionDispatch::Rejected)
+        ?: recoverValidatedDialog(dialog, profileUse)
+
+    private suspend fun recoverValidatedDialog(
+        dialog: PixelCameraDialogKind,
+        profileUse: ProfileUse,
+    ): ActionDispatch = when (val rule = profileUse.profile.dialogProfiles[dialog]) {
+        null -> unsupported(dialog, "The profile does not recognize this Pixel Camera dialog")
+        else -> when (val target = rule.recoveryTarget) {
+            null -> unsupported(dialog, "The recognized Pixel Camera dialog has no safe recovery target")
+            else -> recoverSnapshot(dialog, rule.presence, target, profileUse)
         }
+    }
+
+    private suspend fun recoverSnapshot(
+        dialog: PixelCameraDialogKind,
+        presence: UiSelectorSet,
+        target: UiSelectorSet,
+        profileUse: ProfileUse,
+    ): ActionDispatch = when (val snapshot = gateway.snapshot()) {
+        is AccessibilitySnapshotResult.Available -> if (snapshot.truncated) {
+            rejected(
+                AutomationFailureCode.CAMERA_STATE_UNKNOWN,
+                "The bounded Pixel Camera accessibility snapshot was truncated",
+                dialog,
+            )
+        } else {
+            recoverInSnapshot(dialog, presence, target, profileUse, snapshot.nodes)
+        }
+        AccessibilitySnapshotResult.ServiceDisconnected -> rejected(
+            AutomationFailureCode.ACCESSIBILITY_DISABLED,
+            "Lenswake Accessibility Service is not connected",
+            dialog,
+        )
+        AccessibilitySnapshotResult.RefreshFailed -> rejected(
+            AutomationFailureCode.ACCESSIBILITY_REFRESH_FAILED,
+            "The active Pixel Camera accessibility window could not be refreshed",
+            dialog,
+        )
+        AccessibilitySnapshotResult.NoActiveWindow,
+        AccessibilitySnapshotResult.PixelCameraNotForeground,
+        -> rejected(
+            AutomationFailureCode.PIXEL_CAMERA_NOT_FOREGROUND,
+            "Pixel Camera is not the active accessibility window",
+            dialog,
+        )
     }
 
     private suspend fun recoverInSnapshot(

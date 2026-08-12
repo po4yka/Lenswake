@@ -93,9 +93,13 @@ data class ProfileUse(
     }
 }
 
-interface PixelCameraPort {
+/** Observes the current visible Pixel Camera state for a validated profile use. */
+interface PixelCameraStatePort {
     suspend fun inspect(profileUse: ProfileUse): PortResult<PixelCameraState>
+}
 
+/** Drives profile-defined capture configuration and recording actions. */
+interface PixelCameraCapturePort {
     suspend fun launchSecureCamera(profileUse: ProfileUse): ActionDispatch
 
     suspend fun selectVideo(profileUse: ProfileUse): ActionDispatch
@@ -130,12 +134,18 @@ interface PixelCameraPort {
         mode: CaptureMode,
         profileUse: ProfileUse,
     ): ActionDispatch
+}
 
+/** Recovers only the explicitly typed Pixel Camera dialogs that a profile permits. */
+interface PixelCameraDialogPort {
     suspend fun recoverDialog(
         dialog: PixelCameraDialogKind,
         profileUse: ProfileUse,
     ): ActionDispatch
 }
+
+/** Complete Pixel Camera boundary consumed by the automation engine. */
+interface PixelCameraPort : PixelCameraStatePort, PixelCameraCapturePort, PixelCameraDialogPort
 
 data class RecordingMediaBaseline(
     val generation: Long,

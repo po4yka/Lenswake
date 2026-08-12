@@ -14,18 +14,18 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-internal object JsonColumnCodec {
-    private const val PROFILE_JSON_SCHEMA_VERSION = 2
-    private const val MAX_DIAGNOSTIC_JSON_LENGTH = 16_384
-    private const val MAX_PROFILE_JSON_LENGTH = 262_144
+private const val PROFILE_JSON_SCHEMA_VERSION = 2
+private const val MAX_DIAGNOSTIC_JSON_LENGTH = 16_384
+private const val MAX_PROFILE_JSON_LENGTH = 262_144
 
-    private val json = Json {
-        encodeDefaults = true
-        explicitNulls = true
-        ignoreUnknownKeys = false
-    }
+private val json = Json {
+    encodeDefaults = true
+    explicitNulls = true
+    ignoreUnknownKeys = false
+}
 
-    fun encodeStringMap(values: Map<String, String>): String {
+private object DiagnosticJsonColumnCodec {
+    fun encode(values: Map<String, String>): String {
         val orderedValues: Map<String, String> = values.entries
             .sortedBy { it.key }
             .associateTo(linkedMapOf()) { it.key to it.value }
@@ -33,11 +33,19 @@ internal object JsonColumnCodec {
             .bounded(MAX_DIAGNOSTIC_JSON_LENGTH, "diagnostic metadata")
     }
 
-    fun decodeStringMap(encoded: String): Map<String, String> =
+    fun decode(encoded: String): Map<String, String> =
         json.decodeFromString<Map<String, String>>(
             encoded.bounded(MAX_DIAGNOSTIC_JSON_LENGTH, "diagnostic metadata"),
         )
+}
 
+internal fun JsonColumnCodec.encodeStringMap(values: Map<String, String>): String =
+    DiagnosticJsonColumnCodec.encode(values)
+
+internal fun JsonColumnCodec.decodeStringMap(encoded: String): Map<String, String> =
+    DiagnosticJsonColumnCodec.decode(encoded)
+
+internal object JsonColumnCodec {
     fun encodeTargets(targets: Map<AutomationAction, UiSelectorSet>): String {
         val payload = TargetsPayload(
             schemaVersion = PROFILE_JSON_SCHEMA_VERSION,
@@ -200,12 +208,13 @@ internal object JsonColumnCodec {
             )
         }
 
-    private fun String.bounded(maxLength: Int, columnPurpose: String): String {
-        require(length <= maxLength) {
-            "$columnPurpose JSON exceeds the $maxLength character persistence limit"
-        }
-        return this
+}
+
+private fun String.bounded(maxLength: Int, columnPurpose: String): String {
+    require(length <= maxLength) {
+        "$columnPurpose JSON exceeds the $maxLength character persistence limit"
     }
+    return this
 }
 
 @Serializable

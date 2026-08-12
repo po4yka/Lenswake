@@ -310,6 +310,7 @@ internal suspend fun EngineEnvironment.inspectCameraHandlingDialog(
     operation: AutomationOperation,
     failureCode: AutomationFailureCode,
     failureMessage: String,
+    recoverDialogs: Boolean = true,
 ): PortResult<PixelCameraState> {
     val inspection = safeCall(
         block = {
@@ -324,7 +325,11 @@ internal suspend fun EngineEnvironment.inspectCameraHandlingDialog(
     )
     return when (inspection) {
         is PortResult.Observed -> when (val state = inspection.value) {
-            is PixelCameraState.Dialog -> PortResult.Observed(recoverCameraDialog(context, state.kind))
+            is PixelCameraState.Dialog -> if (recoverDialogs) {
+                PortResult.Observed(recoverCameraDialog(context, state.kind))
+            } else {
+                inspection
+            }
             else -> inspection
         }
         is PortResult.Unavailable -> inspection
@@ -349,81 +354,92 @@ private suspend fun EngineEnvironment.recoverCameraDialog(
         metadata = metadata,
         action = { pixelCamera.recoverDialog(dialog, context.profileUse) },
     )
+    return CameraDialogRecovery(this, context, dialog, metadata).verify()
+}
 
-    val policy = config.policyFor(operation)
-    var lastFailure: AutomationFailure? = null
-    for (attempt in 1..policy.maxAttempts) {
-        if (attempt > 1) {
-            retryTransition(
-                context,
-                operation,
-                attempt,
-                AutomationStateName.VERIFYING_CAMERA_DIALOG_RECOVERY,
-            )
-            sleeper.sleep(policy.delayBeforeAttempt(attempt))
-        }
-        context.transition(
-            state = AutomationStateName.VERIFYING_CAMERA_DIALOG_RECOVERY,
-            operation = operation,
-            outcome = AutomationOutcome.STARTED,
-            attempt = attempt,
-            metadata = metadata,
-        )
-        val inspection = safeCall(
-            block = {
-                when (val timed = timed(operation) { pixelCamera.inspect(context.profileUse) }) {
-                    is TimedCall.Completed -> timed.value
-                    TimedCall.TimedOut -> PortResult.Unavailable(timeoutFailure(operation))
-                }
-            },
-            recover = { error ->
-                PortResult.Unavailable(
-                    operationFailure(
-                        AutomationFailureCode.UNEXPECTED_CAMERA_DIALOG,
-                        "Pixel Camera dialog recovery could not be verified",
-                        error,
-                    ),
+private class CameraDialogRecovery(
+    private val environment: EngineEnvironment,
+    private val context: RunContext,
+    private val dialog: PixelCameraDialogKind,
+    private val metadata: Map<String, String>,
+) {
+    suspend fun verify(): PixelCameraState {
+        val operation = AutomationOperation.RECOVER_CAMERA_DIALOG
+        val policy = environment.config.policyFor(operation)
+        var lastFailure: AutomationFailure? = null
+        for (attempt in 1..policy.maxAttempts) {
+            if (attempt > 1) {
+                environment.retryTransition(
+                    context,
+                    operation,
+                    attempt,
+                    AutomationStateName.VERIFYING_CAMERA_DIALOG_RECOVERY,
                 )
-            },
-        )
-        when (inspection) {
-            is PortResult.Observed -> when (val value = inspection.value) {
-                is PixelCameraState.Dialog -> {
-                    lastFailure = null
-                    if (value.kind != dialog) {
-                        fail(
-                            context,
-                            failure(
-                                AutomationFailureCode.UNEXPECTED_CAMERA_DIALOG,
-                                "A different Pixel Camera dialog appeared during recovery",
-                                metadata + ("observedDialog" to value.kind.name),
-                            ),
+                environment.sleeper.sleep(policy.delayBeforeAttempt(attempt))
+            }
+            context.transition(
+                state = AutomationStateName.VERIFYING_CAMERA_DIALOG_RECOVERY,
+                operation = operation,
+                outcome = AutomationOutcome.STARTED,
+                attempt = attempt,
+                metadata = metadata,
+            )
+            when (
+                val inspection = environment.inspectCameraHandlingDialog(
+                    context,
+                    operation,
+                    AutomationFailureCode.UNEXPECTED_CAMERA_DIALOG,
+                    "Pixel Camera dialog recovery could not be verified",
+                    recoverDialogs = false,
+                )
+            ) {
+                is PortResult.Observed -> {
+                    val recoveredState = recoveredCameraState(inspection.value)
+                    if (recoveredState == null) {
+                        lastFailure = null
+                    } else {
+                        context.transition(
+                            state = AutomationStateName.VERIFYING_CAMERA_DIALOG_RECOVERY,
+                            operation = operation,
+                            outcome = AutomationOutcome.SUCCEEDED,
+                            attempt = attempt,
+                            metadata = metadata,
                         )
+                        return recoveredState
                     }
                 }
-                else -> {
-                    context.transition(
-                        state = AutomationStateName.VERIFYING_CAMERA_DIALOG_RECOVERY,
-                        operation = operation,
-                        outcome = AutomationOutcome.SUCCEEDED,
-                        attempt = attempt,
-                        metadata = metadata,
-                    )
-                    return value
-                }
-            }
 
-            is PortResult.Unavailable -> lastFailure = inspection.failure
+                is PortResult.Unavailable -> lastFailure = inspection.failure
+            }
         }
-    }
-    fail(
-        context,
-        lastFailure ?: failure(
+        environment.fail(
+            context,
+            lastFailure ?: environment.failure(
                 AutomationFailureCode.UNEXPECTED_CAMERA_DIALOG,
                 "Pixel Camera dialog remained visible after bounded recovery",
                 metadata,
             ),
-    )
+        )
+    }
+
+    private suspend fun recoveredCameraState(observedState: PixelCameraState): PixelCameraState? =
+        when (observedState) {
+            is PixelCameraState.Dialog -> {
+                if (observedState.kind != dialog) {
+                    environment.fail(
+                        context,
+                        environment.failure(
+                            AutomationFailureCode.UNEXPECTED_CAMERA_DIALOG,
+                            "A different Pixel Camera dialog appeared during recovery",
+                            metadata + ("observedDialog" to observedState.kind.name),
+                        ),
+                    )
+                }
+                null
+            }
+
+            else -> observedState
+        }
 }
 
 internal suspend fun EngineEnvironment.retryTransition(

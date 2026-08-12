@@ -2,7 +2,9 @@ package dev.po4yka.lenswake.integration
 
 import dev.po4yka.lenswake.accessibility.AccessibilitySnapshotResult
 import dev.po4yka.lenswake.automation.ActionDispatch
+import dev.po4yka.lenswake.automation.PixelCameraCapturePort
 import dev.po4yka.lenswake.automation.PixelCameraPort
+import dev.po4yka.lenswake.automation.PixelCameraStatePort
 import dev.po4yka.lenswake.automation.PixelCameraState
 import dev.po4yka.lenswake.automation.PortResult
 import dev.po4yka.lenswake.automation.ProfileUse
@@ -25,34 +27,19 @@ import dev.po4yka.lenswake.platform.SecurePixelCameraLauncher
  * It contains no Pixel Camera selectors. Both actions and observable state are entirely defined by
  * the persisted profile. Dispatch acceptance is returned separately from state verification.
  */
-class PixelCameraAccessibilityPort internal constructor(
+internal class PixelCameraAccessibilityControls(
     private val cameraLauncher: () -> CameraLaunchDispatch,
     selectorMatcher: SelectorMatcher,
     environmentProbe: () -> PortResult<PixelCameraEnvironment>,
     private val accessibilityGateway: PixelCameraAccessibilityGateway,
-) : PixelCameraPort {
-    private val profileValidator = PixelCameraProfileValidator(environmentProbe)
+) : PixelCameraStatePort, PixelCameraCapturePort {
+    val profileValidator = PixelCameraProfileValidator(environmentProbe)
     private val stateInferer = PixelCameraStateInferer(selectorMatcher)
     private val actionDispatcher = PixelCameraActionDispatcher(selectorMatcher, accessibilityGateway)
-    private val dialogRecoveryDispatcher = PixelCameraDialogRecoveryDispatcher(
-        selectorMatcher,
-        accessibilityGateway,
-    )
     private val speedControlCloser = TimeLapseSpeedControlCloser(
         selectorMatcher = selectorMatcher,
         gateway = accessibilityGateway,
         stateInferer = stateInferer,
-    )
-
-    constructor(
-        launcher: SecurePixelCameraLauncher,
-        selectorMatcher: SelectorMatcher,
-        environmentProbe: AndroidPixelCameraEnvironmentProbe,
-    ) : this(
-        cameraLauncher = launcher::dispatch,
-        selectorMatcher = selectorMatcher,
-        environmentProbe = environmentProbe::inspect,
-        accessibilityGateway = RuntimePixelCameraAccessibilityGateway,
     )
 
     override suspend fun inspect(profileUse: ProfileUse): PortResult<PixelCameraState> =
@@ -142,10 +129,51 @@ class PixelCameraAccessibilityPort internal constructor(
         mode.stopAction,
     )
 
+}
+
+class PixelCameraAccessibilityPort private constructor(
+    private val controls: PixelCameraAccessibilityControls,
+    private val dialogRecoveryDispatcher: PixelCameraDialogRecoveryDispatcher,
+) : PixelCameraPort,
+    PixelCameraStatePort by controls,
+    PixelCameraCapturePort by controls {
+    internal constructor(
+        cameraLauncher: () -> CameraLaunchDispatch,
+        selectorMatcher: SelectorMatcher,
+        environmentProbe: () -> PortResult<PixelCameraEnvironment>,
+        accessibilityGateway: PixelCameraAccessibilityGateway,
+    ) : this(
+        controls = PixelCameraAccessibilityControls(
+            cameraLauncher = cameraLauncher,
+            selectorMatcher = selectorMatcher,
+            environmentProbe = environmentProbe,
+            accessibilityGateway = accessibilityGateway,
+        ),
+        dialogRecoveryDispatcher = PixelCameraDialogRecoveryDispatcher(
+            selectorMatcher,
+            accessibilityGateway,
+        ),
+    )
+
+    constructor(
+        launcher: SecurePixelCameraLauncher,
+        selectorMatcher: SelectorMatcher,
+        environmentProbe: AndroidPixelCameraEnvironmentProbe,
+    ) : this(
+        cameraLauncher = launcher::dispatch,
+        selectorMatcher = selectorMatcher,
+        environmentProbe = environmentProbe::inspect,
+        accessibilityGateway = RuntimePixelCameraAccessibilityGateway,
+    )
+
     override suspend fun recoverDialog(
         dialog: PixelCameraDialogKind,
         profileUse: ProfileUse,
-    ): ActionDispatch = dialogRecoveryDispatcher.recover(dialog, profileUse, profileValidator)
+    ): ActionDispatch = dialogRecoveryDispatcher.recover(
+        dialog,
+        profileUse,
+        controls.profileValidator,
+    )
 }
 
 private fun CameraLaunchDispatch.Unavailable.failureCode(): AutomationFailureCode =

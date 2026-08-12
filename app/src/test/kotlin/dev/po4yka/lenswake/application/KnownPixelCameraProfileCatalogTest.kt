@@ -62,6 +62,12 @@ class KnownPixelCameraProfileCatalogTest {
 
     @Test
     fun `candidate contains all production actions and required observable signals`() {
+        assertProductionActionTargets()
+        assertDialogProfiles()
+        assertObservableStateSignals()
+    }
+
+    private fun assertProductionActionTargets() {
         assertEquals(
             setOf(
                 AutomationAction.SELECT_VIDEO,
@@ -74,6 +80,9 @@ class KnownPixelCameraProfileCatalogTest {
             profile.targets.keys,
         )
         assertEquals(setOf(TimeLapseSpeed.X120), profile.speedTargets.keys)
+    }
+
+    private fun assertDialogProfiles() {
         assertEquals(
             setOf(
                 PixelCameraDialogKind.VIDEO_DURATION_LIMIT_REACHED,
@@ -109,6 +118,9 @@ class KnownPixelCameraProfileCatalogTest {
                 .getValue(PixelCameraDialogKind.UNKNOWN)
                 .recoveryTarget,
         )
+    }
+
+    private fun assertObservableStateSignals() {
         assertEquals(
             setOf(
                 PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
