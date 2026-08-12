@@ -74,8 +74,10 @@ The repository now defines separate GitHub Actions contracts for:
 - ordinary API-35/36 AOSP ATD and API-37 Google APIs preview instrumentation on `main`, nightly,
   and release tags;
 - dependency review, CodeQL, and fail-closed Zizmor workflow auditing;
-- manually approved signing, package/version/certificate/permission verification, checksums,
-  provenance, and GitHub Release publication.
+- manually approved candidate signing, package/version/certificate/permission verification,
+  checksums and provenance without publication permission;
+- a separate manual publication run that verifies the exact candidate run/tag/commit/APK digest and
+  content-addressed Pixel 7 plus Pixel 8 Pro acceptance records before protected approval.
 
 Actions are full-SHA pinned and repository policy requires SHA pins. The protected `release`
 environment is restricted to `v*` tags and contains the signing secrets. The current certificate

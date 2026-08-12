@@ -135,8 +135,9 @@ separately; connected and opt-in physical suites were not run for this documenta
 [docs/STATUS.md](docs/STATUS.md).
 
 GitHub Actions repeats the host gate, runs ordinary instrumentation on Android emulators, and keeps
-those results separate from physical Pixel evidence. Release tags additionally repeat all gates before
-a manually approved protected job can sign and publish an APK. See the
+those results separate from physical Pixel evidence. Release tags build and retain a signed candidate
+without publication permission. A separate protected workflow can publish only that exact candidate
+after its SHA-256 and content-addressed Pixel 7 plus Pixel 8 Pro acceptance records match. See the
 [GitHub Releases runbook](docs/releasing/GITHUB_RELEASES.md).
 
 Physical fixtures can change device state, create schedules and alarms, or start Pixel Camera. Run

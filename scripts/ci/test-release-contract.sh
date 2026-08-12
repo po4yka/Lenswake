@@ -79,4 +79,78 @@ git -C "$outside_main_repo" tag v0.2.0
 expect_failure "is not reachable from origin/main" \
   bash -c "cd '$outside_main_repo' && scripts/ci/validate-release-tag.sh v0.2.0 origin/main"
 
+gate_root="$test_root/physical-gate"
+mkdir -p "$gate_root"
+gate_apk="$gate_root/Lenswake-1.2.3.apk"
+gate_checksums="$gate_root/SHA256SUMS.txt"
+gate_candidate="$gate_root/RELEASE-CANDIDATE.txt"
+gate_acceptance="$gate_root/PHYSICAL-ACCEPTANCE.txt"
+gate_commit="0123456789abcdef0123456789abcdef01234567"
+printf 'signed release bytes' >"$gate_apk"
+gate_apk_sha256="$(sha256sum "$gate_apk" | awk '{print $1}')"
+printf '%s  %s\n' "$gate_apk_sha256" "$(basename "$gate_apk")" >"$gate_checksums"
+{
+  printf 'schemaVersion=1\n'
+  printf 'tag=v1.2.3\n'
+  printf 'commit=%s\n' "$gate_commit"
+  printf 'versionName=1.2.3\n'
+  printf 'versionCode=1\n'
+  printf 'apkFilename=%s\n' "$(basename "$gate_apk")"
+  printf 'apkSha256=%s\n' "$gate_apk_sha256"
+} >"$gate_candidate"
+pixel_7_evidence_sha256="$(printf 'pixel 7 acceptance' | sha256sum | awk '{print $1}')"
+pixel_8_pro_evidence_sha256="$(printf 'pixel 8 pro acceptance' | sha256sum | awk '{print $1}')"
+
+scripts/ci/verify-physical-release-gate.sh \
+  "$gate_candidate" \
+  "$gate_apk" \
+  "$gate_checksums" \
+  v1.2.3 \
+  "$gate_commit" \
+  123456 \
+  "$gate_apk_sha256" \
+  https://example.invalid/pixel-7-evidence \
+  "$pixel_7_evidence_sha256" \
+  https://example.invalid/pixel-8-pro-evidence \
+  "$pixel_8_pro_evidence_sha256" \
+  "$gate_acceptance" >/dev/null
+
+grep -Fq "apkSha256=$gate_apk_sha256" "$gate_acceptance"
+grep -Fq "pixel7EvidenceSha256=$pixel_7_evidence_sha256" "$gate_acceptance"
+grep -Fq "pixel8ProEvidenceSha256=$pixel_8_pro_evidence_sha256" "$gate_acceptance"
+
+mkdir -p "$gate_root/tampered"
+tampered_apk="$gate_root/tampered/$(basename "$gate_apk")"
+cp "$gate_apk" "$tampered_apk"
+printf 'tampered' >>"$tampered_apk"
+expect_failure "Downloaded APK SHA-256 does not match physical acceptance" \
+  scripts/ci/verify-physical-release-gate.sh \
+  "$gate_candidate" \
+  "$tampered_apk" \
+  "$gate_checksums" \
+  v1.2.3 \
+  "$gate_commit" \
+  123456 \
+  "$gate_apk_sha256" \
+  https://example.invalid/pixel-7-evidence \
+  "$pixel_7_evidence_sha256" \
+  https://example.invalid/pixel-8-pro-evidence \
+  "$pixel_8_pro_evidence_sha256" \
+  "$gate_acceptance"
+
+expect_failure "Pixel 7 evidence URL must be a durable HTTPS URL" \
+  scripts/ci/verify-physical-release-gate.sh \
+  "$gate_candidate" \
+  "$gate_apk" \
+  "$gate_checksums" \
+  v1.2.3 \
+  "$gate_commit" \
+  123456 \
+  "$gate_apk_sha256" \
+  file:///tmp/pixel-7-evidence \
+  "$pixel_7_evidence_sha256" \
+  https://example.invalid/pixel-8-pro-evidence \
+  "$pixel_8_pro_evidence_sha256" \
+  "$gate_acceptance"
+
 echo "Release identity contract tests passed"

@@ -366,10 +366,12 @@ Pull requests run the host gate and ordinary API-35 AOSP ATD instrumentation. Pu
 nightly schedule add API-36 AOSP ATD and the current Android-17/API-37 Google APIs preview image from
 the canary SDK channel with the emulator binary pinned to build `15917651` and 4096 MB of AVD RAM;
 Android 17 phone AVDs require at least 4 GB, and Google has not published an API-37 ATD image. A SemVer
-tag on `main` repeats
-those checks at the exact tagged SHA before manual approval, then produces a signed minified APK,
-checksum, and provenance. Emulators validate Android framework boundaries only. The release remains
-physically unverified until its exact APK passes both Pixel 7 and Pixel 8 Pro evidence procedures.
+tag on `main` repeats those checks at the exact tagged SHA before manual approval, then produces a
+signed minified candidate APK, checksum, manifest, and provenance without publication permission.
+Publication is a separate manual workflow run at the same tag. It downloads that candidate by run ID
+and requires matching APK SHA-256 plus content-addressed physical-acceptance records for both Pixel 7
+and Pixel 8 Pro before a second protected-environment approval can publish the unchanged bytes.
+Emulators validate Android framework boundaries only and cannot satisfy this physical gate.
 
 Exact dependency versions live in `gradle/libs.versions.toml`; do not duplicate them into agent
 instructions.
