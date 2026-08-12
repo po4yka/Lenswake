@@ -149,13 +149,13 @@ class ApplicationGraph(application: Application) {
         environmentSnapshotRepository = environmentSnapshotRepository,
         environmentSnapshotCollector = environmentSnapshotCollector,
         automationEngine = automationEngine,
-        startReadiness = { profileId ->
-            val profile = profileRepository.get(profileId)
+        startReadiness = { session ->
+            val profile = profileRepository.get(session.profileId)
             if (profile == null) {
                 Result.failure(IllegalStateException("Selected Pixel Camera profile is missing"))
             } else {
                 PreflightAlarmRecoveryReadiness {
-                    runtimePreflightProbe.inspect(listOf(profile))
+                    runtimePreflightProbe.inspectForCapture(listOf(profile), session.capture)
                 }.check()
             }
         },

@@ -27,8 +27,16 @@ val CaptureMode.pixelCameraContract: PixelCameraModeContract
     get() = when (this) {
         CaptureMode.VIDEO -> PixelCameraModeContract(
             selectionAction = AutomationAction.SELECT_VIDEO,
-            preparationActions = setOf(AutomationAction.SELECT_VIDEO),
-            requiredSignals = setOf(PixelCameraStateSignal.VIDEO_MODE_ACTIVE),
+            preparationActions = setOf(
+                AutomationAction.SELECT_VIDEO,
+                AutomationAction.SELECT_VIDEO_RESOLUTION_4K,
+                AutomationAction.SELECT_VIDEO_FRAME_RATE_60,
+            ),
+            requiredSignals = setOf(
+                PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
+                PixelCameraStateSignal.VIDEO_RESOLUTION_4K_ACTIVE,
+                PixelCameraStateSignal.VIDEO_FRAME_RATE_60_ACTIVE,
+            ),
             startAction = AutomationAction.START_VIDEO_RECORDING,
             stopAction = AutomationAction.STOP_VIDEO_RECORDING,
         )

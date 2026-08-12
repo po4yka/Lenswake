@@ -372,6 +372,11 @@ internal fun InstallKnownPixelCameraProfileResult.toUiState(
         message = strings.get(R.string.profile_unsupported_environment, environment.deviceModel),
     )
 
+    is InstallKnownPixelCameraProfileResult.ExperimentalConsentRequired ->
+        ProfileInstallUiState.ExperimentalConsentRequired(
+            message = strings.get(R.string.profile_experimental_consent),
+        )
+
     is InstallKnownPixelCameraProfileResult.EnvironmentUnavailable -> ProfileInstallUiState.Failed(
         message = strings.get(R.string.profile_environment_unavailable),
     )

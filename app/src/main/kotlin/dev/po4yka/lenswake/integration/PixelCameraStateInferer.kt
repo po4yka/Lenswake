@@ -108,7 +108,11 @@ internal class PixelCameraStateInferer(
     ) {
         add(lensSignals.entries.single { it.value == capture.lens }.key)
         when (capture) {
-            is CaptureConfiguration.Video -> add(PixelCameraStateSignal.VIDEO_MODE_ACTIVE)
+            is CaptureConfiguration.Video -> {
+                add(PixelCameraStateSignal.VIDEO_MODE_ACTIVE)
+                add(PixelCameraStateSignal.VIDEO_RESOLUTION_4K_ACTIVE)
+                add(PixelCameraStateSignal.VIDEO_FRAME_RATE_60_ACTIVE)
+            }
             is CaptureConfiguration.TimeLapse -> {
                 add(PixelCameraStateSignal.VIDEO_MODE_ACTIVE)
                 add(PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE)
@@ -222,7 +226,12 @@ private class PixelCameraModeStateInferer {
         active: Set<PixelCameraStateSignal>,
         recording: Boolean,
     ): PortResult<PixelCameraState> = inferLensBoundRecording(active, recording) { lens ->
-        PixelCameraState.Video(recording, lens)
+        PixelCameraState.Video(
+            recording = recording,
+            lens = lens,
+            resolution4k = PixelCameraStateSignal.VIDEO_RESOLUTION_4K_ACTIVE in active,
+            frameRate60 = PixelCameraStateSignal.VIDEO_FRAME_RATE_60_ACTIVE in active,
+        )
     }
 
     private fun inferNightSight(

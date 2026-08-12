@@ -452,7 +452,7 @@ class DefaultAlarmTriggerCoordinatorTest {
         val now: Instant,
         val collector: EnvironmentSnapshotCollector = FakeEnvironmentSnapshotCollector(),
         val snapshotTimeoutMillis: Long = 5_000,
-        val startReadiness: suspend (ProfileId) -> Result<Unit> = { Result.success(Unit) },
+        val startReadiness: suspend (ExecutionSession) -> Result<Unit> = { Result.success(Unit) },
     )
 
     private fun startTrigger(updatedAt: Instant) = AlarmTrigger(

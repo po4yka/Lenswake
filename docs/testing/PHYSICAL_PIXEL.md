@@ -11,7 +11,7 @@ persist schedules, and arm exact alarms.
 | Host unit/static analysis | Pure contracts and source quality | Android integration or Pixel Camera behavior |
 | Android-test APK assembly | Instrumentation code compiles/packages | Any test ran |
 | Emulator instrumentation | Android framework boundary under that image | Pixel hardware, Pixel Camera, lockscreen/Doze reliability |
-| Connected tests on another Pixel | That device/build and non-opt-in suites | Supported Pixel 8 Pro acceptance |
+| Connected tests on another Pixel | That device/build and non-opt-in suites | Certified Pixel 7 and Pixel 8 Pro acceptance |
 | Target-device production rehearsal | One profile/capture on one installed artifact/environment | Reboot, Doze, process-death, or later commits unless exercised |
 | Target-device scenario matrix | Named states and postconditions on one artifact | Later commits or different Camera/system/profile variants |
 
@@ -100,7 +100,8 @@ adb -s "$PIXEL_SERIAL" shell am instrument -w \
 
 ## Acceptance scenarios
 
-For a current production claim, exercise at least:
+For each current Certified release claim, install the same signed release APK on Pixel 7 and Pixel
+8 Pro, record commit/APK/installed-artifact identity, rehearse every offered combination, then exercise at least:
 
 1. screen on + unlocked;
 2. screen on + locked;

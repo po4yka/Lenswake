@@ -16,6 +16,8 @@ sealed interface CaptureConfiguration {
     data class Video(
         override val lens: LensSelection = LensSelection.REAR_MAIN,
         override val zoom: Zoom? = null,
+        val resolution: VideoResolution = VideoResolution.UHD_4K,
+        val frameRate: VideoFrameRate = VideoFrameRate.FPS_60,
     ) : CaptureConfiguration {
         override val mode: CaptureMode = CaptureMode.VIDEO
         override val timeLapseSpeed: TimeLapseSpeed? = null
@@ -37,6 +39,16 @@ sealed interface CaptureConfiguration {
         override val mode: CaptureMode = CaptureMode.NIGHT_SIGHT_TIME_LAPSE
         override val timeLapseSpeed: TimeLapseSpeed? = null
     }
+}
+
+enum class VideoResolution {
+    UHD_4K,
+    LEGACY_UNKNOWN,
+}
+
+enum class VideoFrameRate {
+    FPS_60,
+    LEGACY_UNKNOWN,
 }
 
 enum class CaptureMode {

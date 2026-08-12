@@ -16,6 +16,7 @@ import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PixelCameraStateSignal
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
+import dev.po4yka.lenswake.core.SupportTier
 import dev.po4yka.lenswake.core.RecordingSchedule
 import dev.po4yka.lenswake.core.RecordingScheduler
 import dev.po4yka.lenswake.core.PreflightCheck
@@ -98,6 +99,26 @@ class ScheduleWorkflowTest {
         val rejected = assertInstanceOf(ScheduleWorkflowResult.Rejected::class.java, result)
         assertEquals(ScheduleWorkflowFailureCode.PROFILE_NOT_VERIFIED, rejected.code)
         assertTrue(rejected.message.contains("capture configuration"))
+        assertTrue(events.isEmpty())
+    }
+
+    @Test
+    fun createRejectsExperimentalProfileWithoutExplicitScheduleConsent() = runTest {
+        val events = mutableListOf<String>()
+        val experimental = profile().copy(supportTier = SupportTier.EXPERIMENTAL)
+        val workflow = ScheduleWorkflow(
+            scheduleRepository = FakeScheduleRepository(emptyList(), events),
+            executionRepository = FakeExecutionRepository(),
+            profileRepository = FakeProfileRepository(listOf(experimental)),
+            scheduler = FakeRecordingScheduler(events),
+            clock = LenswakeClock { now },
+            preflightProbe = RuntimePreflightProbe { readyPreflight() },
+        )
+
+        val result = workflow.create(command(experimentalRiskAccepted = false))
+
+        val rejected = assertInstanceOf(ScheduleWorkflowResult.Rejected::class.java, result)
+        assertEquals(ScheduleWorkflowFailureCode.EXPERIMENTAL_CONSENT_REQUIRED, rejected.code)
         assertTrue(events.isEmpty())
     }
 
@@ -823,6 +844,7 @@ class ScheduleWorkflowTest {
                 TimeLapseSpeed.X120,
                 LensSelection.REAR_MAIN,
             ),
+            experimentalRiskAccepted: Boolean = true,
         ) = ScheduleCommand(
             name = name,
             startAt = startAt,
@@ -830,6 +852,7 @@ class ScheduleWorkflowTest {
             zoneId = ZoneId.of("UTC"),
             capture = capture,
             profileId = profileId,
+            experimentalRiskAccepted = experimentalRiskAccepted,
             enabled = true,
         )
 
@@ -884,6 +907,8 @@ class ScheduleWorkflowTest {
             selectorSchemaVersion = 1,
             targets = setOf(
                 AutomationAction.SELECT_VIDEO,
+                AutomationAction.SELECT_VIDEO_RESOLUTION_4K,
+                AutomationAction.SELECT_VIDEO_FRAME_RATE_60,
                 AutomationAction.SELECT_TIME_LAPSE,
                 AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL,
                 AutomationAction.SELECT_REAR_MAIN_LENS,
@@ -900,6 +925,8 @@ class ScheduleWorkflowTest {
             stateSignals = setOf(
                 PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
                 PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
+                PixelCameraStateSignal.VIDEO_RESOLUTION_4K_ACTIVE,
+                PixelCameraStateSignal.VIDEO_FRAME_RATE_60_ACTIVE,
                 PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
                 PixelCameraStateSignal.TIME_LAPSE_SPEED_X30_ACTIVE,
                 PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE,

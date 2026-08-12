@@ -168,6 +168,11 @@
     <string name="lens_front">Front</string>
     <string name="schedule_capture_summary">%1$s · %2$s</string>
     <string name="schedule_time_lapse_capture_summary">%1$s · %2$s · %3$s</string>
+    <string name="schedule_video_capture_summary">%1$s · %2$s · %3$s · %4$s</string>
+    <string name="video_resolution_4k">4K</string>
+    <string name="video_frame_rate_60">60 FPS</string>
+    <string name="support_tier_certified">CERTIFIED</string>
+    <string name="support_tier_experimental">EXPERIMENTAL</string>
     <string name="validation_schedule_capture_unsupported">This profile has no verified selectors for the selected mode, speed, and lens.</string>
     <string name="schedule_profile_verified">Verified for scheduling</string>
     <string name="schedule_profile_needs_test">Test this camera setup before using it</string>
@@ -328,6 +333,9 @@
     <string name="schedule_error_profile_not_found">The selected camera setup is no longer installed.</string>
     <string name="schedule_error_profile_not_verified">Test the selected camera setup before scheduling.</string>
     <string name="schedule_error_capture_not_supported">The selected camera profile does not support this mode, speed, and lens.</string>
+    <string name="schedule_error_experimental_consent_required">Accept the experimental-device risk before saving this schedule.</string>
+    <string name="schedule_experimental_consent_label">Accept experimental-device risk</string>
+    <string name="schedule_experimental_consent_detail">This model is best-effort only. The exact selected capture must have a current successful test recording.</string>
     <string name="schedule_error_runtime_not_ready">Finish the required Setup checks before enabling this schedule.</string>
     <string name="schedule_error_preflight_failed">Lenswake could not verify this device’s readiness. Try again.</string>
     <string name="schedule_error_invalid">Review the schedule details and correct the highlighted fields.</string>
@@ -344,6 +352,8 @@
     <string name="rehearsal_schedule_missing">The selected schedule no longer exists.</string>
     <string name="rehearsal_unexpected_failure">The test recording stopped unexpectedly. Review Diagnostics, then try again.</string>
     <string name="rehearsal_passed">Lenswake started and stopped Pixel Camera successfully. This profile is ready for scheduling.</string>
+    <string name="rehearsal_matrix_passed">All available capture combinations passed their exact local test recording.</string>
+    <string name="rehearsal_matrix_already_verified">All available capture combinations already have current local receipts.</string>
     <string name="rehearsal_busy">Another test recording is already running.</string>
     <string name="rehearsal_error_profile_not_found">The selected camera setup is no longer installed.</string>
     <string name="rehearsal_error_environment_unavailable">Lenswake could not inspect the current Pixel Camera setup.</string>
@@ -365,6 +375,13 @@
     <string name="profile_unsupported_environment">No camera profile is available for %1$s with this Pixel Camera version and language.</string>
     <string name="profile_environment_unavailable">Lenswake could not check this Pixel Camera setup.</string>
     <string name="profile_persistence_failure">Lenswake could not save the camera profile.</string>
+    <string name="profiles_experimental_title">Experimental device support</string>
+    <string name="profiles_capture_matrix_detail">Exact mode · speed · lens · video quality receipt</string>
+    <string name="status_untested">Untested</string>
+    <string name="status_verified_locally">Verified locally</string>
+    <string name="status_unavailable">Unavailable</string>
+    <string name="profile_experimental_consent">This device has not passed Lenswake’s certified physical acceptance. The exact local profile and every selected capture configuration still require a successful test recording. Continue only if you accept best-effort operation and possible recording failure.</string>
+    <string name="action_accept_experimental_risk">Accept risk and install</string>
     <string name="profile_environment_summary">Android %1$d · Pixel Camera version %2$d · %3$s</string>
     <string name="profile_compatibility_verified">Verified for scheduling</string>
     <string name="profile_compatibility_likely">Likely compatible · test required</string>

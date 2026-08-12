@@ -523,6 +523,10 @@ class LenswakeViewModelProfileActionsTest : LenswakeViewModelTestSupport() {
         assertEquals(true, viewModel.state.first().actions.canInstallCandidateProfile)
 
         viewModel.installCandidateProfile()
+        viewModel.state.first {
+            it.profileInstall is ProfileInstallUiState.ExperimentalConsentRequired
+        }
+        viewModel.confirmExperimentalProfileInstallation()
 
         val installed = viewModel.state.first {
             it.profileInstall is ProfileInstallUiState.Succeeded && it.profiles.size == 1
@@ -540,7 +544,7 @@ class LenswakeViewModelProfileActionsTest : LenswakeViewModelTestSupport() {
         val profiles = FakeProfileRepository()
         val schedules = FakeScheduleRepository()
         val unsupported = KnownPixelCameraProfileCatalog.pixel8ProAndroid17Camera69481630.environment.copy(
-            cameraVersionCode = Long.MAX_VALUE,
+            cameraVersionCode = 1,
         )
         val viewModel = LenswakeViewModel(
             schedules,
@@ -623,13 +627,13 @@ class LenswakeViewModelProfileActionsTest : LenswakeViewModelTestSupport() {
     }
 
     @Test
-    fun profileBoundRehearsalSelectsTheFirstCaptureWithoutCurrentProof() = runTest {
+    fun profileBoundRehearsalContinuesAfterARejectedUnavailableCombination() = runTest {
         val profiles = FakeProfileRepository().also { it.save(profile()) }
         val proof = verifiedRehearsal(
             CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120),
         )
         val executions = FakeExecutionRepository(listOf(proof))
-        var received: RehearsalRequest? = null
+        val received = mutableListOf<RehearsalRequest>()
         val viewModel = LenswakeViewModel(
             FakeScheduleRepository(),
             profiles,
@@ -637,7 +641,7 @@ class LenswakeViewModelProfileActionsTest : LenswakeViewModelTestSupport() {
             RuntimePreflightProbe { rehearsalEligiblePreflight() },
             installUseCase(profiles),
             RehearsalCoordinator { request ->
-                received = request
+                received += request
                 RehearsalResult.Rejected(RehearsalResultCode.START_FAILED, "Expected test stop")
             },
             scheduleWorkflow(FakeScheduleRepository(), profiles),
@@ -653,8 +657,9 @@ class LenswakeViewModelProfileActionsTest : LenswakeViewModelTestSupport() {
 
         assertEquals(
             CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120, dev.po4yka.lenswake.core.LensSelection.FRONT),
-            received?.capture,
+            received.first().capture,
         )
+        assertTrue(received.size > 1)
     }
 
     @Test

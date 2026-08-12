@@ -220,6 +220,8 @@ abstract class LenswakeViewModelTestSupport {
             selectorSchemaVersion = 1,
             targets = setOf(
                 AutomationAction.SELECT_VIDEO,
+                AutomationAction.SELECT_VIDEO_RESOLUTION_4K,
+                AutomationAction.SELECT_VIDEO_FRAME_RATE_60,
                 AutomationAction.SELECT_TIME_LAPSE,
                 AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL,
                 AutomationAction.SELECT_REAR_MAIN_LENS,
@@ -233,6 +235,8 @@ abstract class LenswakeViewModelTestSupport {
             stateSignals = setOf(
                 PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
                 PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
+                PixelCameraStateSignal.VIDEO_RESOLUTION_4K_ACTIVE,
+                PixelCameraStateSignal.VIDEO_FRAME_RATE_60_ACTIVE,
                 PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
                 PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE,
                 PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN,

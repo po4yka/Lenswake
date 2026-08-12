@@ -15,6 +15,7 @@ import dev.po4yka.lenswake.core.TimeLapseSpeed
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -43,7 +44,7 @@ class LenswakeDatabaseMigrationTest {
 
         val migrated = migrationHelper.runMigrationsAndValidate(
             databaseName,
-            7,
+            8,
             true,
             LenswakeDatabase.MIGRATION_1_2,
             LenswakeDatabase.MIGRATION_2_3,
@@ -51,6 +52,7 @@ class LenswakeDatabaseMigrationTest {
             LenswakeDatabase.MIGRATION_4_5,
             LenswakeDatabase.MIGRATION_5_6,
             LenswakeDatabase.MIGRATION_6_7,
+            LenswakeDatabase.MIGRATION_7_8,
         )
         migrated.query(
             "SELECT id FROM automation_profiles WHERE id = 'profile-migration'",
@@ -69,6 +71,7 @@ class LenswakeDatabaseMigrationTest {
                 LenswakeDatabase.MIGRATION_4_5,
                 LenswakeDatabase.MIGRATION_5_6,
                 LenswakeDatabase.MIGRATION_6_7,
+                LenswakeDatabase.MIGRATION_7_8,
             )
             .build()
         val (rawProfile, schedule) = runBlocking {
@@ -79,6 +82,7 @@ class LenswakeDatabaseMigrationTest {
 
         checkNotNull(rawProfile)
         assertEquals("profile-migration", rawProfile.id.value)
+        assertEquals("INCOMPATIBLE", rawProfile.compatibility.name)
         val rawSelector = checkNotNull(rawProfile.targets[AutomationAction.SELECT_VIDEO])
             .selectors
             .single()
@@ -89,6 +93,7 @@ class LenswakeDatabaseMigrationTest {
         checkNotNull(schedule)
         assertEquals("schedule-migration", schedule.id.value)
         assertEquals(rawProfile.id, schedule.profileId)
+        assertFalse(schedule.enabled)
     }
 
     @Test
@@ -149,6 +154,7 @@ class LenswakeDatabaseMigrationTest {
                 LenswakeDatabase.MIGRATION_4_5,
                 LenswakeDatabase.MIGRATION_5_6,
                 LenswakeDatabase.MIGRATION_6_7,
+                LenswakeDatabase.MIGRATION_7_8,
             )
             .build()
         val (profile, schemaOneProfile) = runBlocking {
@@ -291,7 +297,10 @@ class LenswakeDatabaseMigrationTest {
 
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.databaseBuilder(context, LenswakeDatabase::class.java, databaseName)
-            .addMigrations(LenswakeDatabase.MIGRATION_6_7)
+            .addMigrations(
+                LenswakeDatabase.MIGRATION_6_7,
+                LenswakeDatabase.MIGRATION_7_8,
+            )
             .build()
         val profile = runBlocking {
             RoomAutomationProfileRepository(database).get(ProfileId("profile-migration"))
@@ -299,6 +308,49 @@ class LenswakeDatabaseMigrationTest {
         database.close()
 
         assertEquals(emptyMap<Any, Any>(), checkNotNull(profile).dialogProfiles)
+    }
+
+    @Test
+    fun migratesVersionSevenToEightAndInvalidatesLegacySchedules() {
+        createVersionOneDatabase()
+        migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            7,
+            true,
+            LenswakeDatabase.MIGRATION_1_2,
+            LenswakeDatabase.MIGRATION_2_3,
+            LenswakeDatabase.MIGRATION_3_4,
+            LenswakeDatabase.MIGRATION_4_5,
+            LenswakeDatabase.MIGRATION_5_6,
+            LenswakeDatabase.MIGRATION_6_7,
+        ).close()
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            8,
+            true,
+            LenswakeDatabase.MIGRATION_7_8,
+        )
+        migrated.query(
+            "SELECT compatibility, support_tier, selector_template_id FROM automation_profiles " +
+                "WHERE id = 'profile-migration'",
+        ).use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals("INCOMPATIBLE", cursor.getString(0))
+            assertEquals("EXPERIMENTAL", cursor.getString(1))
+            assertEquals("legacy", cursor.getString(2))
+        }
+        migrated.query(
+            "SELECT enabled, experimental_risk_accepted, video_resolution, video_frame_rate " +
+                "FROM schedules WHERE id = 'schedule-migration'",
+        ).use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+            assertEquals(0, cursor.getInt(1))
+            assertEquals("LEGACY_UNKNOWN", cursor.getString(2))
+            assertEquals("LEGACY_UNKNOWN", cursor.getString(3))
+        }
+        migrated.close()
     }
 
     private fun createVersionOneDatabase() {

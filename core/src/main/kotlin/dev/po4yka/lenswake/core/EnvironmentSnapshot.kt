@@ -16,6 +16,7 @@ data class EnvironmentSnapshot(
     val capturedAt: Instant,
     val lenswakeVersion: String,
     val cameraEnvironment: PixelCameraEnvironment,
+    val profileProvenance: ProfileProvenance = LEGACY_PROFILE_PROVENANCE,
     val accessibilityStatus: EnvironmentCapabilityStatus,
     val privilegedBridgeStatus: EnvironmentCapabilityStatus,
     val screenInteractive: Boolean,

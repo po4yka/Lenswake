@@ -10,7 +10,6 @@ import java.time.Instant
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -19,18 +18,15 @@ class KnownPixelCameraProfileCatalogTest {
 
     @Test
     fun `returns candidate only for the exact calibrated environment`() {
-        assertSame(profile, KnownPixelCameraProfileCatalog.exactMatch(profile.environment))
+        assertEquals(profile, KnownPixelCameraProfileCatalog.exactMatch(profile.environment))
         val mismatches = listOf(
             profile.environment.copy(deviceManufacturer = "Another"),
             profile.environment.copy(deviceModel = "Pixel 9 Pro"),
-            profile.environment.copy(androidSdk = 36),
             profile.environment.copy(androidBuildFingerprint = "google/husky/another-build"),
             profile.environment.copy(cameraPackage = "example.camera"),
-            profile.environment.copy(cameraVersionCode = profile.environment.cameraVersionCode + 1),
-            profile.environment.copy(localeTag = "en-US"),
-            profile.environment.copy(displayWidthPx = profile.environment.displayWidthPx + 1),
-            profile.environment.copy(displayHeightPx = profile.environment.displayHeightPx + 1),
-            profile.environment.copy(densityDpi = profile.environment.densityDpi + 1),
+            profile.environment.copy(cameraVersionCode = 1),
+            profile.environment.copy(localeTag = "fr-FR"),
+            profile.environment.copy(fontScale = 1.1f),
         )
 
         mismatches.forEach { assertNull(KnownPixelCameraProfileCatalog.exactMatch(it)) }
@@ -39,7 +35,7 @@ class KnownPixelCameraProfileCatalogTest {
     @Test
     fun `candidate identity and environment are stable and fail closed`() {
         assertEquals(
-            "google-pixel-8-pro-sdk37-cp2a-260705-006-camera-69481630-1008x2244-en-us-v4",
+            "google-pixel-8-pro-sdk37-cp2a-260705-006-camera-69481630-1008x2244-en-us-v5",
             profile.id.value,
         )
         assertEquals("Google", profile.environment.deviceManufacturer)
@@ -69,17 +65,10 @@ class KnownPixelCameraProfileCatalogTest {
 
     private fun assertProductionActionTargets() {
         assertEquals(
-            setOf(
-                AutomationAction.SELECT_VIDEO,
-                AutomationAction.SELECT_TIME_LAPSE,
-                AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL,
-                AutomationAction.SELECT_REAR_MAIN_LENS,
-                AutomationAction.START_RECORDING,
-                AutomationAction.STOP_RECORDING,
-            ),
+            AutomationAction.entries.toSet() - AutomationAction.SELECT_TIME_LAPSE_SPEED,
             profile.targets.keys,
         )
-        assertEquals(setOf(TimeLapseSpeed.X120), profile.speedTargets.keys)
+        assertEquals(TimeLapseSpeed.entries.toSet(), profile.speedTargets.keys)
     }
 
     private fun assertDialogProfiles() {
@@ -121,19 +110,7 @@ class KnownPixelCameraProfileCatalogTest {
     }
 
     private fun assertObservableStateSignals() {
-        assertEquals(
-            setOf(
-                PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
-                PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
-                PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
-                PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE,
-                PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN,
-                PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
-                PixelCameraStateSignal.RECORDING_ACTIVE,
-                PixelCameraStateSignal.NOT_RECORDING,
-            ),
-            profile.stateSignals.keys,
-        )
+        assertEquals(PixelCameraStateSignal.entries.toSet(), profile.stateSignals.keys)
     }
 
     @Test
@@ -191,10 +168,11 @@ class KnownPixelCameraProfileCatalogTest {
 
         val recording = profile.stateSignals
             .getValue(PixelCameraStateSignal.RECORDING_ACTIVE)
-            .selectors
-            .single()
-        assertEquals("Stop time lapse", recording.contentDescription)
-        assertEquals("ComposeShutter", recording.resourceId)
+        assertEquals(
+            setOf("Stop video", "Stop time lapse"),
+            recording.selectors.mapTo(linkedSetOf()) { it.contentDescription },
+        )
+        assertTrue(recording.selectors.all { it.resourceId == "ComposeShutter" })
 
         val notRecording = profile.stateSignals
             .getValue(PixelCameraStateSignal.NOT_RECORDING)
@@ -224,11 +202,8 @@ class KnownPixelCameraProfileCatalogTest {
 
         val pickerOpen = profile.stateSignals
             .getValue(PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN)
-            .selectors
-            .single()
-        assertEquals("Time Lapse 120 times speed", pickerOpen.contentDescription)
-        assertNull(pickerOpen.expectedSelected)
-        assertFalse(pickerOpen.requiresClickable)
+        assertEquals(TimeLapseSpeed.entries.size, pickerOpen.selectors.size)
+        assertTrue(pickerOpen.selectors.all { !it.requiresClickable })
     }
 
     private fun assertDialogSelectorDiscriminants() {

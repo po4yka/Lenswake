@@ -51,6 +51,21 @@ class RehearsalVerificationPolicyTest {
     }
 
     @Test
+    fun `video receipt is bound to exact resolution and frame rate`() {
+        val video = CaptureConfiguration.Video()
+        val session = verifiedSession(video)
+
+        assertTrue(RehearsalVerificationPolicy.qualifies(session, profile, video))
+        assertFalse(
+            RehearsalVerificationPolicy.qualifies(
+                session,
+                profile,
+                video.copy(frameRate = VideoFrameRate.LEGACY_UNKNOWN),
+            ),
+        )
+    }
+
+    @Test
     fun `profile promotion timestamp does not invalidate another exact capture receipt`() {
         val laterPromotion = profile.copy(verifiedAt = verifiedAt.plusSeconds(60))
 
@@ -95,14 +110,16 @@ class RehearsalVerificationPolicyTest {
         )
     }
 
-    private fun verifiedSession(): ExecutionSession = ExecutionSession(
+    private fun verifiedSession(
+        testedCapture: CaptureConfiguration = capture,
+    ): ExecutionSession = ExecutionSession(
         id = SessionId("rehearsal"),
         executionKey = "rehearsal/rehearsal/${profile.definitionFingerprint()}",
         kind = SessionKind.REHEARSAL,
         scheduleId = null,
         scheduleName = "Rehearsal",
         profileId = profile.id,
-        capture = capture,
+        capture = testedCapture,
         expectedStartAt = verifiedAt.minusSeconds(70),
         expectedStopAt = verifiedAt.minusSeconds(10),
         status = SessionStatus.COMPLETED,

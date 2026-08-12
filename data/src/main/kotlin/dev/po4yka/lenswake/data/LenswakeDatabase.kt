@@ -24,7 +24,7 @@ import dev.po4yka.lenswake.data.internal.mapping.ProfileJsonMigration
         ExecutionEventEntity::class,
         EnvironmentSnapshotEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class LenswakeDatabase : RoomDatabase() {
@@ -169,6 +169,117 @@ abstract class LenswakeDatabase : RoomDatabase() {
             )
         }
 
+        val MIGRATION_7_8: Migration = Migration(7, 8) { database ->
+            database.execSQL(
+                "ALTER TABLE `automation_profiles` ADD COLUMN `device_codename` " +
+                    "TEXT NOT NULL DEFAULT 'legacy-unknown'",
+            )
+            database.execSQL(
+                "ALTER TABLE `automation_profiles` ADD COLUMN `font_scale` REAL NOT NULL DEFAULT -1.0",
+            )
+            database.execSQL(
+                "ALTER TABLE `automation_profiles` ADD COLUMN `display_orientation` " +
+                    "TEXT NOT NULL DEFAULT 'LEGACY_UNKNOWN'",
+            )
+            database.execSQL(
+                "ALTER TABLE `automation_profiles` ADD COLUMN `support_tier` " +
+                    "TEXT NOT NULL DEFAULT 'EXPERIMENTAL'",
+            )
+            database.execSQL(
+                "ALTER TABLE `automation_profiles` ADD COLUMN `profile_source` " +
+                    "TEXT NOT NULL DEFAULT 'LEGACY_UNKNOWN'",
+            )
+            database.execSQL(
+                "ALTER TABLE `automation_profiles` ADD COLUMN `selector_template_id` " +
+                    "TEXT NOT NULL DEFAULT 'legacy'",
+            )
+            database.execSQL(
+                "ALTER TABLE `automation_profiles` ADD COLUMN `selector_template_version` " +
+                    "INTEGER NOT NULL DEFAULT 1",
+            )
+            addEnvironmentV5Columns(database, "automation_profiles")
+            addCaptureV5Columns(database, "schedules")
+            addCaptureV5Columns(database, "execution_sessions")
+            addProfileProvenanceColumns(database, "schedules")
+            addProfileProvenanceColumns(database, "execution_sessions")
+            database.execSQL(
+                "ALTER TABLE `schedules` ADD COLUMN `experimental_risk_accepted` " +
+                    "INTEGER NOT NULL DEFAULT 0",
+            )
+            database.execSQL(
+                "ALTER TABLE `environment_snapshots` ADD COLUMN `device_codename` " +
+                    "TEXT NOT NULL DEFAULT 'legacy-unknown'",
+            )
+            database.execSQL(
+                "ALTER TABLE `environment_snapshots` ADD COLUMN `font_scale` " +
+                    "REAL NOT NULL DEFAULT -1.0",
+            )
+            database.execSQL(
+                "ALTER TABLE `environment_snapshots` ADD COLUMN `display_orientation` " +
+                    "TEXT NOT NULL DEFAULT 'LEGACY_UNKNOWN'",
+            )
+            addEnvironmentV5Columns(database, "environment_snapshots")
+            addProfileProvenanceColumns(database, "environment_snapshots")
+            database.execSQL(
+                "UPDATE `automation_profiles` SET `compatibility` = 'INCOMPATIBLE' " +
+                    "WHERE `selector_schema_version` < 5",
+            )
+            database.execSQL(
+                "UPDATE `schedules` SET `enabled` = 0 WHERE `profile_id` IN " +
+                    "(SELECT `id` FROM `automation_profiles` WHERE `selector_schema_version` < 5)",
+            )
+        }
+
+        private fun addCaptureV5Columns(
+            database: androidx.sqlite.db.SupportSQLiteDatabase,
+            table: String,
+        ) {
+            database.execSQL(
+                "ALTER TABLE `$table` ADD COLUMN `video_resolution` " +
+                    "TEXT NOT NULL DEFAULT 'LEGACY_UNKNOWN'",
+            )
+            database.execSQL(
+                "ALTER TABLE `$table` ADD COLUMN `video_frame_rate` " +
+                    "TEXT NOT NULL DEFAULT 'LEGACY_UNKNOWN'",
+            )
+        }
+
+        private fun addEnvironmentV5Columns(
+            database: androidx.sqlite.db.SupportSQLiteDatabase,
+            table: String,
+        ) {
+            database.execSQL(
+                "ALTER TABLE `$table` ADD COLUMN `camera_signing_certificate_sha256` " +
+                    "TEXT NOT NULL DEFAULT 'legacy-unknown'",
+            )
+            database.execSQL(
+                "ALTER TABLE `$table` ADD COLUMN `default_display_configuration` " +
+                    "INTEGER NOT NULL DEFAULT 0",
+            )
+        }
+
+        private fun addProfileProvenanceColumns(
+            database: androidx.sqlite.db.SupportSQLiteDatabase,
+            table: String,
+        ) {
+            database.execSQL(
+                "ALTER TABLE `$table` ADD COLUMN `profile_support_tier` " +
+                    "TEXT NOT NULL DEFAULT 'EXPERIMENTAL'",
+            )
+            database.execSQL(
+                "ALTER TABLE `$table` ADD COLUMN `profile_source` " +
+                    "TEXT NOT NULL DEFAULT 'LEGACY_UNKNOWN'",
+            )
+            database.execSQL(
+                "ALTER TABLE `$table` ADD COLUMN `profile_template_id` " +
+                    "TEXT NOT NULL DEFAULT 'legacy'",
+            )
+            database.execSQL(
+                "ALTER TABLE `$table` ADD COLUMN `profile_template_version` " +
+                    "INTEGER NOT NULL DEFAULT 1",
+            )
+        }
+
         fun create(context: Context): LenswakeDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
@@ -181,6 +292,7 @@ abstract class LenswakeDatabase : RoomDatabase() {
                 MIGRATION_4_5,
                 MIGRATION_5_6,
                 MIGRATION_6_7,
+                MIGRATION_7_8,
             )
                 .build()
     }

@@ -24,6 +24,8 @@ sealed interface PixelCameraState {
     data class Video(
         val recording: Boolean,
         val lens: LensSelection? = null,
+        val resolution4k: Boolean = false,
+        val frameRate60: Boolean = false,
     ) : PixelCameraState
 
     data class TimeLapse(
@@ -136,6 +138,12 @@ interface PixelCameraCapturePort {
     ): ActionDispatch
 }
 
+interface PixelCameraVideoConfigurationPort {
+    suspend fun selectVideoResolution4k(profileUse: ProfileUse): ActionDispatch
+
+    suspend fun selectVideoFrameRate60(profileUse: ProfileUse): ActionDispatch
+}
+
 /** Recovers only the explicitly typed Pixel Camera dialogs that a profile permits. */
 interface PixelCameraDialogPort {
     suspend fun recoverDialog(
@@ -145,7 +153,11 @@ interface PixelCameraDialogPort {
 }
 
 /** Complete Pixel Camera boundary consumed by the automation engine. */
-interface PixelCameraPort : PixelCameraStatePort, PixelCameraCapturePort, PixelCameraDialogPort
+interface PixelCameraPort :
+    PixelCameraStatePort,
+    PixelCameraCapturePort,
+    PixelCameraVideoConfigurationPort,
+    PixelCameraDialogPort
 
 data class RecordingMediaBaseline(
     val generation: Long,

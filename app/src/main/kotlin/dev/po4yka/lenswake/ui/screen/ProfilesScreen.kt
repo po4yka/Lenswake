@@ -11,7 +11,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.po4yka.lenswake.R
+import dev.po4yka.lenswake.core.SupportTier
 import dev.po4yka.lenswake.ui.ActiveSessionKind
+import dev.po4yka.lenswake.ui.CaptureMatrixStatus
 import dev.po4yka.lenswake.ui.LenswakeUiState
 import dev.po4yka.lenswake.ui.ProfileInstallUiState
 import dev.po4yka.lenswake.ui.RehearsalActionUiState
@@ -28,6 +30,7 @@ fun ProfilesScreen(
     state: LenswakeUiState,
     contentPadding: PaddingValues,
     onInstallCandidateProfile: () -> Unit,
+    onConfirmExperimentalProfileInstallation: () -> Unit = {},
     onRunRehearsal: (String) -> Unit,
 ) {
     LazyColumn(
@@ -43,7 +46,7 @@ fun ProfilesScreen(
         profilesHeader()
         profileInstallAction(state, onInstallCandidateProfile)
         installedProfiles(state, onRunRehearsal)
-        profileInstallOutcome(state.profileInstall)
+        profileInstallOutcome(state.profileInstall, onConfirmExperimentalProfileInstallation)
         activeRehearsal(state)
         rehearsalOutcome(state)
     }
@@ -103,9 +106,23 @@ private fun LazyListScope.installedProfiles(
         val profile = state.profiles[index]
         StatusRow(
             title = profile.title,
-            detail = profile.environment,
+            detail = "${profile.supportTier.label()} · ${profile.environment}",
             status = profile.compatibility,
         )
+        profile.captureMatrix.forEach { row ->
+            StatusRow(
+                title = row.capture.label(),
+                detail = stringResource(R.string.profiles_capture_matrix_detail),
+                status = stringResource(
+                    when (row.status) {
+                        CaptureMatrixStatus.UNTESTED -> R.string.status_untested
+                        CaptureMatrixStatus.VERIFIED_LOCALLY -> R.string.status_verified_locally
+                        CaptureMatrixStatus.UNAVAILABLE -> R.string.status_unavailable
+                        CaptureMatrixStatus.FAILED -> R.string.status_failed
+                    },
+                ),
+            )
+        }
         ProfileRehearsalAction(
             state = state,
             profileId = profile.id,
@@ -118,10 +135,33 @@ private fun LazyListScope.installedProfiles(
     }
 }
 
-private fun LazyListScope.profileInstallOutcome(install: ProfileInstallUiState) {
+@Composable
+internal fun SupportTier.label(): String = stringResource(
+    when (this) {
+        SupportTier.CERTIFIED -> R.string.support_tier_certified
+        SupportTier.EXPERIMENTAL -> R.string.support_tier_experimental
+    },
+)
+
+private fun LazyListScope.profileInstallOutcome(
+    install: ProfileInstallUiState,
+    onConfirmExperimentalProfileInstallation: () -> Unit,
+) {
     when (install) {
         ProfileInstallUiState.Idle -> Unit
         ProfileInstallUiState.Installing -> Unit
+
+        is ProfileInstallUiState.ExperimentalConsentRequired -> item {
+            ActionSection(
+                title = stringResource(R.string.profiles_experimental_title),
+                detail = install.message,
+                actionLabel = stringResource(R.string.action_accept_experimental_risk),
+                actionEnabled = true,
+                actionInProgress = false,
+                unavailableReason = "",
+                onAction = onConfirmExperimentalProfileInstallation,
+            )
+        }
 
         is ProfileInstallUiState.Succeeded -> item {
             SummaryCard(

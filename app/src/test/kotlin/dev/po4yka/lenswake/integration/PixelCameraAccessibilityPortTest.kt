@@ -759,6 +759,29 @@ class PixelCameraAccessibilityStateSafetyTest : PixelCameraAccessibilityPortTest
 
 class PixelCameraAccessibilityActionRoutingTest : PixelCameraAccessibilityPortTestFixture() {
     @Test
+    fun `4k and 60 fps actions use fresh profile-defined targets`() = runTest {
+        val resolutionTarget = node(VIDEO_4K_ACTION_RESOURCE)
+        val frameRateTarget = node(VIDEO_60_ACTION_RESOURCE)
+        val configured = profile().copy(
+            targets = profile().targets + mapOf(
+                AutomationAction.SELECT_VIDEO_RESOLUTION_4K to selectorSet(VIDEO_4K_ACTION_RESOURCE),
+                AutomationAction.SELECT_VIDEO_FRAME_RATE_60 to selectorSet(VIDEO_60_ACTION_RESOURCE),
+            ),
+        )
+        val gateway = FakeAccessibilityGateway(
+            nodes = listOf(resolutionTarget, frameRateTarget),
+            dispatchResult = AccessibilityDispatchResult.SemanticActionDispatched,
+        )
+        val port = port(gateway = gateway)
+
+        assertInstanceOf(ActionDispatch.Dispatched::class.java, port.selectVideoResolution4k(profileUse(configured)))
+        assertEquals(resolutionTarget, gateway.clickedNode)
+        assertInstanceOf(ActionDispatch.Dispatched::class.java, port.selectVideoFrameRate60(profileUse(configured)))
+        assertEquals(frameRateTarget, gateway.clickedNode)
+        assertEquals(2, gateway.snapshotCalls)
+    }
+
+    @Test
     fun `rear main lens action dispatches only its profile-defined target`() = runTest {
         val target = node(LENS_ACTION_RESOURCE).copy(
             role = "android.widget.Button",
@@ -1119,6 +1142,8 @@ abstract class PixelCameraAccessibilityPortTestFixture {
     protected companion object {
         const val CAMERA_PACKAGE = "com.google.android.GoogleCamera"
         const val VIDEO_ACTION_RESOURCE = "profile.mode.video"
+        const val VIDEO_4K_ACTION_RESOURCE = "profile.video.4k"
+        const val VIDEO_60_ACTION_RESOURCE = "profile.video.60"
         const val TIME_LAPSE_ACTION_RESOURCE = "profile.mode.time-lapse"
         const val NIGHT_ACTION_RESOURCE = "profile.mode.night-sight-time-lapse"
         const val LENS_ACTION_RESOURCE = "profile.lens.rear-main"

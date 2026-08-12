@@ -35,6 +35,7 @@ import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.definitionFingerprint
+import dev.po4yka.lenswake.core.provenance
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
@@ -333,6 +334,7 @@ private class RehearsalStartWorkflow(
                 scheduleId = request.scheduleId,
                 scheduleName = "Rehearsal",
                 profileId = profile.id,
+                profileProvenance = profile.provenance,
                 capture = request.capture,
                 expectedStartAt = createdAt,
                 expectedStopAt = createdAt.plus(START_BUDGET).plus(request.recordingDuration).plus(STOP_MARGIN),
@@ -495,7 +497,8 @@ private class RehearsalPreparationPersistence(
             check(snapshot.cameraEnvironment == expectedEnvironment) {
                 "Pixel Camera environment changed during rehearsal preparation"
             }
-            when (val capture = environmentSnapshotRepository.capture(snapshot)) {
+            val attributed = snapshot.copy(profileProvenance = session.profileProvenance)
+            when (val capture = environmentSnapshotRepository.capture(attributed)) {
                 is EnvironmentSnapshotCaptureResult.Captured -> capture.session
                 is EnvironmentSnapshotCaptureResult.AlreadyExists -> capture.session
             }.also { linked ->

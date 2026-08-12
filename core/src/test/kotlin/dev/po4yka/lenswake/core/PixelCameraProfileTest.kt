@@ -7,6 +7,21 @@ import org.junit.jupiter.api.Test
 
 class PixelCameraProfileTest {
     @Test
+    fun `support tier is independent from local rehearsal state`() {
+        val profile = PixelCameraProfile(
+            id = ProfileId("experimental-profile"),
+            environment = environment(),
+            selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
+            supportTier = SupportTier.EXPERIMENTAL,
+            selectorTemplate = SelectorTemplateReference("pixel-7-semantic", 1),
+            compatibility = ProfileCompatibility.VERIFIED,
+            verifiedAt = Instant.parse("2026-08-12T00:00:00Z"),
+        )
+
+        assertEquals(SupportTier.EXPERIMENTAL, profile.supportTier)
+    }
+
+    @Test
     fun `profile carries data-driven observation signals`() {
         val recordingSelector = UiSelectorSet(
             selectors = listOf(

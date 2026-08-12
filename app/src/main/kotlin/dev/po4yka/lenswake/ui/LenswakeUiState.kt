@@ -5,6 +5,7 @@ import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.CaptureMode
 import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.SetupRemediationAction
+import dev.po4yka.lenswake.core.SupportTier
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import java.time.Instant
 import java.time.LocalDateTime
@@ -80,6 +81,7 @@ data class ScheduleFormUiState(
     val timeLapseSpeed: TimeLapseSpeed = TimeLapseSpeed.X120,
     val lens: LensSelection = LensSelection.REAR_MAIN,
     val profileId: String = "",
+    val experimentalRiskAccepted: Boolean = false,
     val enabled: Boolean = true,
 )
 
@@ -108,6 +110,11 @@ sealed interface ProfileInstallUiState {
 
     @Immutable
     data object Installing : ProfileInstallUiState
+
+    @Immutable
+    data class ExperimentalConsentRequired(
+        val message: String,
+    ) : ProfileInstallUiState
 
     @Immutable
     data class Succeeded(
@@ -211,6 +218,7 @@ data class ScheduleSummaryUiState(
     val zoneId: ZoneId,
     val capture: CaptureConfiguration,
     val profileId: String,
+    val experimentalRiskAccepted: Boolean = false,
     val enabled: Boolean,
 )
 
@@ -221,8 +229,23 @@ data class ProfileSummaryUiState(
     val environment: String,
     val compatibility: String,
     val verifiedForScheduling: Boolean,
+    val supportTier: SupportTier = SupportTier.CERTIFIED,
     val supportedCaptures: Set<CaptureConfiguration>,
+    val captureMatrix: List<CaptureMatrixRowUiState> = emptyList(),
 )
+
+@Immutable
+data class CaptureMatrixRowUiState(
+    val capture: CaptureConfiguration,
+    val status: CaptureMatrixStatus,
+)
+
+enum class CaptureMatrixStatus {
+    UNTESTED,
+    VERIFIED_LOCALLY,
+    UNAVAILABLE,
+    FAILED,
+}
 
 @Immutable
 data class DiagnosticSessionUiState(

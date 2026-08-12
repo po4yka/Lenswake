@@ -11,9 +11,10 @@ Pixel Camera always owns the camera and the output. Lenswake does not use Camera
 MediaRecorder, custom encoding, root, a cloud service, or a hidden recording path.
 
 > [!IMPORTANT]
-> The supported target is intentionally narrow: Pixel 8 Pro, Android 17, Google Pixel Camera
-> `com.google.android.GoogleCamera`, and the exact environment represented by the bundled profile.
-> This is a personal sideloaded application, not a general Android automation framework.
+> The supported target is a fixed set of 17 non-folding Pixel 6–10a phones. Pixel Fold/Pro Fold,
+> Tablet, Pixel 5a and future models are rejected. Pixel 7 and Pixel 8 Pro are certification
+> targets. Until the exact signed release APK passes both physical gates, every installed profile is
+> Experimental; local rehearsal never promotes it to Certified.
 
 ## Repository status
 
@@ -21,11 +22,11 @@ MediaRecorder, custom encoding, root, a cloud service, or a hidden recording pat
 | --- | --- |
 | Application | `0.1.0`, active development |
 | Platform | `minSdk 35`, `compileSdk/targetSdk 37` |
-| Bundled profile | Pixel 8 Pro · Android 17 · Pixel Camera `69481630` · selector schema v4 |
-| Exposed capture | Time Lapse · 120× · rear main lens |
+| Profile catalog | 17 fixed Pixel model/codename pairs · selector schema v5 · standard/telephoto templates |
+| Capture contract | Video 4K/60; Time Lapse Auto/5×/10×/30×/120×; discovered Night Sight Time Lapse; exact lens-specific receipts |
 | Local implementation | Schedules, profiles, rehearsal, durable alarms, wake, START/STOP automation, saved-media verification, recovery, diagnostics |
 | Historical device proof | Locked/Doze and reboot scenarios passed for explicitly recorded older v3 artifacts |
-| Current-HEAD device proof | A fresh Pixel 8 Pro production rehearsal and full acceptance matrix are required |
+| Current-HEAD device proof | The same signed release APK still requires full Pixel 7 and Pixel 8 Pro acceptance |
 | Distribution | Signed minified APK workflow for GitHub Releases; no release published yet |
 | Hosted CI | Host checks, API 35 PR smoke, API 35/36/37 main/nightly matrix, CodeQL and dependency review configured |
 
@@ -53,7 +54,7 @@ automation, and physical proof for one APK does not automatically transfer to la
   fresh presence check, and fail closed for storage, policy, unknown, changed, or ambiguous dialogs.
 - Show local session timelines, duration, retries, selector confidence, interaction/fallback metrics,
   alarm-transport incidents, and corrupt-profile notices; share the bounded view as plain text.
-- Persist schedules, profiles, sessions, events, and environment snapshots in Room v7 with explicit
+- Persist schedules, profiles, sessions, events, and environment snapshots in Room v8 with explicit
   migrations. Sensitive Room and SharedPreferences state is excluded from cloud backup and D2D transfer.
 
 ## Reliability model
@@ -89,7 +90,7 @@ You need:
 - JDK 17;
 - Android SDK 37 and platform tools;
 - a Pixel running Android 15 or newer for installation;
-- the exact Pixel 8 Pro environment for the bundled production profile;
+- one of the fixed supported non-folding Pixel 6–10a models in the exact supported environment;
 - Google Pixel Camera installed;
 - USB debugging for development and physical validation.
 
@@ -107,8 +108,8 @@ On the device, complete Setup in this order:
 3. Grant full video-library read access; selected-photos-only access is insufficient for unattended
    saved-file verification.
 4. Enable the Lenswake Accessibility Service. It is package-scoped to Pixel Camera.
-5. Install the bundled profile when the environment matches exactly.
-6. Run **Test now** for the intended profile or schedule and confirm the complete rehearsal passes.
+5. Install the exact-environment profile. Experimental models require an explicit best-effort warning acceptance.
+6. Run the sequential capture matrix and confirm each intended exact combination passes.
 7. Enable the future schedule only after Setup reports no blocking readiness checks.
 
 Detailed remediation paths and expected blockers are in [Setup](docs/SETUP.md).
@@ -150,7 +151,7 @@ The repository has four Gradle modules:
 | --- | --- |
 | `:core` | Platform-neutral schedules, profiles, sessions, failures, readiness, repository contracts |
 | `:automation` | Platform-neutral START/STOP convergence, ports, selectors, retries, verification |
-| `:data` | Room v7 entities, migrations, mappings, repositories, environment/session history |
+| `:data` | Room v8 entities, migrations, mappings, repositories, environment/session history |
 | `:app` | Compose UI, application composition, alarms, Android services, Accessibility and platform adapters |
 
 Dependency direction is `:app → :automation/:core/:data`, `:automation → :core`, and
@@ -159,8 +160,10 @@ Dependency direction is `:app → :automation/:core/:data`, `:automation → :co
 
 ## Known limits
 
-- The sole bundled profile exposes only Time Lapse 120× with the rear main lens. Other capture
-  modes, speeds, lenses, and zoom exist in domain contracts but are not authorized by this profile.
+- A capture is exposed to schedules only after a current exact receipt for mode, speed, lens and
+  video settings. Unsupported or unavailable controls fail closed.
+- `CERTIFIED` is an immutable release-evidence result limited to Pixel 7/Pixel 8 Pro. Current HEAD
+  remains `EXPERIMENTAL` until the same signed APK passes both physical gates; rehearsal never promotes it.
 - There is no interactive selector calibration, profile authoring/import, or arbitrary-device support.
 - Shizuku is not implemented. The optional privileged boundary is wired to an explicit unavailable
   provider; the standard target path does not require it.

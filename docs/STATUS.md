@@ -1,6 +1,6 @@
 # Lenswake status and evidence boundary
 
-**Snapshot:** `main@dc155b8`
+**Snapshot:** implementation working tree on 2026-08-12
 
 **Reviewed:** 2026-08-12
 
@@ -9,8 +9,15 @@ physical Pixel proof. It is a snapshot, not the source of implementation truth.
 
 ## Current support claim
 
-The application can be installed on Android 15+ (`minSdk 35`), but the only bundled automation
-profile targets exactly:
+The implementation now recognizes exactly 17 non-folding models: Pixel 6/6 Pro/6a, 7/7 Pro/7a,
+8/8 Pro/8a, 9/9 Pro/9 Pro XL/9a and 10/10 Pro/10 Pro XL/10a. Fold, Pro Fold, Tablet, Pixel 5a,
+unknown and future models are rejected. Selector schema is v5 and persistence is Room v8.
+
+Pixel 7 and Pixel 8 Pro are the only certification targets; the other 15 are permanently
+`EXPERIMENTAL`. Current HEAD has not passed the same signed release APK gate on both targets, so its
+installed profiles remain `EXPERIMENTAL` and no current certified release claim is made.
+
+The historical exact Pixel 8 Pro environment remains:
 
 ```text
 Device:              Google Pixel 8 Pro (husky)
@@ -20,13 +27,13 @@ Display:             1008 × 2244 @ 360 dpi
 Locale:              en-US-u-fw-mon-mu-celsius
 Pixel Camera:        10.4.117.936816638.14
 Camera versionCode:  69481630
-Selector schema:     v4
-Capture exposed:     Time Lapse 120×, rear main lens
+Selector schema:     historical v4; current implementation v5
+Capture exposed:     receipt-gated matrix; no current signed-release physical receipts
 ```
 
-On 2026-08-12 a connected Pixel 8 Pro matched the device/build/display/Camera identity above. That
-read-only identity check is not a Lenswake installation, rehearsal, saved-media run, or current-HEAD
-acceptance result.
+On 2026-08-12 read-only probes observed Pixel 8 Pro on the stable fingerprint above and Pixel 7 on
+a beta fingerprint, both with Pixel Camera versionCode 69481630. The beta fingerprint is rejected
+by profile installation. These probes are not installation, rehearsal, saved-media, or acceptance.
 
 ## Evidence matrix
 
@@ -40,7 +47,7 @@ acceptance result.
 | Time Lapse 120× rear-main START/STOP | Yes | Engine/adapter tests | Passed for historical profile schema v3 artifact |
 | Process-death rehearsal STOP backstop | Yes | Coordinator/alarm tests | Passed for historical named APK |
 | Saved-media verification | Yes | Android integration tests cover permission/version/ambiguity/no-candidate behavior | Real current-HEAD Pixel Camera media publication open |
-| Capture-specific rehearsal receipts | Yes | Unit/Room tests | Current schema-v4 physical rehearsal open |
+| Capture-specific rehearsal receipts | Yes | Unit/Room tests | Current schema-v5 physical rehearsal open |
 | Typed dialog recovery | Yes | Unit tests; Pixel 7 static package inspection | Induced Pixel 8 Pro dialog scenarios open |
 | Diagnostics timeline/text sharing | Yes | Unit/UI/intent tests | No special physical acceptance required; bounded to ten sessions |
 | Shizuku privileged path | No | Explicit unavailable provider only | Not applicable |
@@ -128,12 +135,12 @@ Connected and opt-in physical automation suites were not run for this documentat
 
 ## Current acceptance work
 
-1. Build a fresh current-HEAD APK, record its SHA-256, install it on the exact Pixel 8 Pro, and prove
-   installed/local artifact identity.
-2. Run a production profile/schedule rehearsal and verify the real MediaStore saved-video contract.
+1. Build one signed release APK, record its SHA-256, install that exact artifact on Pixel 7 and
+   Pixel 8 Pro, and prove installed/local artifact identity on both.
+2. Run the complete capture-combination rehearsal matrix and verify the MediaStore saved-video contract.
 3. Repeat screen-on/unlocked, screen-on/locked, screen-off/locked, forced Doze, already-open Camera,
    process-death, and reboot-before-START scenarios.
 4. Induce each recoverable typed dialog and verify exactly one safe dispatch plus disappearance.
-5. Complete the Pixel 8 Pro layout matrix for orientation, navigation modes, and real IME behavior.
+5. Complete the certified-device layout and cleanup checks on both Pixel 7 and Pixel 8 Pro.
 
 Follow [testing/PHYSICAL_PIXEL.md](testing/PHYSICAL_PIXEL.md) for evidence and cleanup requirements.

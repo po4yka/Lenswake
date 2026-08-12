@@ -2,6 +2,7 @@ package dev.po4yka.lenswake.application
 
 import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.core.ExecutionSession
+import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PreflightCheck
@@ -19,6 +20,11 @@ import kotlinx.coroutines.flow.emptyFlow
 /** Reads current device capabilities without mutating system settings or persisted configuration. */
 fun interface RuntimePreflightProbe {
     suspend fun inspect(profiles: List<PixelCameraProfile>): PreflightReport
+
+    suspend fun inspectForCapture(
+        profiles: List<PixelCameraProfile>,
+        capture: CaptureConfiguration,
+    ): PreflightReport = inspect(profiles)
 
     val invalidations: Flow<Unit>
         get() = emptyFlow()
@@ -50,6 +56,7 @@ data class RuntimePreflightObservation(
     val storage: RuntimeCapabilityObservation,
     val successfulRehearsals: Map<ProfileId, ExecutionSession> = emptyMap(),
     val rehearsalEvidenceFailure: LocalizedText? = null,
+    val requiredCapture: CaptureConfiguration? = null,
 )
 
 /** Pure policy that converts observed platform facts and persisted profiles into readiness. */
@@ -145,6 +152,7 @@ class RuntimePreflightEvaluator(
             )
         }
         val best = profiles
+            .filter { it.isSupportedRuntimeProfile() }
             .filter { it.targetsCurrentDeviceFamily(currentEnvironment) }
             .map { it.compatibilityFor(currentEnvironment) }
             .minByOrNull(ProfileCompatibility::ordinal)
@@ -191,13 +199,19 @@ class RuntimePreflightEvaluator(
         }
 
         val exactVerifiedProfiles = profiles.filter { profile ->
+            profile.isSupportedRuntimeProfile() &&
             profile.environment == currentEnvironment &&
                 profile.compatibilityFor(currentEnvironment) == ProfileCompatibility.VERIFIED
         }
         val qualifying = exactVerifiedProfiles.firstNotNullOfOrNull { profile ->
             observation.successfulRehearsals[profile.id]
                 ?.takeIf { session ->
-                    RehearsalVerificationPolicy.qualifies(session, profile, session.capture)
+                    (observation.requiredCapture == null || session.capture == observation.requiredCapture) &&
+                        RehearsalVerificationPolicy.qualifies(
+                            session,
+                            profile,
+                            observation.requiredCapture ?: session.capture,
+                        )
                 }
                 ?.let { profile to it }
         }
@@ -221,4 +235,11 @@ class RuntimePreflightEvaluator(
         environment.deviceManufacturer == current.deviceManufacturer &&
             environment.deviceModel == current.deviceModel &&
             environment.cameraPackage == current.cameraPackage
+
+    private fun PixelCameraProfile.isSupportedRuntimeProfile(): Boolean =
+        source !in setOf(
+            dev.po4yka.lenswake.core.ProfileSource.EXACT_ENVIRONMENT_DERIVATION,
+            dev.po4yka.lenswake.core.ProfileSource.STATIC_RESOURCE_TEMPLATE,
+        ) ||
+            isSupportedPixelCameraRuntime(environment)
 }

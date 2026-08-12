@@ -196,7 +196,14 @@ class DefaultAutomationEngineTest {
         val succeeded = assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
         assertEquals(SessionStatus.RECORDING, succeeded.session.status)
         assertEquals(
-            listOf("launch", "selectVideo", "selectLens:FRONT", "startRecording"),
+            listOf(
+                "launch",
+                "selectVideo",
+                "selectVideoResolution4k",
+                "selectVideoFrameRate60",
+                "selectLens:FRONT",
+                "startRecording",
+            ),
             camera.calls,
         )
     }
@@ -2202,6 +2209,20 @@ private fun engine(
             receivedProfileUses += profileUse
             calls += "selectVideo"
             state = PixelCameraState.Video(recording = false, lens = null)
+            return dispatched()
+        }
+
+        override suspend fun selectVideoResolution4k(profileUse: ProfileUse): ActionDispatch {
+            receivedProfileUses += profileUse
+            calls += "selectVideoResolution4k"
+            state = (state as PixelCameraState.Video).copy(resolution4k = true)
+            return dispatched()
+        }
+
+        override suspend fun selectVideoFrameRate60(profileUse: ProfileUse): ActionDispatch {
+            receivedProfileUses += profileUse
+            calls += "selectVideoFrameRate60"
+            state = (state as PixelCameraState.Video).copy(frameRate60 = true)
             return dispatched()
         }
 

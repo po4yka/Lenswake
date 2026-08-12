@@ -4,7 +4,7 @@
 
 **Reviewed against:** `main@f33d15c` on 2026-08-12
 
-**Target:** Pixel 8 Pro · Android 17 · Google Pixel Camera
+**Target:** fixed non-folding Pixel 6–10a registry · Google Pixel Camera · exact environment
 
 This document describes the checked-in system, not a proposed generic camera platform. Dated
 physical evidence is tracked separately in [STATUS.md](STATUS.md); implementation truth remains in
@@ -44,7 +44,7 @@ source, manifests, Gradle configuration, Room schemas, and tests.
 | --- | --- |
 | `:core` | Platform-neutral schedules, capture contracts, profiles, sessions, failures, readiness, clocks, and repository/scheduler contracts |
 | `:automation` | Platform-neutral START/STOP convergence engine, automation ports, selector matching, retries, timeouts, and postcondition logic |
-| `:data` | Room v7 database, explicit migrations, schema exports, entities, mappings, repositories, session CAS, and environment history |
+| `:data` | Room v8 database, explicit migrations, schema exports, entities, mappings, repositories, session CAS, and environment history |
 | `:app` | Compose/Navigation 3 UI, application workflows and graph, exact alarms, Android services, Accessibility, secure launch, wake, MediaStore, and preflight adapters |
 
 `:core` and `:automation` do not import Android framework or Compose types. Room types stay internal
@@ -70,7 +70,7 @@ postcondition on modern background-launch restrictions.
 
 Lenswake has three deliberately different persistence domains.
 
-### Room v7: domain state
+### Room v8: domain state
 
 Five entities are stored in credential-protected `lenswake.db`:
 
@@ -81,7 +81,9 @@ Five entities are stored in credential-protected `lenswake.db`:
 - `environment_snapshots`.
 
 Rehearsals are execution sessions with `SessionKind.REHEARSAL`, not a separate table. Migrations
-1→7 are explicit and schemas 1–7 are committed. Repository mappings isolate corrupt profile rows so
+1→8 are explicit and schemas 1–8 are committed. The v7→v8 migration preserves legacy history,
+marks pre-v5 profiles incompatible and disables their schedules; alarm recovery cancels their stale
+future identities. Repository mappings isolate corrupt profile rows so
 one bad entry is surfaced without terminating the whole profiles Flow.
 
 Execution updates use a monotonically increasing revision and compare-and-set application. This
@@ -206,21 +208,26 @@ a click on a new control occupying the same hierarchy position.
 
 A profile binds selectors and normalized gestures to:
 
-- manufacturer/model;
+- manufacturer/model/codename;
 - Android SDK and build fingerprint;
 - Pixel Camera package/versionCode;
 - locale;
-- display dimensions and density;
+- display dimensions, density, font scale, and orientation;
+- immutable support tier plus selector-template source/version;
 - selector schema version.
 
 Selectors are package-scoped, scored, and required to have meaningful discriminants. Ambiguous
 top matches, insufficient score, environment drift, and schema drift fail closed. The current
-schema is v4. The sole bundled profile exactly matches one Pixel 8 Pro environment and initially
-installs as `NEEDS_REHEARSAL`.
+schema is v5. A fixed 17-entry model/codename registry selects separate standard (Pixel 7 class)
+or telephoto (Pixel 8 Pro class) semantic-only templates and derives a deterministic
+exact-environment profile. Their current selectors are static package-resource candidates, not
+physical certification evidence. No normalized coordinate gesture is copied between models.
 
 The domain can represent Video, Time Lapse, Night Sight Time Lapse, five speeds, four lenses, and
 zoom. Runtime authorization comes only from selectors, state signals, and a qualifying rehearsal.
-The bundled profile currently authorizes Time Lapse 120× with the rear main lens only.
+Schedules see only capture combinations with a current receipt. The domain contract requires Video
+4K/60, all five Time Lapse speeds, applicable lenses, and Night Sight Time Lapse only where its
+semantic mode signal is present and the exact combination has passed rehearsal.
 
 ### Typed dialogs
 
@@ -330,7 +337,7 @@ archive is not implemented.
 | Build | Gradle 9.4.1, Android Gradle Plugin 9.2.1, KSP 2.3.11 |
 | Android | minSdk 35, compileSdk/targetSdk 37 |
 | UI | Jetpack Compose Material 3, Navigation 3, Lifecycle/StateFlow |
-| Persistence | Room 2.8.4, database schema v7, Kotlin serialization |
+| Persistence | Room 2.8.4, database schema v8, Kotlin serialization |
 | Concurrency | Kotlin coroutines 1.11.0 |
 | Tests | JUnit 6 host tests, AndroidX Test/runner, Compose UI tests |
 | Static analysis | Detekt on all modules; Android lint warnings-as-errors except three volatile dependency recommendations |
@@ -349,7 +356,7 @@ Android 17 phone AVDs require at least 4 GB, and Google has not published an API
 tag on `main` repeats
 those checks at the exact tagged SHA before manual approval, then produces a signed minified APK,
 checksum, and provenance. Emulators validate Android framework boundaries only. The release remains
-physically unverified until its exact APK passes the Pixel 8 Pro evidence procedure.
+physically unverified until its exact APK passes both Pixel 7 and Pixel 8 Pro evidence procedures.
 
 Exact dependency versions live in `gradle/libs.versions.toml`; do not duplicate them into agent
 instructions.
@@ -361,9 +368,9 @@ instructions.
 - Shizuku or another privileged provider;
 - structured complete diagnostics archive;
 - implemented thermal and orientation policy beyond current observable preflight data;
-- current-HEAD Pixel 8 Pro acceptance, including real saved-media proof and induced typed dialogs;
+- current-HEAD Pixel 7 and Pixel 8 Pro acceptance, including real saved-media proof and typed dialogs;
 - complete physical layout/IME/navigation-mode matrix on Pixel 8 Pro;
-- current-release Pixel 8 Pro acceptance for the exact signed distribution APK.
+- current-release acceptance on both certified targets for the exact same signed distribution APK.
 
 These are gaps, not implied capabilities. See [STATUS.md](STATUS.md) for the current evidence boundary.
 

@@ -1,6 +1,6 @@
 # Lenswake setup
 
-Lenswake is a personal sideloaded app for one explicitly calibrated Pixel Camera environment. Setup
+Lenswake is a personal sideloaded app for an explicitly calibrated Pixel Camera environment. Setup
 must complete both Android capability grants and a production rehearsal; installing the APK alone
 does not make unattended schedules safe.
 
@@ -52,8 +52,9 @@ access is insufficient for unattended saved-file verification. Grant full video-
 5. Grant full video-library read permission.
 6. Open Accessibility settings, choose Lenswake, review Android's warning, and enable the service.
 7. Return to Lenswake and verify both **Accessibility enabled** and **Accessibility connected** pass.
-8. Open Profiles. Install the bundled profile only if Lenswake reports an exact environment match.
-9. Run profile **Test now**. Keep the phone in a safe position: Pixel Camera will really open, record,
+8. Open Profiles. Install the profile only if Lenswake reports an exact supported environment match.
+   Experimental models require a separate explicit risk confirmation.
+9. Run the sequential profile capture matrix. Keep the phone in a safe position: Pixel Camera will really open, record,
    stop, and publish a short video.
 10. Create a schedule. Only capture combinations with current qualifying rehearsal evidence are shown.
 11. Enable the schedule after every blocking readiness check passes.
@@ -70,9 +71,13 @@ because it is not part of the supported standard path.
 
 ## Environment mismatch
 
-The bundled profile requires an exact match for device model, Android SDK/build, Camera package and
-versionCode, locale, display dimensions/density, and selector schema. A Pixel Camera update, system
-build change, locale change, display override, or profile-definition change invalidates prior proof.
+The profile requires an exact match for model, codename, Android SDK/build fingerprint, Camera
+package/versionCode, en-US locale, portrait orientation, display dimensions/density, font scale,
+selector schema, template provenance and version. Any drift invalidates prior receipts.
+
+The fixed registry contains Pixel 6/6 Pro/6a, 7/7 Pro/7a, 8/8 Pro/8a, 9/9 Pro/9 Pro XL/9a and
+10/10 Pro/10 Pro XL/10a. Fold, Pro Fold, Tablet, Pixel 5a, unknown and future models are rejected.
+Experimental support never becomes Certified after local testing.
 
 Do not edit Room state or mark the profile verified manually. Recalibration/profile authoring is not
 implemented; collect reproducible evidence and update the profile through source plus tests.
