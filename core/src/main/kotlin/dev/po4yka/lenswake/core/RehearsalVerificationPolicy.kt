@@ -109,6 +109,8 @@ private class FingerprintWriter(
         writeString(profile.source.name)
         writeString(profile.selectorTemplate.id)
         output.writeInt(profile.selectorTemplate.version)
+        writeString(profile.videoSettings.resolution.name)
+        writeString(profile.videoSettings.frameRate.name)
         writeSelectorSets("action", profile.targets.mapKeys { it.key.name })
         writeSelectorSets("speed", profile.speedTargets.mapKeys { it.key.name })
         writeSelectorSets("signal", profile.stateSignals.mapKeys { it.key.name })

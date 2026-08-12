@@ -45,6 +45,7 @@ import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.core.SupportTier
 import dev.po4yka.lenswake.core.UiSelector
 import dev.po4yka.lenswake.core.UiSelectorSet
+import dev.po4yka.lenswake.core.PIXEL_CAMERA_VIDEO_SETTINGS
 import dev.po4yka.lenswake.core.provenance
 import dev.po4yka.lenswake.data.internal.mapping.JsonColumnCodec
 import dev.po4yka.lenswake.data.internal.mapping.toEntity
@@ -103,6 +104,7 @@ class RoomRepositoriesTest {
 
         val restoredProfile = profiles.get(profile.id)
         assertEquals(profile, restoredProfile)
+        assertEquals(PIXEL_CAMERA_VIDEO_SETTINGS, restoredProfile?.videoSettings)
         assertEquals(
             profile.targets[AutomationAction.SELECT_REAR_MAIN_LENS],
             restoredProfile?.targets?.get(AutomationAction.SELECT_REAR_MAIN_LENS),
@@ -367,11 +369,11 @@ class RoomRepositoriesTest {
     @Test
     fun environmentSnapshotRoundTripsAndAppearsInExecutionReport() = runBlocking {
         val profile = profile()
-        val schedule = schedule(profile.id)
-        val session = session(schedule, profile.id)
-        val snapshot = environmentSnapshot(session.id)
+        val videoSchedule = schedule(profile.id).copy(capture = CaptureConfiguration.Video())
+        val session = session(videoSchedule, profile.id)
+        val snapshot = environmentSnapshot(session.id).copy(videoSettings = PIXEL_CAMERA_VIDEO_SETTINGS)
         profiles.save(profile)
-        schedules.save(schedule)
+        schedules.save(videoSchedule)
         executions.reservePixelCamera(session)
 
         val linkedSession = session.copy(
@@ -396,6 +398,10 @@ class RoomRepositoriesTest {
         assertEquals(
             profile.provenance,
             requireNotNull(executions.getEnvironmentSnapshot(snapshot.id)).profileProvenance,
+        )
+        assertEquals(
+            PIXEL_CAMERA_VIDEO_SETTINGS,
+            requireNotNull(executions.getEnvironmentSnapshot(snapshot.id)).videoSettings,
         )
         assertEquals(linkedSession, executions.get(session.id))
         assertEquals(
@@ -445,6 +451,42 @@ class RoomRepositoriesTest {
         )
         assertEquals(original, executions.getEnvironmentSnapshotForSession(session.id))
         assertNull(executions.getEnvironmentSnapshot(replacement.id))
+    }
+
+    @Test
+    fun environmentSnapshotRejectsVideoSettingsThatDoNotMatchItsSession() = runBlocking {
+        val profile = profile()
+        val videoSchedule = schedule(profile.id).copy(capture = CaptureConfiguration.Video())
+        val session = session(videoSchedule, profile.id)
+        profiles.save(profile)
+        schedules.save(videoSchedule)
+        executions.reservePixelCamera(session)
+
+        val rejected = runCatching {
+            executions.capture(environmentSnapshot(session.id))
+        }
+
+        assertTrue(rejected.isFailure)
+        assertNull(executions.getEnvironmentSnapshotForSession(session.id))
+    }
+
+    @Test
+    fun environmentSnapshotRejectsVideoSettingsForNonVideoSession() = runBlocking {
+        val profile = profile()
+        val schedule = schedule(profile.id)
+        val session = session(schedule, profile.id)
+        profiles.save(profile)
+        schedules.save(schedule)
+        executions.reservePixelCamera(session)
+
+        val rejected = runCatching {
+            executions.capture(
+                environmentSnapshot(session.id).copy(videoSettings = PIXEL_CAMERA_VIDEO_SETTINGS),
+            )
+        }
+
+        assertTrue(rejected.isFailure)
+        assertNull(executions.getEnvironmentSnapshotForSession(session.id))
     }
 
     @Test

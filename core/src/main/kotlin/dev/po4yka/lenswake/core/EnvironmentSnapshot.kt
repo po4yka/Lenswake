@@ -17,6 +17,8 @@ data class EnvironmentSnapshot(
     val lenswakeVersion: String,
     val cameraEnvironment: PixelCameraEnvironment,
     val profileProvenance: ProfileProvenance = LEGACY_PROFILE_PROVENANCE,
+    /** Exact video contract for this execution, or null when the capture is not Video. */
+    val videoSettings: VideoSettings? = null,
     val accessibilityStatus: EnvironmentCapabilityStatus,
     val privilegedBridgeStatus: EnvironmentCapabilityStatus,
     val screenInteractive: Boolean,
@@ -34,6 +36,14 @@ data class EnvironmentSnapshot(
             "Available storage must not be negative"
         }
     }
+}
+
+fun EnvironmentSnapshot.attributedTo(session: ExecutionSession): EnvironmentSnapshot {
+    require(sessionId == session.id) { "Environment snapshot must belong to its execution session" }
+    return copy(
+        profileProvenance = session.profileProvenance,
+        videoSettings = session.capture.videoSettingsOrNull,
+    )
 }
 
 enum class EnvironmentCapabilityStatus {

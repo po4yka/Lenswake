@@ -11,7 +11,7 @@ physical Pixel proof. It is a snapshot, not the source of implementation truth.
 
 The implementation now recognizes exactly 17 non-folding models: Pixel 6/6 Pro/6a, 7/7 Pro/7a,
 8/8 Pro/8a, 9/9 Pro/9 Pro XL/9a and 10/10 Pro/10 Pro XL/10a. Fold, Pro Fold, Tablet, Pixel 5a,
-unknown and future models are rejected. Selector schema is v5 and persistence is Room v9.
+unknown and future models are rejected. Selector schema is v5 and persistence is Room v10.
 
 Pixel 7 and Pixel 8 Pro are the only certification targets; the other 15 are permanently
 `EXPERIMENTAL`. A reachable promotion path now verifies a release-key-signed certification JAR, the

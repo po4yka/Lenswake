@@ -8,6 +8,31 @@ import org.junit.jupiter.api.Test
 
 class PixelCameraProfileTest {
     @Test
+    fun `video contract changes definition fingerprint and support`() {
+        val profile = PixelCameraProfile(
+            id = ProfileId("video-contract"),
+            environment = environment(),
+            selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
+            videoSettings = PIXEL_CAMERA_VIDEO_SETTINGS,
+            targets = videoTargets(),
+            stateSignals = videoSignals(),
+            compatibility = ProfileCompatibility.NEEDS_REHEARSAL,
+            verifiedAt = null,
+        )
+
+        assertEquals(true, profile.supports(CaptureConfiguration.Video()))
+        assertEquals(
+            false,
+            profile.copy(videoSettings = LEGACY_UNKNOWN_VIDEO_SETTINGS)
+                .supports(CaptureConfiguration.Video()),
+        )
+        assertNotEquals(
+            profile.definitionFingerprint(),
+            profile.copy(videoSettings = LEGACY_UNKNOWN_VIDEO_SETTINGS).definitionFingerprint(),
+        )
+    }
+
+    @Test
     fun `certified tier requires immutable release evidence and changes definition fingerprint`() {
         val experimental = PixelCameraProfile(
             id = ProfileId("certification-target"),
@@ -57,6 +82,29 @@ class PixelCameraProfileTest {
         pixel7EvidenceSha256 = "4".repeat(64),
         pixel8ProEvidenceSha256 = "5".repeat(64),
     )
+
+    private fun videoTargets(): Map<AutomationAction, UiSelectorSet> = listOf(
+        AutomationAction.SELECT_VIDEO,
+        AutomationAction.SELECT_VIDEO_RESOLUTION_4K,
+        AutomationAction.SELECT_VIDEO_FRAME_RATE_60,
+        AutomationAction.SELECT_REAR_MAIN_LENS,
+        AutomationAction.START_VIDEO_RECORDING,
+        AutomationAction.STOP_VIDEO_RECORDING,
+    ).associateWith {
+        UiSelectorSet(listOf(UiSelector("com.google.android.GoogleCamera", role = "Button")), 1)
+    }
+
+    private fun videoSignals(): Map<PixelCameraStateSignal, UiSelectorSet> = listOf(
+        PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
+        PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
+        PixelCameraStateSignal.VIDEO_RESOLUTION_4K_ACTIVE,
+        PixelCameraStateSignal.VIDEO_FRAME_RATE_60_ACTIVE,
+        PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
+        PixelCameraStateSignal.RECORDING_ACTIVE,
+        PixelCameraStateSignal.NOT_RECORDING,
+    ).associateWith {
+        UiSelectorSet(listOf(UiSelector("com.google.android.GoogleCamera", role = "Button")), 1)
+    }
 
     @Test
     fun `profile carries data-driven observation signals`() {

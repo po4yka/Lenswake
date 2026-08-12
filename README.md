@@ -55,7 +55,7 @@ automation, and physical proof for one APK does not automatically transfer to la
   fresh presence check, and fail closed for storage, policy, unknown, changed, or ambiguous dialogs.
 - Show local session timelines, duration, retries, selector confidence, interaction/fallback metrics,
   alarm-transport incidents, and corrupt-profile notices; share the bounded view as plain text.
-- Persist schedules, profiles, sessions, events, and environment snapshots in Room v9 with explicit
+- Persist schedules, profiles, sessions, events, and environment snapshots in Room v10 with explicit
   migrations. Sensitive Room and SharedPreferences state is excluded from cloud backup and D2D transfer.
 
 ## Reliability model
@@ -153,7 +153,7 @@ The repository has four Gradle modules:
 | --- | --- |
 | `:core` | Platform-neutral schedules, profiles, sessions, failures, readiness, repository contracts |
 | `:automation` | Platform-neutral START/STOP convergence, ports, selectors, retries, verification |
-| `:data` | Room v9 entities, migrations, mappings, repositories, environment/session history |
+| `:data` | Room v10 entities, migrations, mappings, repositories, environment/session history |
 | `:app` | Compose UI, application composition, alarms, Android services, Accessibility and platform adapters |
 
 Dependency direction is `:app → :automation/:core/:data`, `:automation → :core`, and

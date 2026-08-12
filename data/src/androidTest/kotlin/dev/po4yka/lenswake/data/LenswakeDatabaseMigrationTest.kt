@@ -12,6 +12,7 @@ import dev.po4yka.lenswake.core.PixelCameraStateSignal
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.TimeLapseSpeed
+import dev.po4yka.lenswake.core.LEGACY_UNKNOWN_VIDEO_SETTINGS
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Assert.assertEquals
@@ -44,7 +45,7 @@ class LenswakeDatabaseMigrationTest {
 
         val migrated = migrationHelper.runMigrationsAndValidate(
             databaseName,
-            9,
+            10,
             true,
             LenswakeDatabase.MIGRATION_1_2,
             LenswakeDatabase.MIGRATION_2_3,
@@ -54,6 +55,7 @@ class LenswakeDatabaseMigrationTest {
             LenswakeDatabase.MIGRATION_6_7,
             LenswakeDatabase.MIGRATION_7_8,
             LenswakeDatabase.MIGRATION_8_9,
+            LenswakeDatabase.MIGRATION_9_10,
         )
         migrated.query(
             "SELECT id FROM automation_profiles WHERE id = 'profile-migration'",
@@ -74,6 +76,7 @@ class LenswakeDatabaseMigrationTest {
                 LenswakeDatabase.MIGRATION_6_7,
                 LenswakeDatabase.MIGRATION_7_8,
                 LenswakeDatabase.MIGRATION_8_9,
+                LenswakeDatabase.MIGRATION_9_10,
             )
             .build()
         val (rawProfile, schedule) = runBlocking {
@@ -85,6 +88,7 @@ class LenswakeDatabaseMigrationTest {
         checkNotNull(rawProfile)
         assertEquals("profile-migration", rawProfile.id.value)
         assertEquals("INCOMPATIBLE", rawProfile.compatibility.name)
+        assertEquals(LEGACY_UNKNOWN_VIDEO_SETTINGS, rawProfile.videoSettings)
         val rawSelector = checkNotNull(rawProfile.targets[AutomationAction.SELECT_VIDEO])
             .selectors
             .single()
@@ -158,6 +162,7 @@ class LenswakeDatabaseMigrationTest {
                 LenswakeDatabase.MIGRATION_6_7,
                 LenswakeDatabase.MIGRATION_7_8,
                 LenswakeDatabase.MIGRATION_8_9,
+                LenswakeDatabase.MIGRATION_9_10,
             )
             .build()
         val (profile, schemaOneProfile) = runBlocking {
@@ -304,6 +309,7 @@ class LenswakeDatabaseMigrationTest {
                 LenswakeDatabase.MIGRATION_6_7,
                 LenswakeDatabase.MIGRATION_7_8,
                 LenswakeDatabase.MIGRATION_8_9,
+                LenswakeDatabase.MIGRATION_9_10,
             )
             .build()
         val profile = runBlocking {
@@ -403,6 +409,110 @@ class LenswakeDatabaseMigrationTest {
         ).use { cursor ->
             assertEquals(true, cursor.moveToFirst())
             assertEquals(0, cursor.getInt(0))
+        }
+        migrated.close()
+    }
+
+    @Test
+    fun migratesVersionNineToTenWithExactVideoSettingsWithoutInventingLegacyValues() {
+        createVersionOneDatabase()
+        val versionNine = migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            9,
+            true,
+            LenswakeDatabase.MIGRATION_1_2,
+            LenswakeDatabase.MIGRATION_2_3,
+            LenswakeDatabase.MIGRATION_3_4,
+            LenswakeDatabase.MIGRATION_4_5,
+            LenswakeDatabase.MIGRATION_5_6,
+            LenswakeDatabase.MIGRATION_6_7,
+            LenswakeDatabase.MIGRATION_7_8,
+            LenswakeDatabase.MIGRATION_8_9,
+        )
+        versionNine.execSQL(
+            "UPDATE automation_profiles SET selector_schema_version = 5, " +
+                "support_tier = 'CERTIFIED', compatibility = 'VERIFIED', " +
+                "verified_at_epoch_ms = 800 " +
+                "WHERE id = 'profile-migration'",
+        )
+        versionNine.execSQL(
+            "UPDATE schedules SET enabled = 1 WHERE id = 'schedule-migration'",
+        )
+        versionNine.execSQL(
+            """
+            INSERT INTO execution_sessions (
+                id, execution_key, kind, profile_id, capture_type,
+                time_lapse_speed, lens_selection, video_resolution, video_frame_rate,
+                expected_start_at_epoch_ms, expected_stop_at_epoch_ms,
+                status, revision, created_at_epoch_ms, updated_at_epoch_ms
+            ) VALUES (
+                'execution-video-v9', 'schedule/video/1000', 'SCHEDULED',
+                'profile-migration', 'VIDEO', 'AUTO', 'REAR_MAIN', 'UHD_4K', 'FPS_60',
+                1000, 2000, 'COMPLETED', 1, 500, 2000
+            )
+            """.trimIndent(),
+        )
+        versionNine.execSQL(
+            """
+            INSERT INTO environment_snapshots (
+                id, session_id, captured_at_epoch_ms, lenswake_version,
+                device_manufacturer, device_model, android_sdk,
+                camera_package, camera_version_code, locale_tag,
+                display_width_px, display_height_px, density_dpi,
+                accessibility_status, privileged_bridge_status,
+                screen_interactive, keyguard_locked
+            ) VALUES (
+                'snapshot-video-v9', 'execution-video-v9', 900, '0.1.0',
+                'Google', 'Pixel 8 Pro', 37,
+                'com.google.android.GoogleCamera', 1, 'en-US',
+                1344, 2992, 480, 'AVAILABLE', 'UNAVAILABLE', 0, 1
+            )
+            """.trimIndent(),
+        )
+        versionNine.close()
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            10,
+            true,
+            LenswakeDatabase.MIGRATION_9_10,
+        )
+        migrated.query(
+            "SELECT video_resolution, video_frame_rate, support_tier, compatibility, " +
+                "verified_at_epoch_ms FROM automation_profiles " +
+                "WHERE id = 'profile-migration'",
+        ).use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals("UHD_4K", cursor.getString(0))
+            assertEquals("FPS_60", cursor.getString(1))
+            assertEquals("EXPERIMENTAL", cursor.getString(2))
+            assertEquals("NEEDS_REHEARSAL", cursor.getString(3))
+            assertNull(cursor.getString(4))
+        }
+        migrated.query(
+            "SELECT video_resolution, video_frame_rate FROM environment_snapshots " +
+                "WHERE id = 'snapshot-video-v9'",
+        ).use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals("UHD_4K", cursor.getString(0))
+            assertEquals("FPS_60", cursor.getString(1))
+        }
+        migrated.query(
+            "SELECT video_resolution, video_frame_rate FROM execution_sessions " +
+                "WHERE id = 'execution-video-v9'",
+        ).use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals("UHD_4K", cursor.getString(0))
+            assertEquals("FPS_60", cursor.getString(1))
+        }
+        migrated.query(
+            "SELECT video_resolution, video_frame_rate, enabled FROM schedules " +
+                "WHERE id = 'schedule-migration'",
+        ).use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals("LEGACY_UNKNOWN", cursor.getString(0))
+            assertEquals("LEGACY_UNKNOWN", cursor.getString(1))
+            assertEquals(0, cursor.getInt(2))
         }
         migrated.close()
     }

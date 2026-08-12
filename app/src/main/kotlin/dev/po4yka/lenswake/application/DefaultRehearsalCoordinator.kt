@@ -35,6 +35,7 @@ import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.definitionFingerprint
+import dev.po4yka.lenswake.core.attributedTo
 import dev.po4yka.lenswake.core.provenance
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
@@ -497,7 +498,7 @@ private class RehearsalPreparationPersistence(
             check(snapshot.cameraEnvironment == expectedEnvironment) {
                 "Pixel Camera environment changed during rehearsal preparation"
             }
-            val attributed = snapshot.copy(profileProvenance = session.profileProvenance)
+            val attributed = snapshot.attributedTo(session)
             when (val capture = environmentSnapshotRepository.capture(attributed)) {
                 is EnvironmentSnapshotCaptureResult.Captured -> capture.session
                 is EnvironmentSnapshotCaptureResult.AlreadyExists -> capture.session

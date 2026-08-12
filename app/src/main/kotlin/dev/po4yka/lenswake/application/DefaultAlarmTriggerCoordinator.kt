@@ -29,6 +29,7 @@ import dev.po4yka.lenswake.core.ScheduleRepository
 import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
+import dev.po4yka.lenswake.core.attributedTo
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 import java.util.concurrent.CancellationException
@@ -416,7 +417,7 @@ private class EnvironmentSnapshotResolver(
                     terminal("Environment collector returned a mismatched snapshot"),
                 )
             else -> persist(
-                snapshot.copy(profileProvenance = session.profileProvenance),
+                snapshot.attributedTo(session),
                 expectedId,
             )
         }

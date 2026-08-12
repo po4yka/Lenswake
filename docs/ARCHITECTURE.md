@@ -44,7 +44,7 @@ source, manifests, Gradle configuration, Room schemas, and tests.
 | --- | --- |
 | `:core` | Platform-neutral schedules, capture contracts, profiles, sessions, failures, readiness, clocks, and repository/scheduler contracts |
 | `:automation` | Platform-neutral START/STOP convergence engine, automation ports, selector matching, retries, timeouts, and postcondition logic |
-| `:data` | Room v9 database, explicit migrations, schema exports, entities, mappings, repositories, session CAS, and environment history |
+| `:data` | Room v10 database, explicit migrations, schema exports, entities, mappings, repositories, session CAS, and environment history |
 | `:app` | Compose/Navigation 3 UI, application workflows and graph, exact alarms, Android services, Accessibility, secure launch, wake, MediaStore, and preflight adapters |
 
 `:core` and `:automation` do not import Android framework or Compose types. Room types stay internal
@@ -70,7 +70,7 @@ postcondition on modern background-launch restrictions.
 
 Lenswake has three deliberately different persistence domains.
 
-### Room v9: domain state
+### Room v10: domain state
 
 Five entities are stored in credential-protected `lenswake.db`:
 
@@ -81,11 +81,15 @@ Five entities are stored in credential-protected `lenswake.db`:
 - `environment_snapshots`.
 
 Rehearsals are execution sessions with `SessionKind.REHEARSAL`, not a separate table. Migrations
-1→9 are explicit and schemas 1–9 are committed. The v7→v8 migration preserves legacy history,
+1→10 are explicit and schemas 1–10 are committed. The v7→v8 migration preserves legacy history,
 marks pre-v5 profiles incompatible and disables their schedules; alarm recovery cancels their stale
 future identities. The v8→v9 migration adds nullable certification evidence without inventing it for
 history; any impossible receipt-less Certified profile is demoted, invalidated, and its schedule
-disabled. Repository mappings isolate corrupt profile rows so
+disabled. The v9→v10 migration stores the profile video contract and the execution's exact video
+settings in its immutable environment snapshot; it backfills only values already established by
+the selector schema or execution row. Because video settings become part of the profile definition
+fingerprint, it also demotes current profiles to `NEEDS_REHEARSAL` and disables their schedules while
+preserving historical certification evidence. Repository mappings isolate corrupt profile rows so
 one bad entry is surfaced without terminating the whole profiles Flow.
 
 Execution updates use a monotonically increasing revision and compare-and-set application. This
@@ -363,7 +367,7 @@ archive is not implemented.
 | Build | Gradle 9.4.1, Android Gradle Plugin 9.2.1, KSP 2.3.11 |
 | Android | minSdk 35, compileSdk/targetSdk 37 |
 | UI | Jetpack Compose Material 3, Navigation 3, Lifecycle/StateFlow |
-| Persistence | Room 2.8.4, database schema v9, Kotlin serialization |
+| Persistence | Room 2.8.4, database schema v10, Kotlin serialization |
 | Concurrency | Kotlin coroutines 1.11.0 |
 | Tests | JUnit 6 host tests, AndroidX Test/runner, Compose UI tests |
 | Static analysis | Detekt on all modules; Android lint warnings-as-errors except three volatile dependency recommendations |

@@ -20,6 +20,9 @@ import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.ProfileProvenance
 import dev.po4yka.lenswake.core.SelectorTemplateReference
 import dev.po4yka.lenswake.core.SupportTier
+import dev.po4yka.lenswake.core.VideoFrameRate
+import dev.po4yka.lenswake.core.VideoResolution
+import dev.po4yka.lenswake.core.VideoSettings
 import dev.po4yka.lenswake.core.DisplayOrientation
 import dev.po4yka.lenswake.core.RecordingSchedule
 import dev.po4yka.lenswake.core.ScheduleId
@@ -104,6 +107,8 @@ internal fun PixelCameraProfile.toEntity(): AutomationProfileEntity = Automation
     profileSource = source.name,
     selectorTemplateId = selectorTemplate.id,
     selectorTemplateVersion = selectorTemplate.version,
+    videoResolution = videoSettings.resolution.name,
+    videoFrameRate = videoSettings.frameRate.name,
     targetsJson = JsonColumnCodec.encodeTargets(targets),
     speedTargetsJson = JsonColumnCodec.encodeSpeedTargets(speedTargets),
     stateSignalsJson = JsonColumnCodec.encodeStateSignals(stateSignals),
@@ -137,6 +142,10 @@ internal fun AutomationProfileEntity.toDomain(): PixelCameraProfile = PixelCamer
     certification = certificationJson?.let(CertificationJsonColumnCodec::decode),
     source = enumValueOf<ProfileSource>(profileSource),
     selectorTemplate = SelectorTemplateReference(selectorTemplateId, selectorTemplateVersion),
+    videoSettings = VideoSettings(
+        resolution = enumValueOf<VideoResolution>(videoResolution),
+        frameRate = enumValueOf<VideoFrameRate>(videoFrameRate),
+    ),
     targets = JsonColumnCodec.decodeTargets(targetsJson),
     speedTargets = JsonColumnCodec.decodeSpeedTargets(speedTargetsJson),
     stateSignals = JsonColumnCodec.decodeStateSignals(stateSignalsJson),
@@ -153,6 +162,8 @@ internal fun EnvironmentSnapshot.toEntity(): EnvironmentSnapshotEntity = Environ
     profileSource = profileProvenance.source.name,
     profileTemplateId = profileProvenance.selectorTemplate.id,
     profileTemplateVersion = profileProvenance.selectorTemplate.version,
+    videoResolution = videoSettings?.resolution?.name,
+    videoFrameRate = videoSettings?.frameRate?.name,
     capturedAtEpochMs = capturedAt.toEpochMilli(),
     lenswakeVersion = lenswakeVersion,
     deviceManufacturer = cameraEnvironment.deviceManufacturer,
@@ -187,6 +198,7 @@ internal fun EnvironmentSnapshotEntity.toDomain(): EnvironmentSnapshot = Environ
         enumValueOf(profileSource),
         SelectorTemplateReference(profileTemplateId, profileTemplateVersion),
     ),
+    videoSettings = videoSettingsFromNullableColumns(videoResolution, videoFrameRate),
     capturedAt = Instant.ofEpochMilli(capturedAtEpochMs),
     lenswakeVersion = lenswakeVersion,
     cameraEnvironment = PixelCameraEnvironment(

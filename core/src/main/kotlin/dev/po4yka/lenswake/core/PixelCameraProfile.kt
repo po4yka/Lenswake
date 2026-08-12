@@ -192,6 +192,7 @@ data class PixelCameraProfile(
     val certification: ProfileCertification? = null,
     val source: ProfileSource = ProfileSource.PHYSICAL_TEMPLATE,
     val selectorTemplate: SelectorTemplateReference = SelectorTemplateReference("legacy", 1),
+    val videoSettings: VideoSettings = PIXEL_CAMERA_VIDEO_SETTINGS,
     val targets: Map<AutomationAction, UiSelectorSet> = emptyMap(),
     val speedTargets: Map<TimeLapseSpeed, UiSelectorSet> = emptyMap(),
     val stateSignals: Map<PixelCameraStateSignal, UiSelectorSet> = emptyMap(),
@@ -265,7 +266,7 @@ fun PixelCameraProfile.supports(capture: CaptureConfiguration): Boolean {
     if (capture.zoom != null) return false
     if (
         capture is CaptureConfiguration.Video &&
-        (capture.resolution != VideoResolution.UHD_4K || capture.frameRate != VideoFrameRate.FPS_60)
+        (videoSettings != PIXEL_CAMERA_VIDEO_SETTINGS || capture.videoSettings != videoSettings)
     ) {
         return false
     }

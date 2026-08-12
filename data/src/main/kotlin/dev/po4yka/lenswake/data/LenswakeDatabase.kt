@@ -24,7 +24,7 @@ import dev.po4yka.lenswake.data.internal.mapping.ProfileJsonMigration
         ExecutionEventEntity::class,
         EnvironmentSnapshotEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
 )
 abstract class LenswakeDatabase : RoomDatabase() {
@@ -245,6 +245,44 @@ abstract class LenswakeDatabase : RoomDatabase() {
             )
         }
 
+        val MIGRATION_9_10: Migration = Migration(9, 10) { database ->
+            addCaptureV5Columns(database, "automation_profiles")
+            database.execSQL(
+                "UPDATE `schedules` SET `video_resolution` = 'LEGACY_UNKNOWN', " +
+                    "`video_frame_rate` = 'LEGACY_UNKNOWN' WHERE `capture_type` != 'VIDEO'",
+            )
+            database.execSQL(
+                "UPDATE `execution_sessions` SET `video_resolution` = 'LEGACY_UNKNOWN', " +
+                    "`video_frame_rate` = 'LEGACY_UNKNOWN' WHERE `capture_type` != 'VIDEO'",
+            )
+            database.execSQL(
+                "UPDATE `automation_profiles` SET `video_resolution` = 'UHD_4K', " +
+                    "`video_frame_rate` = 'FPS_60', `support_tier` = 'EXPERIMENTAL', " +
+                    "`compatibility` = 'NEEDS_REHEARSAL', `verified_at_epoch_ms` = NULL " +
+                    "WHERE `selector_schema_version` >= 5",
+            )
+            database.execSQL(
+                "UPDATE `schedules` SET `enabled` = 0 WHERE `profile_id` IN " +
+                    "(SELECT `id` FROM `automation_profiles` WHERE `selector_schema_version` >= 5)",
+            )
+            database.execSQL(
+                "ALTER TABLE `environment_snapshots` ADD COLUMN `video_resolution` TEXT DEFAULT NULL",
+            )
+            database.execSQL(
+                "ALTER TABLE `environment_snapshots` ADD COLUMN `video_frame_rate` TEXT DEFAULT NULL",
+            )
+            database.execSQL(
+                "UPDATE `environment_snapshots` SET " +
+                    "`video_resolution` = (SELECT `video_resolution` FROM `execution_sessions` " +
+                    "WHERE `execution_sessions`.`id` = `environment_snapshots`.`session_id`), " +
+                    "`video_frame_rate` = (SELECT `video_frame_rate` FROM `execution_sessions` " +
+                    "WHERE `execution_sessions`.`id` = `environment_snapshots`.`session_id`) " +
+                    "WHERE EXISTS (SELECT 1 FROM `execution_sessions` " +
+                    "WHERE `execution_sessions`.`id` = `environment_snapshots`.`session_id` " +
+                    "AND `execution_sessions`.`capture_type` = 'VIDEO')",
+            )
+        }
+
         private fun addCaptureV5Columns(
             database: androidx.sqlite.db.SupportSQLiteDatabase,
             table: String,
@@ -309,6 +347,7 @@ abstract class LenswakeDatabase : RoomDatabase() {
                 MIGRATION_6_7,
                 MIGRATION_7_8,
                 MIGRATION_8_9,
+                MIGRATION_9_10,
             )
                 .build()
     }

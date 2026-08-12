@@ -52,6 +52,10 @@ internal data class AutomationProfileEntity(
     val selectorTemplateId: String,
     @ColumnInfo(name = "selector_template_version", defaultValue = "1")
     val selectorTemplateVersion: Int,
+    @ColumnInfo(name = "video_resolution", defaultValue = "'LEGACY_UNKNOWN'")
+    val videoResolution: String,
+    @ColumnInfo(name = "video_frame_rate", defaultValue = "'LEGACY_UNKNOWN'")
+    val videoFrameRate: String,
     @ColumnInfo(name = "targets_json")
     val targetsJson: String,
     @ColumnInfo(name = "speed_targets_json")
@@ -235,6 +239,10 @@ internal data class EnvironmentSnapshotEntity(
     val profileTemplateId: String,
     @ColumnInfo(name = "profile_template_version", defaultValue = "1")
     val profileTemplateVersion: Int,
+    @ColumnInfo(name = "video_resolution", defaultValue = "NULL")
+    val videoResolution: String?,
+    @ColumnInfo(name = "video_frame_rate", defaultValue = "NULL")
+    val videoFrameRate: String?,
     @ColumnInfo(name = "captured_at_epoch_ms")
     val capturedAtEpochMs: Long,
     @ColumnInfo(name = "lenswake_version")
