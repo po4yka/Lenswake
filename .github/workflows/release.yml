@@ -94,7 +94,7 @@ jobs:
             profile: pixel_7_pro
             ram-size: 2048M
           - label: 37
-            api-level: "37.1"
+            api-level: "37.2-beta2"
             target: google_apis_ps16k
             channel: canary
             profile: pixel_2
