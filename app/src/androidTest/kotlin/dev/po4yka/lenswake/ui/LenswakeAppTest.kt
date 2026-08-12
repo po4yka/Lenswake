@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isHeading
@@ -14,6 +15,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.semantics.Role
@@ -297,9 +299,9 @@ class LenswakeAppTest {
         )
 
         composeRule.onNodeWithText("Profiles").performClick()
-        composeRule.onNodeWithContentDescription("Test recording, Pixel 9 Pro")
-            .performScrollTo()
-            .performClick()
+        val pixel9ProRehearsal = hasContentDescription("Test recording, Pixel 9 Pro")
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToNode(pixel9ProRehearsal)
+        composeRule.onNode(pixel9ProRehearsal).performClick()
         composeRule.runOnIdle { assertEquals("profile-2", rehearsedProfileId) }
     }
 
