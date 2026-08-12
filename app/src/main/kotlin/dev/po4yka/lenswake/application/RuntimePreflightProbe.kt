@@ -237,9 +237,5 @@ class RuntimePreflightEvaluator(
             environment.cameraPackage == current.cameraPackage
 
     private fun PixelCameraProfile.isSupportedRuntimeProfile(): Boolean =
-        source !in setOf(
-            dev.po4yka.lenswake.core.ProfileSource.EXACT_ENVIRONMENT_DERIVATION,
-            dev.po4yka.lenswake.core.ProfileSource.STATIC_RESOURCE_TEMPLATE,
-        ) ||
-            isSupportedPixelCameraRuntime(environment)
+        isSupportedPixelCameraRuntime(environment)
 }

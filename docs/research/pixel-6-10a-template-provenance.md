@@ -20,6 +20,27 @@ Time Lapse Auto/5x/10x/30x/120x, Tele, Ultrawide, front-camera switching, and Ni
 uses those values only as semantic candidate selectors. The standard template omits telephoto; the
 telephoto-class template includes it. Derived profiles copy no normalized coordinate gesture.
 
+## System-build admission
+
+On 2026-08-12 the official [Google full OTA image matrix](https://developers.google.com/android/ota)
+listed these latest unsuffixed global Android 17 releases for the supported devices:
+
+- Pixel 6/6 Pro/6a and Pixel 7/7 Pro/7a: `CP2A.260705.006` (July 2026);
+- Pixel 8/8 Pro/8a, Pixel 9/9 Pro/9 Pro XL/9a, and Pixel 10/10 Pro/10 Pro XL/10a:
+  `CP2A.260805.005` (August 2026).
+
+The same matrix identifies carrier/region-specific packages with distinct suffixed build IDs. The
+runtime policy admits July for every supported model and August only for the Pixel 8–10a cohort;
+the July overlap keeps the read-only-observed Pixel 8 Pro stable rollout environment admissible.
+It requires an exact product/device codename pair and rejects all unlisted IDs rather than trying to
+infer stability from `user/release-keys`. A future monthly build is intentionally unsupported until
+this dated allowlist and its tests are reviewed and updated.
+
+This check can reject beta, carrier, custom, stale, and malformed fingerprint values. It cannot
+cryptographically distinguish a hostile custom OS that deliberately spoofs an exact public Google
+fingerprint; that would require a separate trusted-attestation design outside the current local-only
+contract.
+
 ## Evidence boundary
 
 Static package resources do not prove that a control is present, actionable, selected, or available

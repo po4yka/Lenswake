@@ -118,7 +118,7 @@ class InstallKnownPixelCameraProfileTest {
             deviceModel = "Pixel 9 Pro",
             deviceCodename = "caiman",
             androidBuildFingerprint =
-                "google/caiman/caiman:17/AP4A.260701.001/12345678:user/release-keys",
+                "google/caiman/caiman:17/CP2A.260705.006/15641320:user/release-keys",
         )
         val installer = InstallKnownPixelCameraProfile(
             environmentProbe = { PortResult.Observed(environment) },

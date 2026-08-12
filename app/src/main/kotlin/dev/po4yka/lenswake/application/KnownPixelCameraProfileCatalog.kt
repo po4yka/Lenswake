@@ -328,7 +328,7 @@ object KnownPixelCameraProfileCatalog {
             environment.deviceModel,
             environment.deviceCodename,
         ) ?: return null
-        if (!PixelCameraProfileTemplateFactory.isSupportedRuntime(environment)) return null
+        if (!PixelCameraProfileTemplateFactory.isSupportedRuntime(model, environment)) return null
         if (environment == pixel8ProAndroid17Camera69481630.environment) {
             return pixel8ProAndroid17Camera69481630
         }
@@ -498,7 +498,7 @@ internal fun isSupportedPixelCameraRuntime(environment: PixelCameraEnvironment):
         environment.deviceManufacturer,
         environment.deviceModel,
         environment.deviceCodename,
-    ) != null && PixelCameraProfileTemplateFactory.isSupportedRuntime(environment)
+    )?.let { model -> PixelCameraProfileTemplateFactory.isSupportedRuntime(model, environment) } == true
 
 private const val GOOGLE_CAMERA_CERTIFICATE_SHA256 =
     "f0fd6c5b410f25cb25c3b53346c8972fae30f8ee7411df910480ad6b2d60db83"

@@ -37,7 +37,7 @@ internal class PixelCameraProfileValidator(
     private fun validateEnvironment(profileUse: ProfileUse): AutomationFailure? =
         when (val result = environmentProbe()) {
             is PortResult.Unavailable -> result.failure
-            is PortResult.Observed -> if (!supportsRuntime(profileUse.profile, result.value)) {
+            is PortResult.Observed -> if (!supportsRuntime(result.value)) {
                 AutomationFailure(
                     code = AutomationFailureCode.PROFILE_INCOMPATIBLE,
                     message = "The current environment is outside the fixed supported Pixel contract",
@@ -47,19 +47,8 @@ internal class PixelCameraProfileValidator(
             }
         }
 
-    private fun supportsRuntime(
-        profile: PixelCameraProfile,
-        environment: PixelCameraEnvironment,
-    ): Boolean = if (
-        profile.source in setOf(
-            dev.po4yka.lenswake.core.ProfileSource.EXACT_ENVIRONMENT_DERIVATION,
-            dev.po4yka.lenswake.core.ProfileSource.STATIC_RESOURCE_TEMPLATE,
-        )
-    ) {
+    private fun supportsRuntime(environment: PixelCameraEnvironment): Boolean =
         isSupportedPixelCameraRuntime(environment)
-    } else {
-        true
-    }
 
     private fun validateCompatibility(
         profileUse: ProfileUse,

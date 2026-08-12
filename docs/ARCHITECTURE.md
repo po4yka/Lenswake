@@ -223,6 +223,15 @@ or telephoto (Pixel 8 Pro class) semantic-only templates and derives a determini
 exact-environment profile. Their current selectors are static package-resource candidates, not
 physical certification evidence. No normalized coordinate gesture is copied between models.
 
+System-build admission is a dated positive allowlist of Google-published global Android 17 OTA build
+IDs per model cohort. The fingerprint parser requires the exact `google/<codename>/<codename>`
+product/device pair, Android release `17`, a decimal incremental, and `user/release-keys`. Unknown,
+older, beta, carrier-suffixed, custom, and cross-cohort build IDs are rejected at profile installation,
+preflight, and action dispatch even when a persisted profile claims physical provenance. The allowlist
+must be deliberately refreshed from Google's OTA matrix for a later monthly release; matching a public
+fingerprint is a local contract check, not cryptographic attestation against a hostile custom image
+that spoofs every public build property.
+
 The domain can represent Video, Time Lapse, Night Sight Time Lapse, five speeds, four lenses, and
 zoom. Runtime authorization comes only from selectors, state signals, and a qualifying rehearsal.
 Schedules see only capture combinations with a current receipt. The domain contract requires Video

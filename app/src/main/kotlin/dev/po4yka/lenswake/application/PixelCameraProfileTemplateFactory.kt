@@ -28,25 +28,30 @@ internal object PixelCameraProfileTemplateFactory {
         )
     }
 
-    fun isSupportedRuntime(environment: PixelCameraEnvironment): Boolean = with(environment) {
-        val locale = Locale.forLanguageTag(localeTag)
+    fun isSupportedRuntime(
+        model: SupportedPixelModel,
+        environment: PixelCameraEnvironment,
+    ): Boolean = with(environment) {
         val fingerprint = androidBuildFingerprint ?: return false
-        cameraPackage == PIXEL_CAMERA_PACKAGE &&
-            cameraVersionCode == SUPPORTED_CAMERA_VERSION_CODE &&
-            cameraSigningCertificateSha256 == GOOGLE_CAMERA_CERTIFICATE_SHA256 &&
-            locale.language == "en" && locale.country == "US" &&
-            orientation == DisplayOrientation.PORTRAIT &&
-            fontScale == 1f && defaultDisplayConfiguration && displayWidthPx < displayHeightPx &&
-            fingerprint.isSupportedGoogleBuild(deviceCodename)
+        matches(model) && hasSupportedCamera() && hasSupportedDisplayEnvironment() &&
+            PixelSystemBuildPolicy.isApprovedGlobalStable(model, fingerprint)
     }
 
-    private fun String.isSupportedGoogleBuild(deviceCodename: String): Boolean =
-        startsWith("google/") &&
-        contains("/$deviceCodename:") &&
-        endsWith(":user/release-keys") &&
-        !contains("_beta/") &&
-        !contains("dev-keys") &&
-        !contains("test-keys")
+    private fun PixelCameraEnvironment.matches(model: SupportedPixelModel): Boolean =
+        deviceModel == model.model && deviceCodename == model.codename &&
+            androidSdk == SUPPORTED_ANDROID_SDK
+
+    private fun PixelCameraEnvironment.hasSupportedCamera(): Boolean =
+        cameraPackage == PIXEL_CAMERA_PACKAGE &&
+            cameraVersionCode == SUPPORTED_CAMERA_VERSION_CODE &&
+            cameraSigningCertificateSha256 == GOOGLE_CAMERA_CERTIFICATE_SHA256
+
+    private fun PixelCameraEnvironment.hasSupportedDisplayEnvironment(): Boolean {
+        val locale = Locale.forLanguageTag(localeTag)
+        return locale.language == "en" && locale.country == "US" &&
+            orientation == DisplayOrientation.PORTRAIT && fontScale == 1f &&
+            defaultDisplayConfiguration && displayWidthPx < displayHeightPx
+    }
 
     private fun exactProfileId(environment: PixelCameraEnvironment): String {
         val identity = listOf(
@@ -73,8 +78,27 @@ internal object PixelCameraProfileTemplateFactory {
     }
 
     private const val PIXEL_CAMERA_PACKAGE = "com.google.android.GoogleCamera"
+    private const val SUPPORTED_ANDROID_SDK = 37
     private const val SUPPORTED_CAMERA_VERSION_CODE = 69_481_630L
     private const val GOOGLE_CAMERA_CERTIFICATE_SHA256 =
         "f0fd6c5b410f25cb25c3b53346c8972fae30f8ee7411df910480ad6b2d60db83"
     private const val PROFILE_ID_HASH_BYTES = 8
+}
+
+internal object PixelSystemBuildPolicy {
+    fun isApprovedGlobalStable(
+        model: SupportedPixelModel,
+        fingerprint: String,
+    ): Boolean {
+        val match = GOOGLE_PIXEL_FINGERPRINT.matchEntire(fingerprint) ?: return false
+        return match.groupValues[PRODUCT_GROUP] == model.codename &&
+            match.groupValues[DEVICE_GROUP] == model.codename &&
+            model.globalStableBuildWindow.accepts(match.groupValues[BUILD_ID_GROUP])
+    }
+
+    private val GOOGLE_PIXEL_FINGERPRINT =
+        Regex("^google/([^/]+)/([^:]+):17/([^/]+)/([0-9]+):user/release-keys$")
+    private const val PRODUCT_GROUP = 1
+    private const val DEVICE_GROUP = 2
+    private const val BUILD_ID_GROUP = 3
 }

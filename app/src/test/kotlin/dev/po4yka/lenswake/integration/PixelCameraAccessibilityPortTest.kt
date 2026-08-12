@@ -892,7 +892,10 @@ class PixelCameraAccessibilityProfileValidationTest : PixelCameraAccessibilityPo
     @Test
     fun `computed probable compatibility requires rehearsal`() = runTest {
         val gateway = FakeAccessibilityGateway(activeSignals())
-        val current = environment().copy(androidBuildFingerprint = "different-build")
+        val current = environment().copy(
+            androidBuildFingerprint =
+                "google/husky/husky:17/CP2A.260805.005/1:user/release-keys",
+        )
 
         val result = port(currentEnvironment = current, gateway = gateway).inspect(profileUse())
 
@@ -1059,10 +1062,14 @@ abstract class PixelCameraAccessibilityPortTestFixture {
     protected fun environment(): PixelCameraEnvironment = PixelCameraEnvironment(
         deviceManufacturer = "Google",
         deviceModel = "Pixel 8 Pro",
+        deviceCodename = "husky",
         androidSdk = 37,
-        androidBuildFingerprint = "google/husky/verified",
+        androidBuildFingerprint =
+            "google/husky/husky:17/CP2A.260705.006/15641320:user/release-keys",
         cameraPackage = CAMERA_PACKAGE,
-        cameraVersionCode = 700_000_000,
+        cameraVersionCode = 69_481_630L,
+        cameraSigningCertificateSha256 =
+            "f0fd6c5b410f25cb25c3b53346c8972fae30f8ee7411df910480ad6b2d60db83",
         localeTag = "en-US",
         displayWidthPx = 1_344,
         displayHeightPx = 2_992,

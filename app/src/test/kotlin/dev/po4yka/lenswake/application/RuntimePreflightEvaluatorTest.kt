@@ -272,7 +272,10 @@ class RuntimePreflightEvaluatorTest {
     @Test
     fun environmentDriftRequiresRehearsalAndSchemaDriftIsIncompatible() {
         val calibrated = environment()
-        val fingerprintDrift = calibrated.copy(androidBuildFingerprint = "google/husky/new-build")
+        val fingerprintDrift = calibrated.copy(
+            androidBuildFingerprint =
+                "google/husky/husky:17/CP2A.260805.005/1:user/release-keys",
+        )
         val versionDrift = calibrated.copy(cameraVersionCode = calibrated.cameraVersionCode + 1)
         val schemaDrift = profile(calibrated).copy(
             selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION + 1,
@@ -301,6 +304,30 @@ class RuntimePreflightEvaluatorTest {
             "No compatible profile is available for the current environment.",
             compatibilityMessage(current, profile(otherDevice)),
         )
+    }
+
+    @Test
+    fun stableLookingBetaCarrierAndCustomEnvironmentsFailPreflightForPhysicalProfiles() {
+        val stable = environment()
+        val rejectedFingerprints = listOf(
+            "google/husky/husky:17/CP41.260701.005/15834971:user/release-keys",
+            "google/husky/husky:17/CP2A.260705.006.A1/15641321:user/release-keys",
+            "google/husky/husky:17/CUSTOM.260705.006/1:user/release-keys",
+        )
+
+        rejectedFingerprints.forEach { fingerprint ->
+            val rejected = stable.copy(androidBuildFingerprint = fingerprint)
+            val check = evaluator.evaluate(
+                observation = observation(cameraEnvironment = rejected),
+                profiles = listOf(profile(rejected)),
+            ).checks.single { it.type == PreflightCheckType.PROFILE_COMPATIBILITY }
+
+            assertEquals(PreflightStatus.FAILED, check.status, fingerprint)
+            assertEquals(
+                "No compatible profile is available for the current environment.",
+                check.message,
+            )
+        }
     }
 
     private fun compatibilityMessage(
@@ -377,10 +404,14 @@ class RuntimePreflightEvaluatorTest {
     private fun environment() = PixelCameraEnvironment(
         deviceManufacturer = "Google",
         deviceModel = "Pixel 8 Pro",
+        deviceCodename = "husky",
         androidSdk = 37,
-        androidBuildFingerprint = "google/husky/build",
+        androidBuildFingerprint =
+            "google/husky/husky:17/CP2A.260705.006/15641320:user/release-keys",
         cameraPackage = "com.google.android.GoogleCamera",
         cameraVersionCode = 69_481_630L,
+        cameraSigningCertificateSha256 =
+            "f0fd6c5b410f25cb25c3b53346c8972fae30f8ee7411df910480ad6b2d60db83",
         localeTag = "en-US",
         displayWidthPx = 1_008,
         displayHeightPx = 2_244,
