@@ -454,6 +454,7 @@ jobs:
           --repo "$GITHUB_REPOSITORY"
       - name: Create, verify, and publish GitHub Release
         env:
+          CERTIFICATION_BUNDLE: release/Lenswake-${{ needs.publish-validate.outputs.version-name }}-certification.jar
           GH_TOKEN: ${{ github.token }}
           RELEASE_APK: release/Lenswake-${{ needs.publish-validate.outputs.version-name }}.apk
           RELEASE_TAG: ${{ inputs.tag }}
@@ -463,4 +464,4 @@ jobs:
           "$RELEASE_APK"
           release/SHA256SUMS.txt
           release/PHYSICAL-ACCEPTANCE.txt
-          "release/Lenswake-${{ needs.publish-validate.outputs.version-name }}-certification.jar"
+          "$CERTIFICATION_BUNDLE"
