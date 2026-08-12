@@ -84,17 +84,18 @@ On 2026-08-12 the implementation working tree passed:
 
 Hosted evidence for the CI/CD implementation on 2026-08-12 currently includes:
 
-- the `host` gate passed on `dc155b8`;
-- the ordinary API-35 and API-36 emulator matrix passed on `dc155b8`;
-- API-37 reached and executed all 21 data instrumentation tests after the AVD received the required
-  4096 MB of RAM, then exposed an Android-17 migration-fixture incompatibility: Room could not create
-  its lock file because the app database directory did not yet exist;
-- Zizmor passed on `dc155b8`; CodeQL compiled the project but extracted no sources because Gradle
-  restored every compilation task from cache. Both hosted findings are fixed after this snapshot and
-  require confirmation on the next `main` run.
+- [main CI run 31575634848](https://github.com/po4yka/Lenswake/actions/runs/31575634848)
+  passed the host gate and the API-35/36/37 matrix on `8c1454e`; API 37 used the current
+  `37.2-beta2` 16 KB Google APIs image, ran 22 data tests and 121 app tests, and kept all four
+  opt-in physical fixtures skipped;
+- [Security run 31575635008](https://github.com/po4yka/Lenswake/actions/runs/31575635008)
+  passed Zizmor and CodeQL on the same SHA;
+- temporary validation [PR #3](https://github.com/po4yka/Lenswake/pull/3) passed the PR host gate,
+  API-35 instrumentation smoke, Dependency Review, Zizmor, and CodeQL against current `main`; the
+  empty validation PR was then closed and its branch deleted;
+- GitHub Dependency Graph is enabled so Dependency Review is supported.
 
-The PR-only API-35 smoke and Dependency Review jobs remain unobserved. No production tag or release
-workflow has run. Connected opt-in physical suites were not run.
+No production tag or release workflow has run. Connected opt-in physical suites were not run.
 
 ## Historical physical artifacts
 
