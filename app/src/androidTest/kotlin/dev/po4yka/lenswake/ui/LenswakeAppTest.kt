@@ -265,9 +265,13 @@ class LenswakeAppTest {
         )
 
         composeRule.onNodeWithText("Profiles").performClick()
-        composeRule.onNodeWithText("Camera profile could not be installed").assertExists()
+        val installFailure = hasText("Camera profile could not be installed")
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToNode(installFailure)
+        composeRule.onNode(installFailure).assertExists()
         composeRule.onNodeWithText("The environment does not match.").assertExists()
-        composeRule.onNode(hasText("Test recording") and hasClickAction()).assertIsNotEnabled()
+        val rehearsal = hasText("Test recording") and hasClickAction()
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToNode(rehearsal)
+        composeRule.onNode(rehearsal).assertIsNotEnabled()
     }
 
     @Test
@@ -326,9 +330,13 @@ class LenswakeAppTest {
         )
 
         composeRule.onNodeWithText("Profiles").performClick()
-        composeRule.onNodeWithText("Active test recording").assertExists()
+        val activeRehearsal = hasText("Active test recording")
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToNode(activeRehearsal)
+        composeRule.onNode(activeRehearsal).assertExists()
         composeRule.onNodeWithText(detail).assertExists()
-        composeRule.onNode(hasText("Test recording") and hasClickAction()).assertIsNotEnabled()
+        val rehearsal = hasText("Test recording") and hasClickAction()
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToNode(rehearsal)
+        composeRule.onNode(rehearsal).assertIsNotEnabled()
     }
 
     @Test
