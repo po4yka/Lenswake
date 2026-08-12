@@ -1,6 +1,6 @@
 # Lenswake status and evidence boundary
 
-**Snapshot:** `main@f33d15c`
+**Snapshot:** `main@dc155b8`
 
 **Reviewed:** 2026-08-12
 
@@ -75,8 +75,19 @@ On 2026-08-12 the implementation working tree passed:
   committed certificate fingerprint, and absence of `CAMERA`, `RECORD_AUDIO`, and `INTERNET`;
 - `./gradlew check assembleDebug :app:assembleDebugAndroidTest :data:assembleDebugAndroidTest`.
 
-Hosted workflows and emulator instrumentation have not yet run for this implementation. Connected
-and opt-in physical suites were not run.
+Hosted evidence for the CI/CD implementation on 2026-08-12 currently includes:
+
+- the `host` gate passed on `dc155b8`;
+- the ordinary API-35 and API-36 emulator matrix passed on `dc155b8`;
+- API-37 reached and executed all 21 data instrumentation tests after the AVD received the required
+  4096 MB of RAM, then exposed an Android-17 migration-fixture incompatibility: Room could not create
+  its lock file because the app database directory did not yet exist;
+- Zizmor passed on `dc155b8`; CodeQL compiled the project but extracted no sources because Gradle
+  restored every compilation task from cache. Both hosted findings are fixed after this snapshot and
+  require confirmation on the next `main` run.
+
+The PR-only API-35 smoke and Dependency Review jobs remain unobserved. No production tag or release
+workflow has run. Connected opt-in physical suites were not run.
 
 ## Historical physical artifacts
 

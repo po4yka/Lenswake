@@ -13,6 +13,7 @@ import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import kotlinx.coroutines.runBlocking
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -26,6 +27,15 @@ class LenswakeDatabaseMigrationTest {
         InstrumentationRegistry.getInstrumentation(),
         LenswakeDatabase::class.java,
     )
+
+    @Before
+    fun createDatabaseDirectory() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseDirectory = checkNotNull(context.getDatabasePath(DATABASE_NAME).parentFile)
+        check(databaseDirectory.isDirectory || databaseDirectory.mkdirs()) {
+            "Unable to create migration database directory: $databaseDirectory"
+        }
+    }
 
     @Test
     fun migratesVersionOneToCurrentAndKeepsLegacyProfileReadable() {
