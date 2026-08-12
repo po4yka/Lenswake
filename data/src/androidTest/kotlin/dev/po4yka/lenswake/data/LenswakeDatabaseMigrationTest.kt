@@ -18,7 +18,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class LenswakeDatabaseMigrationTest {
@@ -28,15 +27,7 @@ class LenswakeDatabaseMigrationTest {
         LenswakeDatabase::class.java,
     )
 
-    private val databaseName: String
-        get() {
-            val fixtureDirectory =
-                ApplicationProvider.getApplicationContext<Context>().noBackupFilesDir
-            check(fixtureDirectory.isDirectory || fixtureDirectory.mkdirs()) {
-                "Unable to create migration fixture directory: $fixtureDirectory"
-            }
-            return File(fixtureDirectory, DATABASE_FILE_NAME).absolutePath
-        }
+    private val databaseName = DATABASE_FILE_NAME
 
     @Test
     fun migratesVersionOneToCurrentAndKeepsLegacyProfileReadable() {
