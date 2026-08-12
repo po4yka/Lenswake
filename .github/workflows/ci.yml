@@ -139,7 +139,7 @@ jobs:
             api-level: "37.0"
             target: google_apis
             channel: canary
-            ram-size: 4096M
+            ram-size: 6144M
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
