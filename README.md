@@ -26,8 +26,8 @@ MediaRecorder, custom encoding, root, a cloud service, or a hidden recording pat
 | Local implementation | Schedules, profiles, rehearsal, durable alarms, wake, START/STOP automation, saved-media verification, recovery, diagnostics |
 | Historical device proof | Locked/Doze and reboot scenarios passed for explicitly recorded older v3 artifacts |
 | Current-HEAD device proof | A fresh Pixel 8 Pro production rehearsal and full acceptance matrix are required |
-| Distribution | Personal sideload; no published release artifact |
-| Hosted CI | Not configured in this repository |
+| Distribution | Signed minified APK workflow for GitHub Releases; no release published yet |
+| Hosted CI | Host checks, API 35 PR smoke, API 35/36/37 main/nightly matrix, CodeQL and dependency review configured |
 
 The distinction above matters: passing source tests does not prove undocumented Pixel Camera UI
 automation, and physical proof for one APK does not automatically transfer to later commits. See
@@ -133,6 +133,11 @@ The current repository passes the full local gate shown above. Android-test APK 
 separately; connected and opt-in physical suites were not run for this documentation update. See
 [docs/STATUS.md](docs/STATUS.md).
 
+GitHub Actions repeats the host gate, runs ordinary instrumentation on Android emulators, and keeps
+those results separate from physical Pixel evidence. Release tags additionally repeat all gates before
+a manually approved protected job can sign and publish an APK. See the
+[GitHub Releases runbook](docs/releasing/GITHUB_RELEASES.md).
+
 Physical fixtures can change device state, create schedules and alarms, or start Pixel Camera. Run
 them only with explicit intent, always pin the serial, and follow
 [docs/testing/PHYSICAL_PIXEL.md](docs/testing/PHYSICAL_PIXEL.md).
@@ -174,6 +179,7 @@ Dependency direction is `:app → :automation/:core/:data`, `:automation → :co
 - [Architecture](docs/ARCHITECTURE.md)
 - [Device setup](docs/SETUP.md)
 - [Physical Pixel validation](docs/testing/PHYSICAL_PIXEL.md)
+- [GitHub Releases runbook](docs/releasing/GITHUB_RELEASES.md)
 - [Historical Pixel 8 Pro baseline](docs/research/pixel-8-pro-baseline-2026-08-09.md)
 - [Pixel Camera dialog recovery evidence](docs/research/pixel-camera-dialog-recovery.md)
 - [Android 15–17 inset research](docs/research/android-15-17-system-insets.md)

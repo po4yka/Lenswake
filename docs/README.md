@@ -12,6 +12,7 @@ artifact and environment it names; it does not silently update when `main` chang
 | [Architecture](ARCHITECTURE.md) | Current modules, runtime, persistence, state, recovery, and security contracts |
 | [Setup](SETUP.md) | Build, install, Android capability setup, profile installation, rehearsal |
 | [Physical Pixel validation](testing/PHYSICAL_PIXEL.md) | Evidence levels, safe device selection, scenario and cleanup requirements |
+| [GitHub Releases](releasing/GITHUB_RELEASES.md) | Versioning, signing, protected publication, artifact verification and post-release hardening |
 | [Agent contract](../AGENTS.md) | Non-negotiable engineering rules and validation behavior |
 
 ## Dated evidence records

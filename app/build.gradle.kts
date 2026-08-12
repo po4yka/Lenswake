@@ -1,8 +1,45 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
 }
+
+val appVersionProperties = Properties().apply {
+    rootProject.file("version.properties").inputStream().use { load(it) }
+}
+val appVersionName = requireNotNull(appVersionProperties.getProperty("versionName")) {
+    "version.properties must define versionName"
+}.also {
+    require(it.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?"))) {
+        "versionName must be a SemVer-compatible value: $it"
+    }
+}
+val appVersionCode = requireNotNull(appVersionProperties.getProperty("versionCode")) {
+    "version.properties must define versionCode"
+}.toInt().also {
+    require(it > 0) { "versionCode must be positive" }
+}
+
+val releaseSigningPropertyNames = listOf(
+    "lenswake.release.storeFile",
+    "lenswake.release.storePassword",
+    "lenswake.release.keyAlias",
+    "lenswake.release.keyPassword",
+)
+val releaseSigningProperties = releaseSigningPropertyNames.associateWith {
+    providers.gradleProperty(it).orNull
+}
+val configuredReleaseSigningProperties = releaseSigningProperties.filterValues { !it.isNullOrBlank() }
+require(
+    configuredReleaseSigningProperties.isEmpty() ||
+        configuredReleaseSigningProperties.size == releaseSigningPropertyNames.size,
+) {
+    val missing = releaseSigningProperties.filterValues { it.isNullOrBlank() }.keys.sorted()
+    "Release signing is partially configured; missing: ${missing.joinToString()}"
+}
+val releaseSigningEnabled = configuredReleaseSigningProperties.isNotEmpty()
 
 android {
     namespace = "dev.po4yka.lenswake"
@@ -12,15 +49,29 @@ android {
         applicationId = "dev.po4yka.lenswake"
         minSdk = 35
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        if (releaseSigningEnabled) {
+            create("release") {
+                storeFile = rootProject.file(releaseSigningProperties.getValue("lenswake.release.storeFile")!!)
+                storePassword = releaseSigningProperties.getValue("lenswake.release.storePassword")
+                keyAlias = releaseSigningProperties.getValue("lenswake.release.keyAlias")
+                keyPassword = releaseSigningProperties.getValue("lenswake.release.keyPassword")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            if (releaseSigningEnabled) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

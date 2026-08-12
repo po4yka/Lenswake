@@ -335,6 +335,20 @@ archive is not implemented.
 | Tests | JUnit 6 host tests, AndroidX Test/runner, Compose UI tests |
 | Static analysis | Detekt on all modules; Android lint warnings-as-errors except three volatile dependency recommendations |
 
+## Build and distribution boundary
+
+`version.properties` is the application version source for Gradle and the release workflow. Local
+release builds remain unsigned when no signing properties are present; a partial signing configuration
+fails during Gradle configuration. The protected GitHub `release` environment is the only hosted job
+that receives the complete signing secret set.
+
+Pull requests run the host gate and ordinary API-35 AOSP ATD instrumentation. Pushes to `main` and the
+nightly schedule add API-36 AOSP ATD and the current Android-17/API-37 Google APIs preview image from
+the canary SDK channel; Google has not published an API-37 ATD image. A SemVer tag on `main` repeats
+those checks at the exact tagged SHA before manual approval, then produces a signed minified APK,
+checksum, and provenance. Emulators validate Android framework boundaries only. The release remains
+physically unverified until its exact APK passes the Pixel 8 Pro evidence procedure.
+
 Exact dependency versions live in `gradle/libs.versions.toml`; do not duplicate them into agent
 instructions.
 
@@ -347,7 +361,7 @@ instructions.
 - implemented thermal and orientation policy beyond current observable preflight data;
 - current-HEAD Pixel 8 Pro acceptance, including real saved-media proof and induced typed dialogs;
 - complete physical layout/IME/navigation-mode matrix on Pixel 8 Pro;
-- hosted CI and managed-device matrix.
+- current-release Pixel 8 Pro acceptance for the exact signed distribution APK.
 
 These are gaps, not implied capabilities. See [STATUS.md](STATUS.md) for the current evidence boundary.
 

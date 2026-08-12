@@ -45,6 +45,39 @@ acceptance result.
 | Diagnostics timeline/text sharing | Yes | Unit/UI/intent tests | No special physical acceptance required; bounded to ten sessions |
 | Shizuku privileged path | No | Explicit unavailable provider only | Not applicable |
 
+## CI/CD evidence boundary
+
+The repository now defines separate GitHub Actions contracts for:
+
+- the full host gate and androidTest APK compilation;
+- ordinary API-35 emulator instrumentation on pull requests;
+- ordinary API-35/36 AOSP ATD and API-37 Google APIs preview instrumentation on `main`, nightly,
+  and release tags;
+- dependency review, CodeQL, and fail-closed Zizmor workflow auditing;
+- manually approved signing, package/version/certificate/permission verification, checksums,
+  provenance, and GitHub Release publication.
+
+Actions are full-SHA pinned and repository policy requires SHA pins. The protected `release`
+environment is restricted to `v*` tags and contains the signing secrets. The current certificate
+fingerprint is committed, while the private keystore remains outside the repository.
+
+Local workflow validation and signed-APK verification do not constitute hosted CI evidence. No
+production tag or GitHub Release has been created by this implementation, and no physical-device
+claim transfers to a future signed APK until that exact artifact is tested.
+
+On 2026-08-12 the implementation working tree passed:
+
+- `actionlint` for all three workflows and `shellcheck` for all CI scripts;
+- release identity/build contract tests, including the four negative release cases;
+- Zizmor 1.29.0 with offline `auditor` persona and complete collection, with no findings;
+- unsigned and protected-property signed `:app:assembleRelease` builds;
+- `apksigner` plus `apkanalyzer` verification of application ID, version `0.1.0` / code `1`, the
+  committed certificate fingerprint, and absence of `CAMERA`, `RECORD_AUDIO`, and `INTERNET`;
+- `./gradlew check assembleDebug :app:assembleDebugAndroidTest :data:assembleDebugAndroidTest`.
+
+Hosted workflows and emulator instrumentation have not yet run for this implementation. Connected
+and opt-in physical suites were not run.
+
 ## Historical physical artifacts
 
 The detailed record is [pixel-8-pro-baseline-2026-08-09.md](research/pixel-8-pro-baseline-2026-08-09.md).
