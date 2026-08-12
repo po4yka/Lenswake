@@ -85,17 +85,20 @@ jobs:
             api-level: 35
             target: aosp_atd
             channel: stable
+            profile: pixel_7_pro
             ram-size: 2048M
           - label: 36
             api-level: 36
             target: aosp_atd
             channel: stable
+            profile: pixel_7_pro
             ram-size: 2048M
           - label: 37
             api-level: "37.0"
             target: google_apis
             channel: canary
-            ram-size: 6144M
+            profile: pixel_2
+            ram-size: 4096M
     steps:
       - name: Check out tagged commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -132,7 +135,7 @@ jobs:
           target: ${{ matrix.target }}
           channel: ${{ matrix.channel }}
           arch: x86_64
-          profile: pixel_7_pro
+          profile: ${{ matrix.profile }}
           ram-size: ${{ matrix.ram-size }}
           disk-size: 6G
           script: scripts/ci/run-instrumentation.sh
