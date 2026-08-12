@@ -108,7 +108,8 @@ private class AlarmExecutionContext(
             AlarmKind.STOP -> schedule.stopAt
         }
         val structuralReason = when {
-            !schedule.enabled -> "The alarm schedule is disabled"
+            !schedule.enabled && trigger.kind == AlarmKind.START ->
+                "The alarm schedule is disabled"
             schedule.updatedAt != trigger.scheduleUpdatedAt ->
                 "The alarm belongs to an obsolete schedule revision"
             expected != trigger.expectedAt ->
@@ -510,19 +511,25 @@ private class StopAlarmHandler(
         context.executionRepository.findPixelCameraOwnerForSchedule(schedule.id)
     }.fold(
         onSuccess = { active ->
-            active?.let(ExecutionLookup::Found) ?: context.loadExecution(deterministicId).fold(
-                onSuccess = { session ->
-                    session?.let(ExecutionLookup::Found)
-                        ?: ExecutionLookup.Failed(
-                            retryable("No persisted execution exists for this STOP alarm"),
+            when {
+                active != null -> ExecutionLookup.Found(active)
+                !schedule.enabled -> ExecutionLookup.Failed(
+                    terminal("The disabled alarm schedule has no active Pixel Camera owner"),
+                )
+                else -> context.loadExecution(deterministicId).fold(
+                    onSuccess = { session ->
+                        session?.let(ExecutionLookup::Found)
+                            ?: ExecutionLookup.Failed(
+                                retryable("No persisted execution exists for this STOP alarm"),
+                            )
+                    },
+                    onFailure = { error ->
+                        ExecutionLookup.Failed(
+                            retryable("Could not load the execution for this STOP alarm", error),
                         )
-                },
-                onFailure = { error ->
-                    ExecutionLookup.Failed(
-                        retryable("Could not load the execution for this STOP alarm", error),
-                    )
-                },
-            )
+                    },
+                )
+            }
         },
         onFailure = { error ->
             ExecutionLookup.Failed(
