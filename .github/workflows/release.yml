@@ -96,7 +96,7 @@ jobs:
             target: google_apis
             channel: canary
             emulator-build: 15917651
-            ram-size: 6144M
+            ram-size: 4096M
     steps:
       - name: Check out tagged commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -117,6 +117,9 @@ jobs:
           :data:assembleDebugAndroidTest
           :app:assembleDebugAndroidTest
           --console=plain
+      - name: Stop Gradle daemons before emulator startup
+        if: always()
+        run: ./gradlew --stop
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |

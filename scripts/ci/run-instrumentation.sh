@@ -20,8 +20,15 @@ while (( SECONDS < deadline )); do
     adb shell test -d /sdcard/Android 2>/dev/null; then
     healthy_checks=$((healthy_checks + 1))
     if (( healthy_checks >= 5 )); then
-      ./gradlew :data:connectedDebugAndroidTest --no-parallel --console=plain
-      exec ./gradlew :app:connectedDebugAndroidTest --no-parallel --console=plain
+      gradle_runtime_options=(
+        --no-daemon
+        --no-parallel
+        --no-configuration-cache
+        --console=plain
+        '-Dorg.gradle.jvmargs=-Xmx1g -Dfile.encoding=UTF-8'
+      )
+      ./gradlew :data:connectedDebugAndroidTest "${gradle_runtime_options[@]}"
+      exec ./gradlew :app:connectedDebugAndroidTest "${gradle_runtime_options[@]}"
     fi
   else
     healthy_checks=0
