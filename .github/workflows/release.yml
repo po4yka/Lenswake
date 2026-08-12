@@ -85,15 +85,18 @@ jobs:
             api-level: 35
             target: aosp_atd
             channel: stable
+            ram-size: 2048M
           - label: 36
             api-level: 36
             target: aosp_atd
             channel: stable
+            ram-size: 2048M
           - label: 37
             api-level: "37.0"
             target: google_apis
             channel: canary
             emulator-build: 15917651
+            ram-size: 4096M
     steps:
       - name: Check out tagged commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -123,6 +126,7 @@ jobs:
           emulator-build: ${{ matrix.emulator-build }}
           arch: x86_64
           profile: pixel_7_pro
+          ram-size: ${{ matrix.ram-size }}
           disk-size: 6G
           script: >-
             ./gradlew

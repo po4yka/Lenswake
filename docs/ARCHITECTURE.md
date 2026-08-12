@@ -344,8 +344,9 @@ that receives the complete signing secret set.
 
 Pull requests run the host gate and ordinary API-35 AOSP ATD instrumentation. Pushes to `main` and the
 nightly schedule add API-36 AOSP ATD and the current Android-17/API-37 Google APIs preview image from
-the canary SDK channel with the emulator binary pinned to build `15917651`; Google has not published
-an API-37 ATD image. A SemVer tag on `main` repeats
+the canary SDK channel with the emulator binary pinned to build `15917651` and 4096 MB of AVD RAM;
+Android 17 phone AVDs require at least 4 GB, and Google has not published an API-37 ATD image. A SemVer
+tag on `main` repeats
 those checks at the exact tagged SHA before manual approval, then produces a signed minified APK,
 checksum, and provenance. Emulators validate Android framework boundaries only. The release remains
 physically unverified until its exact APK passes the Pixel 8 Pro evidence procedure.
