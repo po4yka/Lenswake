@@ -95,7 +95,6 @@ jobs:
             api-level: "37.0"
             target: google_apis
             channel: canary
-            emulator-build: 15917651
             ram-size: 4096M
     steps:
       - name: Check out tagged commit
@@ -132,7 +131,6 @@ jobs:
           api-level: ${{ matrix.api-level }}
           target: ${{ matrix.target }}
           channel: ${{ matrix.channel }}
-          emulator-build: ${{ matrix.emulator-build }}
           arch: x86_64
           profile: pixel_7_pro
           ram-size: ${{ matrix.ram-size }}
