@@ -13,12 +13,12 @@ import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import kotlinx.coroutines.runBlocking
-import org.junit.Before
 import org.junit.Rule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class LenswakeDatabaseMigrationTest {
@@ -28,19 +28,18 @@ class LenswakeDatabaseMigrationTest {
         LenswakeDatabase::class.java,
     )
 
-    @Before
-    fun createDatabaseDirectory() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        context.openOrCreateDatabase(DATABASE_DIRECTORY_SENTINEL, Context.MODE_PRIVATE, null).close()
-        check(context.deleteDatabase(DATABASE_DIRECTORY_SENTINEL))
-    }
+    private val databaseName: String
+        get() = File(
+            ApplicationProvider.getApplicationContext<Context>().cacheDir,
+            DATABASE_FILE_NAME,
+        ).absolutePath
 
     @Test
     fun migratesVersionOneToCurrentAndKeepsLegacyProfileReadable() {
         createVersionOneDatabase()
 
         val migrated = migrationHelper.runMigrationsAndValidate(
-            DATABASE_NAME,
+            databaseName,
             7,
             true,
             LenswakeDatabase.MIGRATION_1_2,
@@ -59,7 +58,7 @@ class LenswakeDatabaseMigrationTest {
         migrated.close()
 
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val database = Room.databaseBuilder(context, LenswakeDatabase::class.java, DATABASE_NAME)
+        val database = Room.databaseBuilder(context, LenswakeDatabase::class.java, databaseName)
             .addMigrations(
                 LenswakeDatabase.MIGRATION_1_2,
                 LenswakeDatabase.MIGRATION_2_3,
@@ -91,7 +90,7 @@ class LenswakeDatabaseMigrationTest {
 
     @Test
     fun migratesVersionTwoToThreeWithExistingExecutionOwnershipUnreleased() {
-        migrationHelper.createDatabase(DATABASE_NAME, 2).apply {
+        migrationHelper.createDatabase(databaseName, 2).apply {
             execSQL(
                 """
                 INSERT INTO execution_sessions (
@@ -110,7 +109,7 @@ class LenswakeDatabaseMigrationTest {
         }
 
         val migrated = migrationHelper.runMigrationsAndValidate(
-            DATABASE_NAME,
+            databaseName,
             3,
             true,
             LenswakeDatabase.MIGRATION_2_3,
@@ -134,14 +133,14 @@ class LenswakeDatabaseMigrationTest {
         createVersionThreeDatabase()
 
         migrationHelper.runMigrationsAndValidate(
-            DATABASE_NAME,
+            databaseName,
             4,
             true,
             LenswakeDatabase.MIGRATION_3_4,
         ).close()
 
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val database = Room.databaseBuilder(context, LenswakeDatabase::class.java, DATABASE_NAME)
+        val database = Room.databaseBuilder(context, LenswakeDatabase::class.java, databaseName)
             .addMigrations(
                 LenswakeDatabase.MIGRATION_3_4,
                 LenswakeDatabase.MIGRATION_4_5,
@@ -186,7 +185,7 @@ class LenswakeDatabaseMigrationTest {
         createVersionFourDatabase()
 
         val migrated = migrationHelper.runMigrationsAndValidate(
-            DATABASE_NAME,
+            databaseName,
             5,
             true,
             LenswakeDatabase.MIGRATION_4_5,
@@ -221,7 +220,7 @@ class LenswakeDatabaseMigrationTest {
 
     @Test
     fun migratesVersionFiveWithNullableRehearsalVerificationReceipt() {
-        migrationHelper.createDatabase(DATABASE_NAME, 5).apply {
+        migrationHelper.createDatabase(databaseName, 5).apply {
             execSQL(
                 """
                 INSERT INTO execution_sessions (
@@ -240,7 +239,7 @@ class LenswakeDatabaseMigrationTest {
         }
 
         val migrated = migrationHelper.runMigrationsAndValidate(
-            DATABASE_NAME,
+            databaseName,
             6,
             true,
             LenswakeDatabase.MIGRATION_5_6,
@@ -263,7 +262,7 @@ class LenswakeDatabaseMigrationTest {
     fun migratesVersionSixWithReadableEmptyDialogProfiles() {
         createVersionOneDatabase()
         migrationHelper.runMigrationsAndValidate(
-            DATABASE_NAME,
+            databaseName,
             6,
             true,
             LenswakeDatabase.MIGRATION_1_2,
@@ -274,7 +273,7 @@ class LenswakeDatabaseMigrationTest {
         ).close()
 
         val migrated = migrationHelper.runMigrationsAndValidate(
-            DATABASE_NAME,
+            databaseName,
             7,
             true,
             LenswakeDatabase.MIGRATION_6_7,
@@ -288,7 +287,7 @@ class LenswakeDatabaseMigrationTest {
         migrated.close()
 
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val database = Room.databaseBuilder(context, LenswakeDatabase::class.java, DATABASE_NAME)
+        val database = Room.databaseBuilder(context, LenswakeDatabase::class.java, databaseName)
             .addMigrations(LenswakeDatabase.MIGRATION_6_7)
             .build()
         val profile = runBlocking {
@@ -300,7 +299,7 @@ class LenswakeDatabaseMigrationTest {
     }
 
     private fun createVersionOneDatabase() {
-        migrationHelper.createDatabase(DATABASE_NAME, 1).apply {
+        migrationHelper.createDatabase(databaseName, 1).apply {
             insertVersionOneProfile()
             insertVersionOneSchedule()
             close()
@@ -346,7 +345,7 @@ class LenswakeDatabaseMigrationTest {
     }
 
     private fun createVersionThreeDatabase() {
-        migrationHelper.createDatabase(DATABASE_NAME, 3).apply {
+        migrationHelper.createDatabase(databaseName, 3).apply {
             insertCurrentProfileJson()
             insertSchemaOneProfileJson()
             close()
@@ -402,7 +401,7 @@ class LenswakeDatabaseMigrationTest {
     }
 
     private fun createVersionFourDatabase() {
-        migrationHelper.createDatabase(DATABASE_NAME, 4).apply {
+        migrationHelper.createDatabase(databaseName, 4).apply {
             insertCompletedExecution()
             insertActiveExecution()
             close()
@@ -445,7 +444,6 @@ class LenswakeDatabaseMigrationTest {
     }
 
     private companion object {
-        const val DATABASE_NAME = "lenswake-migration-test"
-        const val DATABASE_DIRECTORY_SENTINEL = "lenswake-migration-directory-sentinel"
+        const val DATABASE_FILE_NAME = "lenswake-migration-test"
     }
 }
