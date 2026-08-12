@@ -77,6 +77,27 @@ internal fun UiNodeSnapshot.hasSameInteractionIdentityAs(expected: UiNodeSnapsho
         (!checkable || checked == expected.checked) &&
         enabled == expected.enabled
 
+internal fun validateFreshAccessibilityTarget(
+    target: AccessibilityNodeInfo,
+    expected: UiNodeSnapshot,
+    screenWidth: Int,
+    screenHeight: Int,
+): AccessibilityDispatchResult? {
+    val isEligible = target.packageName?.toString() == PIXEL_CAMERA_PACKAGE &&
+        target.isVisibleToUser && target.isEnabled
+    val observed = if (isEligible) {
+        target.toSnapshot(expected.id, screenWidth, screenHeight)
+    } else {
+        null
+    }
+    return when {
+        !isEligible -> AccessibilityDispatchResult.TargetNotEligible
+        observed?.hasSameInteractionIdentityAs(expected) != true ->
+            AccessibilityDispatchResult.TargetIdentityChanged
+        else -> null
+    }
+}
+
 /**
  * Narrow Pixel Camera accessibility boundary. It creates ephemeral platform-neutral snapshots and
  * never persists an AccessibilityNodeInfo or a UI tree.
@@ -300,57 +321,12 @@ private object AccessibilityTreeInspector {
         expected: UiNodeSnapshot,
         screenWidth: Int,
         screenHeight: Int,
-    ): ExpectedNodeResolution {
-        val isEligible = target.packageName?.toString() == PIXEL_CAMERA_PACKAGE &&
-            target.isVisibleToUser &&
-            target.isEnabled
-        val observed = if (isEligible) {
-            target.toSnapshot(expected.id, screenWidth, screenHeight)
-        } else {
-            null
-        }
-        return when {
-            !isEligible -> rejected(AccessibilityDispatchResult.TargetNotEligible)
-            observed?.hasSameInteractionIdentityAs(expected) != true ->
-                rejected(AccessibilityDispatchResult.TargetIdentityChanged)
-            else -> ExpectedNodeResolution.Found(target)
-        }
-    }
-
-    private fun AccessibilityNodeInfo.toSnapshot(
-        path: String,
-        screenWidth: Int,
-        screenHeight: Int,
-    ): UiNodeSnapshot {
-        val bounds = Rect().also(::getBoundsInScreen)
-        val left = (bounds.left.toFloat() / screenWidth).coerceIn(0f, 1f)
-        val top = (bounds.top.toFloat() / screenHeight).coerceIn(0f, 1f)
-        val right = (bounds.right.toFloat() / screenWidth).coerceIn(0f, 1f)
-        val bottom = (bounds.bottom.toFloat() / screenHeight).coerceIn(0f, 1f)
-        return UiNodeSnapshot(
-            id = path,
-            packageName = packageName?.toString(),
-            resourceId = viewIdResourceName,
-            role = className?.toString(),
-            contentDescription = contentDescription?.toString(),
-            text = text?.toString(),
-            bounds = if (bounds.isEmpty || left >= right || top >= bottom) {
-                null
-            } else {
-                NormalizedBounds(left, top, right, bottom)
-            },
-            visible = isVisibleToUser,
-            clickable = isClickable,
-            selected = isSelected,
-            checkable = isCheckable,
-            checked = if (!isCheckable) {
-                null
-            } else {
-                checkedValue()
-            },
-            enabled = isEnabled,
-        )
-    }
+    ): ExpectedNodeResolution = validateFreshAccessibilityTarget(
+        target = target,
+        expected = expected,
+        screenWidth = screenWidth,
+        screenHeight = screenHeight,
+    )?.let(::rejected) ?: ExpectedNodeResolution.Found(target)
 
     private fun resolvePath(root: AccessibilityNodeInfo, path: String): PathResolution {
         val segments = path.split('/')
@@ -392,27 +368,58 @@ private object AccessibilityTreeInspector {
         }
     }
 
-    private fun AccessibilityNodeInfo.checkedValue(): Boolean? =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
-            checkedValueApi36()
-        } else {
-            isChecked
-        }
-
-    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
-    private fun AccessibilityNodeInfo.checkedValueApi36(): Boolean? = when (getChecked()) {
-        AccessibilityNodeInfo.CHECKED_STATE_TRUE -> true
-        AccessibilityNodeInfo.CHECKED_STATE_FALSE -> false
-        AccessibilityNodeInfo.CHECKED_STATE_PARTIAL -> null
-        else -> null
-    }
-
     private fun rejected(result: AccessibilityDispatchResult): ExpectedNodeResolution =
         ExpectedNodeResolution.Rejected(result)
 
     private const val ROOT_PATH = "root"
     private const val MAX_NODE_COUNT = 512
     private const val MAX_DEPTH = 32
+}
+
+private fun AccessibilityNodeInfo.toSnapshot(
+    path: String,
+    screenWidth: Int,
+    screenHeight: Int,
+): UiNodeSnapshot {
+    val bounds = Rect().also(::getBoundsInScreen)
+    val left = (bounds.left.toFloat() / screenWidth).coerceIn(0f, 1f)
+    val top = (bounds.top.toFloat() / screenHeight).coerceIn(0f, 1f)
+    val right = (bounds.right.toFloat() / screenWidth).coerceIn(0f, 1f)
+    val bottom = (bounds.bottom.toFloat() / screenHeight).coerceIn(0f, 1f)
+    return UiNodeSnapshot(
+        id = path,
+        packageName = packageName?.toString(),
+        resourceId = viewIdResourceName,
+        role = className?.toString(),
+        contentDescription = contentDescription?.toString(),
+        text = text?.toString(),
+        bounds = if (bounds.isEmpty || left >= right || top >= bottom) {
+            null
+        } else {
+            NormalizedBounds(left, top, right, bottom)
+        },
+        visible = isVisibleToUser,
+        clickable = isClickable,
+        selected = isSelected,
+        checkable = isCheckable,
+        checked = if (!isCheckable) null else checkedValue(),
+        enabled = isEnabled,
+    )
+}
+
+private fun AccessibilityNodeInfo.checkedValue(): Boolean? =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
+        checkedValueApi36()
+    } else {
+        isChecked
+    }
+
+@RequiresApi(Build.VERSION_CODES.BAKLAVA)
+private fun AccessibilityNodeInfo.checkedValueApi36(): Boolean? = when (getChecked()) {
+    AccessibilityNodeInfo.CHECKED_STATE_TRUE -> true
+    AccessibilityNodeInfo.CHECKED_STATE_FALSE -> false
+    AccessibilityNodeInfo.CHECKED_STATE_PARTIAL -> null
+    else -> null
 }
 
 private sealed interface SnapshotCollection {

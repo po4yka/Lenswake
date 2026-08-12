@@ -60,6 +60,8 @@ remain subject to a fresh exact-environment rehearsal.
 | Reboot/time recovery | Yes | Unit/instrumentation coverage | Reboot-before-START passed for historical named APK |
 | Locked display `DEVICE_WAKE` | Yes | Instrumentation fixtures | Passed for historical named APK |
 | Secure Pixel Camera launch | Yes | Dynamic resolver tests | Passed for historical named APK |
+| Exact environment/profile admission | Yes | Instrumentation covers complete environment collection, signer rejection, exact install/preflight, and v5 Room round-trip | Current signed-release device gate open |
+| Fresh capture-control resolution | Yes | Instrumentation covers fresh semantic snapshots and changed-identity rejection for 4K, 60 FPS, every Time Lapse speed, every lens, and Night Sight | Current Accessibility exposure/rehearsal open |
 | Time Lapse 120× rear-main START/STOP | Yes | Engine/adapter tests | Passed for historical profile schema v3 artifact |
 | Process-death rehearsal STOP backstop | Yes | Coordinator/alarm tests | Passed for historical named APK |
 | Saved-media verification | Yes | Android integration tests cover permission/version/ambiguity/no-candidate behavior | Real current-HEAD Pixel Camera media publication open |
