@@ -48,6 +48,17 @@ class RehearsalVerificationPolicyTest {
                 capture,
             ),
         )
+        assertFalse(
+            RehearsalVerificationPolicy.qualifies(
+                session,
+                profile.copy(
+                    selectorTemplate = profile.selectorTemplate.copy(
+                        version = profile.selectorTemplate.version + 1,
+                    ),
+                ),
+                capture,
+            ),
+        )
     }
 
     @Test

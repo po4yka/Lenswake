@@ -64,4 +64,10 @@ class SupportedPixelModelRegistryTest {
         assertNull(SupportedPixelModelRegistry.find("Google", "Pixel 7", "husky"))
         assertNull(SupportedPixelModelRegistry.find("Another", "Pixel 7", "panther"))
     }
+
+    @Test
+    fun `selector templates use the provenance-corrected version`() {
+        assertEquals(2, PixelCameraTemplateKind.SEMANTIC_STANDARD.reference.version)
+        assertEquals(2, PixelCameraTemplateKind.SEMANTIC_TELEPHOTO.reference.version)
+    }
 }

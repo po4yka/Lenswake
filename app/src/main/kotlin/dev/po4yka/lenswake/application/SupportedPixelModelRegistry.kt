@@ -6,8 +6,8 @@ import dev.po4yka.lenswake.core.SupportTier
 enum class PixelCameraTemplateKind(
     val reference: SelectorTemplateReference,
 ) {
-    SEMANTIC_STANDARD(SelectorTemplateReference("pixel-7-semantic", 1)),
-    SEMANTIC_TELEPHOTO(SelectorTemplateReference("pixel-8-pro-telephoto", 1)),
+    SEMANTIC_STANDARD(SelectorTemplateReference("pixel-7-semantic", 2)),
+    SEMANTIC_TELEPHOTO(SelectorTemplateReference("pixel-8-pro-telephoto", 2)),
 }
 
 enum class PixelGlobalStableBuildWindow(

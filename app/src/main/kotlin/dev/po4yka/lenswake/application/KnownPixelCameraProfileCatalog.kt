@@ -17,10 +17,12 @@ import dev.po4yka.lenswake.core.UiSelector
 import dev.po4yka.lenswake.core.UiSelectorSet
 
 /**
- * Profiles backed by a reproducible physical-device calibration.
+ * Version-pinned semantic selector candidates documented in
+ * `docs/research/pixel-6-10a-template-provenance.md`.
  *
- * A catalog entry is offered only for an exact environment identity. Installing it does not make
- * it verified: the production automation stack must still complete a rehearsal on that device.
+ * Static APK resources and historical observations are not physical certification. A catalog entry
+ * is offered only for an exact environment identity, and production use still requires a successful
+ * rehearsal of the exact capture configuration on that device.
  */
 object KnownPixelCameraProfileCatalog {
     private val ACTIVE_MODE_REGION = NormalizedBounds(0.35f, 0.80f, 0.65f, 0.90f)
@@ -60,7 +62,7 @@ object KnownPixelCameraProfileCatalog {
             ),
             AutomationAction.SELECT_VIDEO_FRAME_RATE_60 to actionSelector(
                 contentDescription = "60 FPS",
-                text = "60 FPS",
+                text = "60",
                 minimumScore = 90,
             ),
             AutomationAction.SELECT_TIME_LAPSE to UiSelectorSet(
@@ -206,7 +208,7 @@ object KnownPixelCameraProfileCatalog {
             ),
             PixelCameraStateSignal.VIDEO_FRAME_RATE_60_ACTIVE to stateSelector(
                 contentDescription = "60 FPS",
-                text = "60 FPS",
+                text = "60",
                 expectedChecked = true,
                 minimumScore = 105,
             ),

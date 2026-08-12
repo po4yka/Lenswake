@@ -39,6 +39,15 @@ beta plus carrier-suffixed, custom, older, and cross-cohort IDs are rejected. Th
 installation, rehearsal, saved-media, or acceptance, and the local fingerprint check is not remote
 or hardware-backed OS attestation.
 
+The same read-only session pinned both installed Pixel Camera 10.4.117 variants by package-part,
+base-APK, signer, resources, and DEX identity. The resulting
+[selector provenance record](research/pixel-6-10a-template-provenance.md) maps every new 4K/60,
+Time Lapse speed, lens, and Night Sight candidate to its exact resource and code construction where
+available. It also corrected the 60 FPS candidate to visible text `60` plus content description
+`60 FPS`; both templates are consequently version 2. This is static implementation evidence only:
+current Accessibility exposure, uniqueness, selected/checked state, and combination availability
+remain subject to a fresh exact-environment rehearsal.
+
 ## Evidence matrix
 
 | Capability | Implemented at snapshot | Local/integration evidence | Physical evidence boundary |

@@ -221,7 +221,11 @@ top matches, insufficient score, environment drift, and schema drift fail closed
 schema is v5. A fixed 17-entry model/codename registry selects separate standard (Pixel 7 class)
 or telephoto (Pixel 8 Pro class) semantic-only templates and derives a deterministic
 exact-environment profile. Their current selectors are static package-resource candidates, not
-physical certification evidence. No normalized coordinate gesture is copied between models.
+physical certification evidence. Template version 2 is tied to the dated, version-pinned APK
+resource and call-site record in
+[pixel-6-10a-template-provenance.md](research/pixel-6-10a-template-provenance.md); changing these
+candidates invalidates prior definition fingerprints and rehearsal receipts. No normalized
+coordinate gesture is copied between models.
 
 System-build admission is a dated positive allowlist of Google-published global Android 17 OTA build
 IDs per model cohort. The fingerprint parser requires the exact `google/<codename>/<codename>`

@@ -186,6 +186,7 @@ Dependency direction is `:app → :automation/:core/:data`, `:automation → :co
 - [Device setup](docs/SETUP.md)
 - [Physical Pixel validation](docs/testing/PHYSICAL_PIXEL.md)
 - [GitHub Releases runbook](docs/releasing/GITHUB_RELEASES.md)
+- [Pixel 6–10a selector-template provenance](docs/research/pixel-6-10a-template-provenance.md)
 - [Historical Pixel 8 Pro baseline](docs/research/pixel-8-pro-baseline-2026-08-09.md)
 - [Pixel Camera dialog recovery evidence](docs/research/pixel-camera-dialog-recovery.md)
 - [Android 15–17 inset research](docs/research/android-15-17-system-insets.md)
