@@ -284,7 +284,8 @@ class PhysicalDeviceWakeFixtureTest {
 
     private companion object {
         const val LOG_TAG = "LenswakePhysicalWake"
-        const val FIXTURE_SCHEDULE_NAME = "Lenswake physical DEVICE_WAKE proof v4"
+        // This persisted identity predates selector schema v4 and must remain stable for cleanup.
+        const val FIXTURE_SCHEDULE_NAME = "Lenswake physical DEVICE_WAKE proof v3"
         const val DEFAULT_START_DELAY_SECONDS = 120L
         const val DEFAULT_RECORDING_WINDOW_SECONDS = 120L
         val START_DELAY_SECONDS_RANGE = 120L..900L

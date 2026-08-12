@@ -129,8 +129,9 @@ ANDROID_SERIAL="$PIXEL_SERIAL" ./gradlew \
   :app:connectedDebugAndroidTest
 ```
 
-The current repository passes this gate. Android-test APK compilation and connected/physical suites
-remain separate evidence categories; see [docs/STATUS.md](docs/STATUS.md).
+The current repository passes the full local gate shown above. Android-test APK compilation passed
+separately; connected and opt-in physical suites were not run for this documentation update. See
+[docs/STATUS.md](docs/STATUS.md).
 
 Physical fixtures can change device state, create schedules and alarms, or start Pixel Camera. Run
 them only with explicit intent, always pin the serial, and follow
