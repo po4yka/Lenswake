@@ -96,7 +96,7 @@ jobs:
             target: google_apis
             channel: canary
             emulator-build: 15917651
-            ram-size: 4096M
+            ram-size: 6144M
     steps:
       - name: Check out tagged commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
