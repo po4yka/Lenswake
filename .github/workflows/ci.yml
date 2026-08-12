@@ -133,6 +133,7 @@ jobs:
             api-level: "37.0"
             target: google_apis
             channel: canary
+            emulator-build: 15917651
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -157,6 +158,7 @@ jobs:
           api-level: ${{ matrix.api-level }}
           target: ${{ matrix.target }}
           channel: ${{ matrix.channel }}
+          emulator-build: ${{ matrix.emulator-build }}
           arch: x86_64
           profile: pixel_7_pro
           disk-size: 6G
