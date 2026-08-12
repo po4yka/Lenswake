@@ -31,6 +31,7 @@ fun ProfilesScreen(
     contentPadding: PaddingValues,
     onInstallCandidateProfile: () -> Unit,
     onConfirmExperimentalProfileInstallation: () -> Unit = {},
+    onImportReleaseCertification: () -> Unit = {},
     onRunRehearsal: (String) -> Unit,
 ) {
     LazyColumn(
@@ -45,10 +46,32 @@ fun ProfilesScreen(
     ) {
         profilesHeader()
         profileInstallAction(state, onInstallCandidateProfile)
+        profileCertificationAction(state, onImportReleaseCertification)
         installedProfiles(state, onRunRehearsal)
         profileInstallOutcome(state.profileInstall, onConfirmExperimentalProfileInstallation)
         activeRehearsal(state)
         rehearsalOutcome(state)
+    }
+}
+
+private fun LazyListScope.profileCertificationAction(
+    state: LenswakeUiState,
+    onImportReleaseCertification: () -> Unit,
+) {
+    item {
+        ActionSection(
+            title = stringResource(R.string.profiles_certification_title),
+            detail = stringResource(R.string.profiles_certification_detail),
+            actionLabel = stringResource(R.string.action_import_certification),
+            actionEnabled = state.profiles.isNotEmpty() && state.profileInstall !is ProfileInstallUiState.Installing,
+            actionInProgress = false,
+            unavailableReason = if (state.profiles.isEmpty()) {
+                stringResource(R.string.profile_certification_profile_required)
+            } else {
+                ""
+            },
+            onAction = onImportReleaseCertification,
+        )
     }
 }
 
@@ -106,7 +129,12 @@ private fun LazyListScope.installedProfiles(
         val profile = state.profiles[index]
         StatusRow(
             title = profile.title,
-            detail = "${profile.supportTier.label()} · ${profile.environment}",
+            detail = stringResource(
+                R.string.profile_identity_detail,
+                profile.supportTier.label(),
+                profile.environment,
+                profile.definitionFingerprint,
+            ),
             status = profile.compatibility,
         )
         profile.captureMatrix.forEach { row ->

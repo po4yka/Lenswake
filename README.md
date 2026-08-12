@@ -13,8 +13,9 @@ MediaRecorder, custom encoding, root, a cloud service, or a hidden recording pat
 > [!IMPORTANT]
 > The supported target is a fixed set of 17 non-folding Pixel 6–10a phones. Pixel Fold/Pro Fold,
 > Tablet, Pixel 5a and future models are rejected. Pixel 7 and Pixel 8 Pro are certification
-> targets. Until the exact signed release APK passes both physical gates, every installed profile is
-> Experimental; local rehearsal never promotes it to Certified.
+> targets. Until the exact signed release APK passes both physical gates and its release-key-signed
+> certification bundle is imported, every installed profile is Experimental; local rehearsal never
+> promotes it to Certified.
 
 ## Repository status
 
@@ -54,7 +55,7 @@ automation, and physical proof for one APK does not automatically transfer to la
   fresh presence check, and fail closed for storage, policy, unknown, changed, or ambiguous dialogs.
 - Show local session timelines, duration, retries, selector confidence, interaction/fallback metrics,
   alarm-transport incidents, and corrupt-profile notices; share the bounded view as plain text.
-- Persist schedules, profiles, sessions, events, and environment snapshots in Room v8 with explicit
+- Persist schedules, profiles, sessions, events, and environment snapshots in Room v9 with explicit
   migrations. Sensitive Room and SharedPreferences state is excluded from cloud backup and D2D transfer.
 
 ## Reliability model
@@ -152,7 +153,7 @@ The repository has four Gradle modules:
 | --- | --- |
 | `:core` | Platform-neutral schedules, profiles, sessions, failures, readiness, repository contracts |
 | `:automation` | Platform-neutral START/STOP convergence, ports, selectors, retries, verification |
-| `:data` | Room v8 entities, migrations, mappings, repositories, environment/session history |
+| `:data` | Room v9 entities, migrations, mappings, repositories, environment/session history |
 | `:app` | Compose UI, application composition, alarms, Android services, Accessibility and platform adapters |
 
 Dependency direction is `:app → :automation/:core/:data`, `:automation → :core`, and
@@ -166,8 +167,9 @@ Dependency direction is `:app → :automation/:core/:data`, `:automation → :co
 - System builds use a dated positive allowlist of Google-published global OTA IDs. New monthly,
   beta, carrier-suffixed, custom, and malformed fingerprints fail closed until the policy is reviewed.
   This local check is not cryptographic attestation against a hostile image spoofing public properties.
-- `CERTIFIED` is an immutable release-evidence result limited to Pixel 7/Pixel 8 Pro. Current HEAD
-  remains `EXPERIMENTAL` until the same signed APK passes both physical gates; rehearsal never promotes it.
+- `CERTIFIED` is an immutable release-evidence result limited to Pixel 7/Pixel 8 Pro. The app accepts
+  it only from a release-key-signed bundle whose APK SHA-256 and exact Experimental profile fingerprint
+  match locally. Changing the APK demotes the effective tier; rehearsal never promotes it.
 - There is no interactive selector calibration, profile authoring/import, or arbitrary-device support.
 - Shizuku is not implemented. The optional privileged boundary is wired to an explicit unavailable
   provider; the standard target path does not require it.

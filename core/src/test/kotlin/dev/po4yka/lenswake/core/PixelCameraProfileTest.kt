@@ -3,9 +3,36 @@ package dev.po4yka.lenswake.core
 import java.time.Instant
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Test
 
 class PixelCameraProfileTest {
+    @Test
+    fun `certified tier requires immutable release evidence and changes definition fingerprint`() {
+        val experimental = PixelCameraProfile(
+            id = ProfileId("certification-target"),
+            environment = environment(),
+            selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
+            compatibility = ProfileCompatibility.NEEDS_REHEARSAL,
+            verifiedAt = null,
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            experimental.copy(supportTier = SupportTier.CERTIFIED)
+        }
+
+        val certified = experimental.copy(
+            supportTier = SupportTier.CERTIFIED,
+            certification = certification(),
+        )
+
+        assertEquals(SupportTier.CERTIFIED, certified.supportTier)
+        assertNotEquals(experimental.definitionFingerprint(), certified.definitionFingerprint())
+        assertNotEquals(
+            certified.definitionFingerprint(),
+            certified.copy(certification = certification().copy(bundleSha256 = "7".repeat(64)))
+                .definitionFingerprint(),
+        )
+    }
     @Test
     fun `support tier is independent from local rehearsal state`() {
         val profile = PixelCameraProfile(
@@ -20,6 +47,16 @@ class PixelCameraProfileTest {
 
         assertEquals(SupportTier.EXPERIMENTAL, profile.supportTier)
     }
+
+    private fun certification() = ProfileCertification(
+        releaseTag = "v1.2.3",
+        releaseCommit = "1".repeat(40),
+        candidateRunId = 123,
+        lenswakeApkSha256 = "2".repeat(64),
+        bundleSha256 = "3".repeat(64),
+        pixel7EvidenceSha256 = "4".repeat(64),
+        pixel8ProEvidenceSha256 = "5".repeat(64),
+    )
 
     @Test
     fun `profile carries data-driven observation signals`() {

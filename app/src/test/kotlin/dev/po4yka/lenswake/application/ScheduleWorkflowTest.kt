@@ -864,6 +864,7 @@ class ScheduleWorkflowTest {
             zoneId = ZoneId.of("UTC"),
             capture = CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120, LensSelection.REAR_MAIN),
             profileId = profileId,
+            experimentalRiskAccepted = true,
             enabled = true,
             createdAt = now.minusSeconds(100),
             updatedAt = now.minusSeconds(100),

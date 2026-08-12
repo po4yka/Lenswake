@@ -105,6 +105,7 @@ private class FingerprintWriter(
         writeEnvironment(profile.environment)
         output.writeInt(profile.selectorSchemaVersion)
         writeString(profile.supportTier.name)
+        writeCertification(profile.certification)
         writeString(profile.source.name)
         writeString(profile.selectorTemplate.id)
         output.writeInt(profile.selectorTemplate.version)
@@ -113,6 +114,18 @@ private class FingerprintWriter(
         writeSelectorSets("signal", profile.stateSignals.mapKeys { it.key.name })
         writeGestures(profile.fallbackGestures)
         writeDialogs(profile.dialogProfiles)
+    }
+
+    private fun writeCertification(certification: ProfileCertification?) {
+        output.writeBoolean(certification != null)
+        if (certification == null) return
+        writeString(certification.releaseTag)
+        writeString(certification.releaseCommit)
+        output.writeLong(certification.candidateRunId)
+        writeString(certification.lenswakeApkSha256)
+        writeString(certification.bundleSha256)
+        writeString(certification.pixel7EvidenceSha256)
+        writeString(certification.pixel8ProEvidenceSha256)
     }
 
     private fun writeEnvironment(environment: PixelCameraEnvironment) = with(environment) {

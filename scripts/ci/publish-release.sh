@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-tag="${1:?Usage: publish-release.sh TAG APK CHECKSUMS PHYSICAL_ACCEPTANCE}"
-apk="${2:?Usage: publish-release.sh TAG APK CHECKSUMS PHYSICAL_ACCEPTANCE}"
-checksums="${3:?Usage: publish-release.sh TAG APK CHECKSUMS PHYSICAL_ACCEPTANCE}"
-physical_acceptance="${4:?Usage: publish-release.sh TAG APK CHECKSUMS PHYSICAL_ACCEPTANCE}"
+tag="${1:?Usage: publish-release.sh TAG APK CHECKSUMS PHYSICAL_ACCEPTANCE CERTIFICATION_BUNDLE}"
+apk="${2:?Usage: publish-release.sh TAG APK CHECKSUMS PHYSICAL_ACCEPTANCE CERTIFICATION_BUNDLE}"
+checksums="${3:?Usage: publish-release.sh TAG APK CHECKSUMS PHYSICAL_ACCEPTANCE CERTIFICATION_BUNDLE}"
+physical_acceptance="${4:?Usage: publish-release.sh TAG APK CHECKSUMS PHYSICAL_ACCEPTANCE CERTIFICATION_BUNDLE}"
+certification_bundle="${5:?Usage: publish-release.sh TAG APK CHECKSUMS PHYSICAL_ACCEPTANCE CERTIFICATION_BUNDLE}"
 repository="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
 head_sha="${GITHUB_SHA:?GITHUB_SHA is required}"
 
@@ -21,7 +22,8 @@ if [[ -n "$release_json" ]]; then
     trap 'rm -rf "$temp_dir"' EXIT
     gh release download "$tag" --repo "$repository" --dir "$temp_dir" \
       --pattern "$(basename "$apk")" --pattern "$(basename "$checksums")" \
-      --pattern "$(basename "$physical_acceptance")"
+      --pattern "$(basename "$physical_acceptance")" \
+      --pattern "$(basename "$certification_bundle")"
     cmp --silent "$apk" "$temp_dir/$(basename "$apk")" || {
       echo "Published APK differs from the locally verified artifact" >&2
       exit 1
@@ -34,6 +36,10 @@ if [[ -n "$release_json" ]]; then
       echo "Published physical acceptance differs from the verified gate record" >&2
       exit 1
     }
+    cmp --silent "$certification_bundle" "$temp_dir/$(basename "$certification_bundle")" || {
+      echo "Published certification bundle differs from the signed local bundle" >&2
+      exit 1
+    }
     echo "Published release $tag already contains identical assets"
     exit 0
   fi
@@ -42,17 +48,19 @@ else
     --verify-tag --draft --generate-notes --title "$tag"
 fi
 
-gh release upload "$tag" "$apk" "$checksums" "$physical_acceptance" \
+gh release upload "$tag" "$apk" "$checksums" "$physical_acceptance" "$certification_bundle" \
   --repo "$repository" --clobber
 
 temp_dir="$(mktemp -d)"
 trap 'rm -rf "$temp_dir"' EXIT
 gh release download "$tag" --repo "$repository" --dir "$temp_dir" \
   --pattern "$(basename "$apk")" --pattern "$(basename "$checksums")" \
-  --pattern "$(basename "$physical_acceptance")"
+  --pattern "$(basename "$physical_acceptance")" \
+  --pattern "$(basename "$certification_bundle")"
 cmp --silent "$apk" "$temp_dir/$(basename "$apk")"
 cmp --silent "$checksums" "$temp_dir/$(basename "$checksums")"
 cmp --silent "$physical_acceptance" "$temp_dir/$(basename "$physical_acceptance")"
+cmp --silent "$certification_bundle" "$temp_dir/$(basename "$certification_bundle")"
 
 release_id="$(gh api "repos/$repository/releases/tags/$tag" --jq '.id')"
 gh api --method PATCH "repos/$repository/releases/$release_id" -f draft=false >/dev/null

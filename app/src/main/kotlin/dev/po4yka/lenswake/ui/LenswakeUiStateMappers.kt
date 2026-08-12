@@ -27,6 +27,7 @@ import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.supportedCaptureConfigurations
 import dev.po4yka.lenswake.core.TimeLapseSpeed
+import dev.po4yka.lenswake.core.definitionFingerprint
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -383,6 +384,7 @@ internal object LenswakeProfileUiMapper {
             },
             verifiedForScheduling = verifiedCaptures.isNotEmpty(),
             supportTier = profile.supportTier,
+            definitionFingerprint = profile.definitionFingerprint(),
             supportedCaptures = verifiedCaptures,
             captureMatrix = captureMatrix(profile, executions),
         )

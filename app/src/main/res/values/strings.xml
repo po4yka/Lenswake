@@ -67,6 +67,17 @@
     <string name="profiles_installing">Installing profile</string>
     <string name="profiles_installed_title">Camera profile installed</string>
     <string name="profiles_install_failed_title">Camera profile could not be installed</string>
+    <string name="profiles_certification_title">Release certification</string>
+    <string name="profiles_certification_detail">Import the signed certification bundle published with a release after the exact APK passed physical acceptance on Pixel 7 and Pixel 8 Pro.</string>
+    <string name="action_import_certification">Import certification</string>
+    <string name="profile_certification_installed">This exact profile is now CERTIFIED for the installed release APK. Previous rehearsal receipts were invalidated; rehearse each capture again before scheduling.</string>
+    <string name="profile_certification_already_installed">This exact release certification is already installed.</string>
+    <string name="profile_certification_profile_required">Install the exact local camera profile before importing release certification.</string>
+    <string name="profile_certification_unsupported_target">Release certification applies only to the accepted Pixel 7 and Pixel 8 Pro environments.</string>
+    <string name="profile_certification_profile_mismatch">The physical evidence does not match this exact profile definition.</string>
+    <string name="profile_certification_invalid_bundle">Certification was rejected: signature, receipt, or installed APK identity did not match.</string>
+    <string name="profile_certification_persistence_failed">The certified profile could not be saved and verified.</string>
+    <string name="profile_identity_detail">%1$s · %2$s\nProfile fingerprint: %3$s</string>
     <string name="profiles_test_title">Test recording</string>
     <string name="profile_test_content_description">Test recording, %1$s</string>
     <string name="profiles_test_running_detail">Pixel Camera is recording briefly. Lenswake will stop it automatically.</string>

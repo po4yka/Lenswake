@@ -27,7 +27,7 @@ Pixel Camera package, versionName, versionCode, relevant APK variant identity
 display size/density and locale
 Lenswake commit and version
 local APK SHA-256 and installed-artifact identity result
-profile ID/schema and capture configuration
+profile ID/schema/full definition fingerprint and capture configuration
 initial screen/keyguard/idle/Camera/process state
 exact commands or UI actions
 scheduled and observed timestamps with timezone

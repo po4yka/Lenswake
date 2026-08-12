@@ -44,7 +44,7 @@ class LenswakeDatabaseMigrationTest {
 
         val migrated = migrationHelper.runMigrationsAndValidate(
             databaseName,
-            8,
+            9,
             true,
             LenswakeDatabase.MIGRATION_1_2,
             LenswakeDatabase.MIGRATION_2_3,
@@ -53,6 +53,7 @@ class LenswakeDatabaseMigrationTest {
             LenswakeDatabase.MIGRATION_5_6,
             LenswakeDatabase.MIGRATION_6_7,
             LenswakeDatabase.MIGRATION_7_8,
+            LenswakeDatabase.MIGRATION_8_9,
         )
         migrated.query(
             "SELECT id FROM automation_profiles WHERE id = 'profile-migration'",
@@ -72,6 +73,7 @@ class LenswakeDatabaseMigrationTest {
                 LenswakeDatabase.MIGRATION_5_6,
                 LenswakeDatabase.MIGRATION_6_7,
                 LenswakeDatabase.MIGRATION_7_8,
+                LenswakeDatabase.MIGRATION_8_9,
             )
             .build()
         val (rawProfile, schedule) = runBlocking {
@@ -155,6 +157,7 @@ class LenswakeDatabaseMigrationTest {
                 LenswakeDatabase.MIGRATION_5_6,
                 LenswakeDatabase.MIGRATION_6_7,
                 LenswakeDatabase.MIGRATION_7_8,
+                LenswakeDatabase.MIGRATION_8_9,
             )
             .build()
         val (profile, schemaOneProfile) = runBlocking {
@@ -300,6 +303,7 @@ class LenswakeDatabaseMigrationTest {
             .addMigrations(
                 LenswakeDatabase.MIGRATION_6_7,
                 LenswakeDatabase.MIGRATION_7_8,
+                LenswakeDatabase.MIGRATION_8_9,
             )
             .build()
         val profile = runBlocking {
@@ -349,6 +353,56 @@ class LenswakeDatabaseMigrationTest {
             assertEquals(0, cursor.getInt(1))
             assertEquals("LEGACY_UNKNOWN", cursor.getString(2))
             assertEquals("LEGACY_UNKNOWN", cursor.getString(3))
+        }
+        migrated.close()
+    }
+
+    @Test
+    fun migratesVersionEightToNineWithoutInventingCertification() {
+        createVersionOneDatabase()
+        val versionEight = migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            8,
+            true,
+            LenswakeDatabase.MIGRATION_1_2,
+            LenswakeDatabase.MIGRATION_2_3,
+            LenswakeDatabase.MIGRATION_3_4,
+            LenswakeDatabase.MIGRATION_4_5,
+            LenswakeDatabase.MIGRATION_5_6,
+            LenswakeDatabase.MIGRATION_6_7,
+            LenswakeDatabase.MIGRATION_7_8,
+        )
+        versionEight.execSQL(
+            "UPDATE automation_profiles SET support_tier = 'CERTIFIED' " +
+                "WHERE id = 'profile-migration'",
+        )
+        versionEight.execSQL(
+            "UPDATE schedules SET enabled = 1 WHERE id = 'schedule-migration'",
+        )
+        versionEight.close()
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            9,
+            true,
+            LenswakeDatabase.MIGRATION_8_9,
+        )
+        migrated.query(
+            "SELECT support_tier, certification_json, compatibility, verified_at_epoch_ms " +
+                "FROM automation_profiles " +
+                "WHERE id = 'profile-migration'",
+        ).use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals("EXPERIMENTAL", cursor.getString(0))
+            assertNull(cursor.getString(1))
+            assertEquals("NEEDS_REHEARSAL", cursor.getString(2))
+            assertNull(cursor.getString(3))
+        }
+        migrated.query(
+            "SELECT enabled FROM schedules WHERE id = 'schedule-migration'",
+        ).use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
         }
         migrated.close()
     }

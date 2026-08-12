@@ -3,6 +3,8 @@ package dev.po4yka.lenswake.ui
 import android.util.Log
 import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfile
+import dev.po4yka.lenswake.application.InstallReleaseCertification
+import dev.po4yka.lenswake.application.InstallReleaseCertificationResult
 import dev.po4yka.lenswake.application.RehearsalCoordinator
 import dev.po4yka.lenswake.application.RehearsalResult
 import dev.po4yka.lenswake.application.ScheduleOperation
@@ -34,6 +36,8 @@ interface LenswakeProfileActions {
     fun installCandidateProfile()
 
     fun confirmExperimentalProfileInstallation()
+
+    fun importReleaseCertification(uri: String)
 
     fun runProfileRehearsal(profileId: String)
 
@@ -97,6 +101,7 @@ internal class LenswakeProfileActionsImpl(
     private val installKnownPixelCameraProfile: InstallKnownPixelCameraProfile,
     private val rehearsalCoordinator: RehearsalCoordinator,
     private val strings: UiStringProvider,
+    private val installReleaseCertification: InstallReleaseCertification? = null,
 ) : LenswakeProfileActions {
     override fun installCandidateProfile() {
         installCandidateProfile(experimentalRiskAccepted = false)
@@ -114,6 +119,18 @@ internal class LenswakeProfileActionsImpl(
             actionState.profileInstall.value = installKnownPixelCameraProfile(
                 experimentalRiskAccepted,
             ).toUiState(strings)
+        }
+    }
+
+    override fun importReleaseCertification(uri: String) {
+        if (actionState.profileInstall.value == ProfileInstallUiState.Installing) return
+        actionState.profileInstall.value = ProfileInstallUiState.Installing
+        actionState.scope.launch {
+            actionState.profileInstall.value = installReleaseCertification
+                ?.invoke(uri)
+                ?.toUiState(strings)
+                ?: ProfileInstallUiState.Failed(strings.get(R.string.profile_certification_invalid_bundle))
+            actionState.refreshPreflight()
         }
     }
 
@@ -431,6 +448,31 @@ private sealed interface RehearsalPreparation {
     data class Ready(val request: RehearsalRequest) : RehearsalPreparation
     data class Failed(val message: String) : RehearsalPreparation
 }
+
+private fun InstallReleaseCertificationResult.toUiState(strings: UiStringProvider): ProfileInstallUiState =
+    when (this) {
+        is InstallReleaseCertificationResult.Certified -> ProfileInstallUiState.Succeeded(
+            strings.get(R.string.profile_certification_installed),
+        )
+        is InstallReleaseCertificationResult.AlreadyCertified -> ProfileInstallUiState.Succeeded(
+            strings.get(R.string.profile_certification_already_installed),
+        )
+        InstallReleaseCertificationResult.ProfileRequired -> ProfileInstallUiState.Failed(
+            strings.get(R.string.profile_certification_profile_required),
+        )
+        InstallReleaseCertificationResult.UnsupportedTarget -> ProfileInstallUiState.Failed(
+            strings.get(R.string.profile_certification_unsupported_target),
+        )
+        InstallReleaseCertificationResult.ProfileEvidenceMismatch -> ProfileInstallUiState.Failed(
+            strings.get(R.string.profile_certification_profile_mismatch),
+        )
+        InstallReleaseCertificationResult.InvalidBundle -> ProfileInstallUiState.Failed(
+            strings.get(R.string.profile_certification_invalid_bundle),
+        )
+        is InstallReleaseCertificationResult.PersistenceFailure -> ProfileInstallUiState.Failed(
+            strings.get(R.string.profile_certification_persistence_failed),
+        )
+    }
 
 private fun ScheduleFormUiState.toCommandOrNull() = runCatching {
     val start = requireNotNull(startLocal)

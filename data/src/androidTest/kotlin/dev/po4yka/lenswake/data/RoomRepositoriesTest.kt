@@ -30,6 +30,7 @@ import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
 import dev.po4yka.lenswake.core.PixelCameraStateSignal
 import dev.po4yka.lenswake.core.ProfileCompatibility
+import dev.po4yka.lenswake.core.ProfileCertification
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.ProfilePersistenceIssueCode
 import dev.po4yka.lenswake.core.RecordingSchedule
@@ -38,6 +39,7 @@ import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.TimeLapseSpeed
+import dev.po4yka.lenswake.core.SupportTier
 import dev.po4yka.lenswake.core.UiSelector
 import dev.po4yka.lenswake.core.UiSelectorSet
 import dev.po4yka.lenswake.data.internal.mapping.JsonColumnCodec
@@ -133,6 +135,26 @@ class RoomRepositoriesTest {
         )
         assertEquals(schedule, schedules.get(schedule.id))
         assertEquals(listOf(schedule), schedules.observeSchedules().first())
+    }
+
+    @Test
+    fun roundTripsApkBoundProfileCertification() = runBlocking {
+        val certified = profile().copy(
+            supportTier = SupportTier.CERTIFIED,
+            certification = ProfileCertification(
+                releaseTag = "v1.2.3",
+                releaseCommit = "1".repeat(40),
+                candidateRunId = 123,
+                lenswakeApkSha256 = "2".repeat(64),
+                bundleSha256 = "3".repeat(64),
+                pixel7EvidenceSha256 = "4".repeat(64),
+                pixel8ProEvidenceSha256 = "5".repeat(64),
+            ),
+        )
+
+        profiles.save(certified)
+
+        assertEquals(certified, profiles.get(certified.id))
     }
 
     @Test

@@ -44,6 +44,8 @@ internal data class AutomationProfileEntity(
     val selectorSchemaVersion: Int,
     @ColumnInfo(name = "support_tier", defaultValue = "'EXPERIMENTAL'")
     val supportTier: String,
+    @ColumnInfo(name = "certification_json", defaultValue = "NULL")
+    val certificationJson: String?,
     @ColumnInfo(name = "profile_source", defaultValue = "'LEGACY_UNKNOWN'")
     val profileSource: String,
     @ColumnInfo(name = "selector_template_id", defaultValue = "'legacy'")

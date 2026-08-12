@@ -1008,6 +1008,7 @@ class LenswakeViewModelScheduleActionsTest : LenswakeViewModelTestSupport() {
                 captureMode = CaptureMode.VIDEO,
                 timeLapseSpeed = TimeLapseSpeed.X5,
                 lens = dev.po4yka.lenswake.core.LensSelection.FRONT,
+                experimentalRiskAccepted = true,
             ),
         )
         viewModel.submitSchedule()

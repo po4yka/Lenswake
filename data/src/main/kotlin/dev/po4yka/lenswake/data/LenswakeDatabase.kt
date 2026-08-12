@@ -24,7 +24,7 @@ import dev.po4yka.lenswake.data.internal.mapping.ProfileJsonMigration
         ExecutionEventEntity::class,
         EnvironmentSnapshotEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 abstract class LenswakeDatabase : RoomDatabase() {
@@ -230,6 +230,21 @@ abstract class LenswakeDatabase : RoomDatabase() {
             )
         }
 
+        val MIGRATION_8_9: Migration = Migration(8, 9) { database ->
+            database.execSQL(
+                "ALTER TABLE `automation_profiles` ADD COLUMN `certification_json` TEXT DEFAULT NULL",
+            )
+            database.execSQL(
+                "UPDATE `schedules` SET `enabled` = 0 WHERE `profile_id` IN " +
+                    "(SELECT `id` FROM `automation_profiles` WHERE `support_tier` = 'CERTIFIED')",
+            )
+            database.execSQL(
+                "UPDATE `automation_profiles` SET `support_tier` = 'EXPERIMENTAL', " +
+                    "`compatibility` = 'NEEDS_REHEARSAL', `verified_at_epoch_ms` = NULL " +
+                    "WHERE `support_tier` = 'CERTIFIED'",
+            )
+        }
+
         private fun addCaptureV5Columns(
             database: androidx.sqlite.db.SupportSQLiteDatabase,
             table: String,
@@ -293,6 +308,7 @@ abstract class LenswakeDatabase : RoomDatabase() {
                 MIGRATION_5_6,
                 MIGRATION_6_7,
                 MIGRATION_7_8,
+                MIGRATION_8_9,
             )
                 .build()
     }

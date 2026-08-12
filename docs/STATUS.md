@@ -11,11 +11,13 @@ physical Pixel proof. It is a snapshot, not the source of implementation truth.
 
 The implementation now recognizes exactly 17 non-folding models: Pixel 6/6 Pro/6a, 7/7 Pro/7a,
 8/8 Pro/8a, 9/9 Pro/9 Pro XL/9a and 10/10 Pro/10 Pro XL/10a. Fold, Pro Fold, Tablet, Pixel 5a,
-unknown and future models are rejected. Selector schema is v5 and persistence is Room v8.
+unknown and future models are rejected. Selector schema is v5 and persistence is Room v9.
 
 Pixel 7 and Pixel 8 Pro are the only certification targets; the other 15 are permanently
-`EXPERIMENTAL`. Current HEAD has not passed the same signed release APK gate on both targets, so its
-installed profiles remain `EXPERIMENTAL` and no current certified release claim is made.
+`EXPERIMENTAL`. A reachable promotion path now verifies a release-key-signed certification JAR, the
+exact installed APK SHA-256, target model and accepted Experimental profile fingerprint before storing
+`CERTIFIED`; an APK change makes that tier ineffective. Current HEAD has not passed the same signed
+release APK gate on both targets, so no certification bundle or current certified release claim exists.
 
 The historical exact Pixel 8 Pro environment remains:
 
@@ -77,7 +79,8 @@ The repository now defines separate GitHub Actions contracts for:
 - manually approved candidate signing, package/version/certificate/permission verification,
   checksums and provenance without publication permission;
 - a separate manual publication run that verifies the exact candidate run/tag/commit/APK digest and
-  content-addressed Pixel 7 plus Pixel 8 Pro acceptance records before protected approval.
+  content-addressed Pixel 7 plus Pixel 8 Pro acceptance records/profile fingerprints before protected
+  approval, signs an APK-bound certification bundle with the release key, and publishes it with the APK.
 
 Actions are full-SHA pinned and repository policy requires SHA pins. The protected `release`
 environment is restricted to `v*` tags and contains the signing secrets. The current certificate
@@ -90,12 +93,16 @@ claim transfers to a future signed APK until that exact artifact is tested.
 On 2026-08-12 the implementation working tree passed:
 
 - `actionlint` for all three workflows and `shellcheck` for all CI scripts;
-- release identity/build contract tests, including the four negative release cases;
-- Zizmor 1.29.0 with offline `auditor` persona and complete collection, with no findings;
+- release identity/build contract tests, including signed certification-bundle creation, exact
+  receipt/signer verification, and negative signer/APK/evidence cases;
+- Zizmor 1.29.0 with offline `auditor` persona and complete collection passed before the certification
+  workflow delta; the binary was unavailable for a local rerun of that delta, which still awaits hosted Security;
 - unsigned and protected-property signed `:app:assembleRelease` builds;
 - `apksigner` plus `apkanalyzer` verification of application ID, version `0.1.0` / code `1`, the
   committed certificate fingerprint, and absence of `CAMERA`, `RECORD_AUDIO`, and `INTERNET`;
 - `./gradlew check assembleDebug :app:assembleDebugAndroidTest :data:assembleDebugAndroidTest`.
+- ordinary `:data:connectedDebugAndroidTest` on the explicitly selected Pixel 8 Pro / Android 17:
+  24/24 tests passed, including Room v8→v9 and certification persistence; no Camera fixture ran.
 
 Hosted evidence for the CI/CD implementation on 2026-08-12 currently includes:
 

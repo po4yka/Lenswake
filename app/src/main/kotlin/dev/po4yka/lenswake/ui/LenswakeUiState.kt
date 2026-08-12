@@ -229,7 +229,8 @@ data class ProfileSummaryUiState(
     val environment: String,
     val compatibility: String,
     val verifiedForScheduling: Boolean,
-    val supportTier: SupportTier = SupportTier.CERTIFIED,
+    val supportTier: SupportTier = SupportTier.EXPERIMENTAL,
+    val definitionFingerprint: String = "",
     val supportedCaptures: Set<CaptureConfiguration>,
     val captureMatrix: List<CaptureMatrixRowUiState> = emptyList(),
 )

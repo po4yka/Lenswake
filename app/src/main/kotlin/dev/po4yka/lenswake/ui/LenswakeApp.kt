@@ -32,6 +32,7 @@ fun LenswakeApp(
     onRemediate: (SetupRemediationAction) -> Unit,
     onOpenPixelCamera: () -> Unit,
     onExportDiagnostics: () -> Unit,
+    onImportReleaseCertification: () -> Unit,
 ) {
     LifecycleResumeEffect(viewModel) {
         viewModel.refreshPreflight()
@@ -57,6 +58,7 @@ fun LenswakeApp(
         onRemediate = onRemediate,
         onOpenPixelCamera = onOpenPixelCamera,
         onExportDiagnostics = onExportDiagnostics,
+        onImportReleaseCertification = onImportReleaseCertification,
         onClearRemediationMessage = viewModel::clearSetupRemediationMessage,
     )
 }
@@ -81,12 +83,14 @@ fun LenswakeApp(
     onRemediate: (SetupRemediationAction) -> Unit = {},
     onOpenPixelCamera: () -> Unit = {},
     onExportDiagnostics: () -> Unit = {},
+    onImportReleaseCertification: () -> Unit = {},
     onClearRemediationMessage: () -> Unit = {},
 ) {
     val actions = LenswakeAppActions(
         profiles = ProfileActions(
             onInstallCandidateProfile,
             onConfirmExperimentalProfileInstallation,
+            onImportReleaseCertification,
             onRunRehearsal,
         ),
         schedules = ScheduleActions(
@@ -131,6 +135,7 @@ internal data class LenswakeAppActions(
 internal data class ProfileActions(
     val onInstallCandidateProfile: () -> Unit,
     val onConfirmExperimentalProfileInstallation: () -> Unit,
+    val onImportReleaseCertification: () -> Unit,
     val onRunRehearsal: (String) -> Unit,
 )
 

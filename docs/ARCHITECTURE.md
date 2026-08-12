@@ -44,7 +44,7 @@ source, manifests, Gradle configuration, Room schemas, and tests.
 | --- | --- |
 | `:core` | Platform-neutral schedules, capture contracts, profiles, sessions, failures, readiness, clocks, and repository/scheduler contracts |
 | `:automation` | Platform-neutral START/STOP convergence engine, automation ports, selector matching, retries, timeouts, and postcondition logic |
-| `:data` | Room v8 database, explicit migrations, schema exports, entities, mappings, repositories, session CAS, and environment history |
+| `:data` | Room v9 database, explicit migrations, schema exports, entities, mappings, repositories, session CAS, and environment history |
 | `:app` | Compose/Navigation 3 UI, application workflows and graph, exact alarms, Android services, Accessibility, secure launch, wake, MediaStore, and preflight adapters |
 
 `:core` and `:automation` do not import Android framework or Compose types. Room types stay internal
@@ -70,7 +70,7 @@ postcondition on modern background-launch restrictions.
 
 Lenswake has three deliberately different persistence domains.
 
-### Room v8: domain state
+### Room v9: domain state
 
 Five entities are stored in credential-protected `lenswake.db`:
 
@@ -81,9 +81,11 @@ Five entities are stored in credential-protected `lenswake.db`:
 - `environment_snapshots`.
 
 Rehearsals are execution sessions with `SessionKind.REHEARSAL`, not a separate table. Migrations
-1→8 are explicit and schemas 1–8 are committed. The v7→v8 migration preserves legacy history,
+1→9 are explicit and schemas 1–9 are committed. The v7→v8 migration preserves legacy history,
 marks pre-v5 profiles incompatible and disables their schedules; alarm recovery cancels their stale
-future identities. Repository mappings isolate corrupt profile rows so
+future identities. The v8→v9 migration adds nullable certification evidence without inventing it for
+history; any impossible receipt-less Certified profile is demoted, invalidated, and its schedule
+disabled. Repository mappings isolate corrupt profile rows so
 one bad entry is surfaced without terminating the whole profiles Flow.
 
 Execution updates use a monotonically increasing revision and compare-and-set application. This
@@ -214,6 +216,7 @@ A profile binds selectors and normalized gestures to:
 - locale;
 - display dimensions, density, font scale, and orientation;
 - immutable support tier plus selector-template source/version;
+- optional release certification bound to the exact Lenswake APK, candidate run and both physical records;
 - selector schema version.
 
 Selectors are package-scoped, scored, and required to have meaningful discriminants. Ambiguous
@@ -226,6 +229,15 @@ resource and call-site record in
 [pixel-6-10a-template-provenance.md](research/pixel-6-10a-template-provenance.md); changing these
 candidates invalidates prior definition fingerprints and rehearsal receipts. No normalized
 coordinate gesture is copied between models.
+
+Both catalog targets begin as `EXPERIMENTAL`. A normal rehearsal changes compatibility only. After
+the unchanged signed APK passes both physical gates, publication creates a JAR-signed certification
+bundle containing the accepted APK digest and the exact Experimental definition fingerprint from each
+target. The app verifies the bundle with the committed release certificate, verifies the currently
+installed base APK digest and current model/profile, then persists `CERTIFIED`. Since tier and receipt
+are part of the definition fingerprint, all pre-promotion rehearsal receipts become stale. An
+artifact-bound repository exposes the persisted profile as Experimental again if a later installed APK
+does not match the receipt.
 
 System-build admission is a dated positive allowlist of Google-published global Android 17 OTA build
 IDs per model cohort. The fingerprint parser requires the exact `google/<codename>/<codename>`
@@ -350,7 +362,7 @@ archive is not implemented.
 | Build | Gradle 9.4.1, Android Gradle Plugin 9.2.1, KSP 2.3.11 |
 | Android | minSdk 35, compileSdk/targetSdk 37 |
 | UI | Jetpack Compose Material 3, Navigation 3, Lifecycle/StateFlow |
-| Persistence | Room 2.8.4, database schema v8, Kotlin serialization |
+| Persistence | Room 2.8.4, database schema v9, Kotlin serialization |
 | Concurrency | Kotlin coroutines 1.11.0 |
 | Tests | JUnit 6 host tests, AndroidX Test/runner, Compose UI tests |
 | Static analysis | Detekt on all modules; Android lint warnings-as-errors except three volatile dependency recommendations |

@@ -34,6 +34,11 @@ class MainActivity : ComponentActivity() {
     ) {
         viewModel.refreshPreflight()
     }
+    private val releaseCertificationRequest = registerForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        uri?.let { viewModel.importReleaseCertification(it.toString()) }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,6 +50,9 @@ class MainActivity : ComponentActivity() {
                     onRemediate = ::remediate,
                     onOpenPixelCamera = ::openPixelCamera,
                     onExportDiagnostics = ::exportDiagnostics,
+                    onImportReleaseCertification = {
+                        releaseCertificationRequest.launch(arrayOf("application/java-archive", "application/zip"))
+                    },
                 )
             }
         }

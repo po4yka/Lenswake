@@ -13,6 +13,42 @@ enum class SupportTier {
     EXPERIMENTAL,
 }
 
+/** Immutable evidence binding a certified profile to one physically accepted release artifact. */
+data class ProfileCertification(
+    val releaseTag: String,
+    val releaseCommit: String,
+    val candidateRunId: Long,
+    val lenswakeApkSha256: String,
+    val bundleSha256: String,
+    val pixel7EvidenceSha256: String,
+    val pixel8ProEvidenceSha256: String,
+) {
+    init {
+        require(RELEASE_TAG.matches(releaseTag)) { "Certification release tag must be v<SemVer>" }
+        require(GIT_COMMIT.matches(releaseCommit)) { "Certification commit must be a full Git SHA" }
+        require(candidateRunId > 0) { "Certification candidate run ID must be positive" }
+        listOf(
+            lenswakeApkSha256,
+            bundleSha256,
+            pixel7EvidenceSha256,
+            pixel8ProEvidenceSha256,
+        ).forEach { digest ->
+            require(SHA_256.matches(digest)) {
+                "Certification digests must be 64 lowercase hexadecimal characters"
+            }
+        }
+        require(pixel7EvidenceSha256 != pixel8ProEvidenceSha256) {
+            "Certified devices require distinct physical evidence records"
+        }
+    }
+
+    private companion object {
+        val RELEASE_TAG = Regex("^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:[-+][0-9A-Za-z.-]+)?$")
+        val GIT_COMMIT = Regex("^[0-9a-f]{40}$")
+        val SHA_256 = Regex("^[0-9a-f]{64}$")
+    }
+}
+
 enum class ProfileSource {
     PHYSICAL_TEMPLATE,
     STATIC_RESOURCE_TEMPLATE,
@@ -152,7 +188,8 @@ data class PixelCameraProfile(
     val id: ProfileId,
     val environment: PixelCameraEnvironment,
     val selectorSchemaVersion: Int,
-    val supportTier: SupportTier = SupportTier.CERTIFIED,
+    val supportTier: SupportTier = SupportTier.EXPERIMENTAL,
+    val certification: ProfileCertification? = null,
     val source: ProfileSource = ProfileSource.PHYSICAL_TEMPLATE,
     val selectorTemplate: SelectorTemplateReference = SelectorTemplateReference("legacy", 1),
     val targets: Map<AutomationAction, UiSelectorSet> = emptyMap(),
@@ -165,6 +202,9 @@ data class PixelCameraProfile(
 ) {
     init {
         require(selectorSchemaVersion > 0) { "Selector schema version must be positive" }
+        require(supportTier != SupportTier.CERTIFIED || certification != null) {
+            "A certified profile requires a release certification receipt"
+        }
         require(compatibility != ProfileCompatibility.VERIFIED || verifiedAt != null) {
             "A verified profile requires a verification timestamp"
         }

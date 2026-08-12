@@ -26,12 +26,20 @@ on:
         description: SHA-256 of the Pixel 7 acceptance record
         required: true
         type: string
+      pixel_7_profile_fingerprint:
+        description: Exact Experimental Pixel 7 profile fingerprint exercised by acceptance
+        required: true
+        type: string
       pixel_8_pro_evidence_url:
         description: Durable Pixel 8 Pro physical-acceptance evidence URL
         required: true
         type: string
       pixel_8_pro_evidence_sha256:
         description: SHA-256 of the Pixel 8 Pro acceptance record
+        required: true
+        type: string
+      pixel_8_pro_profile_fingerprint:
+        description: Exact Experimental Pixel 8 Pro profile fingerprint exercised by acceptance
         required: true
         type: string
 
@@ -370,8 +378,10 @@ jobs:
           CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
           PIXEL_7_EVIDENCE_SHA256: ${{ inputs.pixel_7_evidence_sha256 }}
           PIXEL_7_EVIDENCE_URL: ${{ inputs.pixel_7_evidence_url }}
+          PIXEL_7_PROFILE_FINGERPRINT: ${{ inputs.pixel_7_profile_fingerprint }}
           PIXEL_8_PRO_EVIDENCE_SHA256: ${{ inputs.pixel_8_pro_evidence_sha256 }}
           PIXEL_8_PRO_EVIDENCE_URL: ${{ inputs.pixel_8_pro_evidence_url }}
+          PIXEL_8_PRO_PROFILE_FINGERPRINT: ${{ inputs.pixel_8_pro_profile_fingerprint }}
           RELEASE_TAG: ${{ inputs.tag }}
           VERSION_NAME: ${{ needs.publish-validate.outputs.version-name }}
         run: >-
@@ -385,9 +395,55 @@ jobs:
           "$ACCEPTED_APK_SHA256"
           "$PIXEL_7_EVIDENCE_URL"
           "$PIXEL_7_EVIDENCE_SHA256"
+          "$PIXEL_7_PROFILE_FINGERPRINT"
           "$PIXEL_8_PRO_EVIDENCE_URL"
           "$PIXEL_8_PRO_EVIDENCE_SHA256"
+          "$PIXEL_8_PRO_PROFILE_FINGERPRINT"
           release/PHYSICAL-ACCEPTANCE.txt
+      - name: Sign APK-bound certification bundle
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.LENSWAKE_RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.LENSWAKE_RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.LENSWAKE_RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.LENSWAKE_RELEASE_KEY_PASSWORD }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          VERSION_NAME: ${{ needs.publish-validate.outputs.version-name }}
+        run: |
+          set -euo pipefail
+          for value in \
+            RELEASE_KEYSTORE_BASE64 \
+            RELEASE_STORE_PASSWORD \
+            RELEASE_KEY_ALIAS \
+            RELEASE_KEY_PASSWORD; do
+            [[ -n "${!value}" ]] || {
+              echo "Missing release environment secret: $value" >&2
+              exit 1
+            }
+          done
+          keystore="$RUNNER_TEMP/lenswake-release-certification.jks"
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode >"$keystore"
+          chmod 600 "$keystore"
+          bundle="release/Lenswake-$VERSION_NAME-certification.jar"
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json assets --jq '.assets[].name' 2>/dev/null | grep -Fxq "$(basename "$bundle")"; then
+            reuse="$RUNNER_TEMP/existing-certification"
+            mkdir -p "$reuse"
+            gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --pattern "$(basename "$bundle")" --dir "$reuse"
+            cp "$reuse/$(basename "$bundle")" "$bundle"
+            scripts/ci/verify-release-certification-bundle.sh \
+              "$bundle" release/PHYSICAL-ACCEPTANCE.txt
+          else
+            scripts/ci/create-release-certification-bundle.sh \
+              release/PHYSICAL-ACCEPTANCE.txt \
+              "$bundle" \
+              "$keystore" \
+              "$RELEASE_KEY_ALIAS"
+          fi
+      - name: Remove certification signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/lenswake-release-certification.jks"
       - name: Verify candidate provenance
         env:
           GH_TOKEN: ${{ github.token }}
@@ -407,3 +463,4 @@ jobs:
           "$RELEASE_APK"
           release/SHA256SUMS.txt
           release/PHYSICAL-ACCEPTANCE.txt
+          "release/Lenswake-${{ needs.publish-validate.outputs.version-name }}-certification.jar"

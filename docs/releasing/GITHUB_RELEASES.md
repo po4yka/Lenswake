@@ -68,22 +68,26 @@ gh attestation verify "Lenswake-${RELEASE_TAG#v}.apk" --repo po4yka/Lenswake
 Install that exact APK on Pixel 7 and Pixel 8 Pro. Follow
 [`docs/testing/PHYSICAL_PIXEL.md`](../testing/PHYSICAL_PIXEL.md), including installed-artifact
 identity, every offered capture combination, reliability scenarios, failure paths, saved media, and
-cleanup. Produce a complete acceptance record for each device, calculate each record's SHA-256, and
-store it at a durable HTTPS URL. Neither an older APK nor a rebuild qualifies.
+cleanup. Produce a complete acceptance record for each device, calculate each record's SHA-256,
+record the full Experimental profile definition fingerprint shown in Profiles, and store each record
+at a durable HTTPS URL. Neither an older APK nor a rebuild qualifies.
 
 After both records pass, manually run the **Release** workflow from the exact tag ref and provide:
 
 - candidate workflow run ID and tag;
 - the accepted APK SHA-256 from `SHA256SUMS.txt`;
 - the durable URL and SHA-256 of the Pixel 7 record;
-- the durable URL and SHA-256 of the Pixel 8 Pro record.
+- the durable URL and SHA-256 of the Pixel 8 Pro record;
+- the exact Experimental profile fingerprint from each device.
 
 The publication run checks that its selected ref is the tag, the candidate came from a successful
 tag-triggered `release.yml` run at the same commit, the downloaded APK/manifests match the accepted
 SHA-256, and both evidence identities are present. The protected `release` environment then requires
 a separate final approval. Only this run has `contents: write`; it publishes the unchanged candidate,
-`SHA256SUMS.txt`, and `PHYSICAL-ACCEPTANCE.txt`. A rerun resumes an identical draft but refuses any
-published asset drift.
+`SHA256SUMS.txt`, `PHYSICAL-ACCEPTANCE.txt`, and a release-key-signed
+`Lenswake-<version>-certification.jar`. The bundle binds both accepted profile fingerprints and the
+APK digest; importing it is the only production path from Experimental to Certified. A rerun resumes
+an identical draft but refuses any published asset drift.
 
 ## Verify a published release
 
@@ -95,11 +99,13 @@ shasum -a 256 --check SHA256SUMS.txt
 gh attestation verify Lenswake-0.1.0.apk --repo po4yka/Lenswake
 scripts/ci/verify-release-apk.sh Lenswake-0.1.0.apk 0.1.0 1
 test -s PHYSICAL-ACCEPTANCE.txt
+jarsigner -verify Lenswake-0.1.0-certification.jar
 ```
 
 Record the release tag, commit, APK SHA-256, certificate fingerprint, workflow run, and verification
-result. Verify that `PHYSICAL-ACCEPTANCE.txt` names the downloaded APK digest, candidate run, and both
-content-addressed device records.
+result. Verify that `PHYSICAL-ACCEPTANCE.txt` names the downloaded APK digest, candidate run, both
+content-addressed device records, and both accepted profile fingerprints. Import the signed bundle in
+Profiles; the app rejects it unless its release signature and installed APK/profile identities match.
 
 ## One-time post-first-release hardening
 

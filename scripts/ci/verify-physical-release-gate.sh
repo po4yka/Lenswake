@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-candidate_manifest="${1:?Usage: verify-physical-release-gate.sh CANDIDATE APK CHECKSUMS TAG COMMIT RUN_ID APK_SHA256 P7_URL P7_SHA256 P8P_URL P8P_SHA256 OUTPUT}"
-apk="${2:?Usage: verify-physical-release-gate.sh CANDIDATE APK CHECKSUMS TAG COMMIT RUN_ID APK_SHA256 P7_URL P7_SHA256 P8P_URL P8P_SHA256 OUTPUT}"
-checksums="${3:?Usage: verify-physical-release-gate.sh CANDIDATE APK CHECKSUMS TAG COMMIT RUN_ID APK_SHA256 P7_URL P7_SHA256 P8P_URL P8P_SHA256 OUTPUT}"
+candidate_manifest="${1:?Usage: verify-physical-release-gate.sh CANDIDATE APK CHECKSUMS TAG COMMIT RUN_ID APK_SHA256 P7_URL P7_SHA256 P7_PROFILE P8P_URL P8P_SHA256 P8P_PROFILE OUTPUT}"
+apk="${2:?Usage: verify-physical-release-gate.sh CANDIDATE APK CHECKSUMS TAG COMMIT RUN_ID APK_SHA256 P7_URL P7_SHA256 P7_PROFILE P8P_URL P8P_SHA256 P8P_PROFILE OUTPUT}"
+checksums="${3:?Usage: verify-physical-release-gate.sh CANDIDATE APK CHECKSUMS TAG COMMIT RUN_ID APK_SHA256 P7_URL P7_SHA256 P7_PROFILE P8P_URL P8P_SHA256 P8P_PROFILE OUTPUT}"
 expected_tag="${4:?Missing accepted tag}"
 expected_commit="${5:?Missing accepted commit}"
 candidate_run_id="${6:?Missing candidate run ID}"
 expected_apk_sha256="${7:?Missing accepted APK SHA-256}"
 pixel_7_evidence_url="${8:?Missing Pixel 7 evidence URL}"
 pixel_7_evidence_sha256="${9:?Missing Pixel 7 evidence SHA-256}"
-pixel_8_pro_evidence_url="${10:?Missing Pixel 8 Pro evidence URL}"
-pixel_8_pro_evidence_sha256="${11:?Missing Pixel 8 Pro evidence SHA-256}"
-output="${12:?Missing physical acceptance output path}"
+pixel_7_profile_fingerprint="${10:?Missing Pixel 7 accepted profile fingerprint}"
+pixel_8_pro_evidence_url="${11:?Missing Pixel 8 Pro evidence URL}"
+pixel_8_pro_evidence_sha256="${12:?Missing Pixel 8 Pro evidence SHA-256}"
+pixel_8_pro_profile_fingerprint="${13:?Missing Pixel 8 Pro accepted profile fingerprint}"
+output="${14:?Missing physical acceptance output path}"
 
 require_sha256() {
   local label="$1"
@@ -56,7 +58,9 @@ done
 }
 require_sha256 "Accepted APK SHA-256" "$expected_apk_sha256"
 require_sha256 "Pixel 7 evidence SHA-256" "$pixel_7_evidence_sha256"
+require_sha256 "Pixel 7 accepted profile fingerprint" "$pixel_7_profile_fingerprint"
 require_sha256 "Pixel 8 Pro evidence SHA-256" "$pixel_8_pro_evidence_sha256"
+require_sha256 "Pixel 8 Pro accepted profile fingerprint" "$pixel_8_pro_profile_fingerprint"
 require_evidence_url "Pixel 7 evidence URL" "$pixel_7_evidence_url"
 require_evidence_url "Pixel 8 Pro evidence URL" "$pixel_8_pro_evidence_url"
 [[ "$pixel_7_evidence_url" != "$pixel_8_pro_evidence_url" ]] || {
@@ -101,7 +105,7 @@ expected_checksum_line="$expected_apk_sha256  $(basename "$apk")"
 }
 
 {
-  printf 'schemaVersion=1\n'
+  printf 'schemaVersion=2\n'
   printf 'tag=%s\n' "$expected_tag"
   printf 'commit=%s\n' "$expected_commit"
   printf 'candidateRunId=%s\n' "$candidate_run_id"
@@ -109,8 +113,10 @@ expected_checksum_line="$expected_apk_sha256  $(basename "$apk")"
   printf 'apkSha256=%s\n' "$expected_apk_sha256"
   printf 'pixel7EvidenceUrl=%s\n' "$pixel_7_evidence_url"
   printf 'pixel7EvidenceSha256=%s\n' "$pixel_7_evidence_sha256"
+  printf 'pixel7ProfileFingerprint=%s\n' "$pixel_7_profile_fingerprint"
   printf 'pixel8ProEvidenceUrl=%s\n' "$pixel_8_pro_evidence_url"
   printf 'pixel8ProEvidenceSha256=%s\n' "$pixel_8_pro_evidence_sha256"
+  printf 'pixel8ProProfileFingerprint=%s\n' "$pixel_8_pro_profile_fingerprint"
 } >"$output"
 
 echo "Verified physical release gate for $expected_tag at $expected_commit"
