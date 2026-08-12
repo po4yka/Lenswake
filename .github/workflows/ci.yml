@@ -139,7 +139,7 @@ jobs:
             ram-size: 2048M
           - label: 37
             api-level: "37.0"
-            target: google_apis
+            target: google_apis_ps16k
             channel: canary
             profile: pixel_2
             ram-size: 4096M
