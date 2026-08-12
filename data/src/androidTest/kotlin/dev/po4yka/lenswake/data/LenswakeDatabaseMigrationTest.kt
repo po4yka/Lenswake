@@ -29,10 +29,14 @@ class LenswakeDatabaseMigrationTest {
     )
 
     private val databaseName: String
-        get() = File(
-            ApplicationProvider.getApplicationContext<Context>().dataDir,
-            DATABASE_FILE_NAME,
-        ).absolutePath
+        get() {
+            val fixtureDirectory =
+                ApplicationProvider.getApplicationContext<Context>().noBackupFilesDir
+            check(fixtureDirectory.isDirectory || fixtureDirectory.mkdirs()) {
+                "Unable to create migration fixture directory: $fixtureDirectory"
+            }
+            return File(fixtureDirectory, DATABASE_FILE_NAME).absolutePath
+        }
 
     @Test
     fun migratesVersionOneToCurrentAndKeepsLegacyProfileReadable() {
