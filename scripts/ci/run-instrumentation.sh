@@ -13,7 +13,6 @@ while (( SECONDS < deadline )); do
     exec ./gradlew \
       :data:connectedDebugAndroidTest \
       :app:connectedDebugAndroidTest \
-      --rerun-tasks \
       --console=plain
   fi
   sleep 2

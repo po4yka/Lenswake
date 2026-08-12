@@ -111,6 +111,12 @@ jobs:
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
           cache-disabled: true
+      - name: Assemble instrumentation artifacts
+        run: >-
+          ./gradlew
+          :data:assembleDebugAndroidTest
+          :app:assembleDebugAndroidTest
+          --console=plain
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
