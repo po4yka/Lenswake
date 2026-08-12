@@ -151,6 +151,14 @@ class RuntimePreflightEvaluator(
                 message = strings.get(R.string.preflight_profile_environment_unknown),
             )
         }
+        if (!isSupportedPixelCameraRuntime(currentEnvironment)) {
+            return PreflightCheck(
+                type = PreflightCheckType.PROFILE_COMPATIBILITY,
+                severity = PreflightSeverity.BLOCKING,
+                status = PreflightStatus.FAILED,
+                message = strings.get(R.string.preflight_profile_unavailable),
+            )
+        }
         val best = profiles
             .filter { it.isSupportedRuntimeProfile() }
             .filter { it.targetsCurrentDeviceFamily(currentEnvironment) }

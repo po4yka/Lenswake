@@ -265,11 +265,13 @@ listed these latest unsuffixed global Android 17 releases for the supported coho
 - Pixel 8/8 Pro/8a, Pixel 9/9 Pro/9 Pro XL/9a, and Pixel 10/10 Pro/10 Pro XL/10a:
   `CP2A.260805.005` (August 2026).
 
-The source allowlist admits July for every supported model and August only for the Pixel 8-10a
-cohort; the July overlap keeps the observed Pixel 8 Pro stable rollout environment admissible. It
-requires an exact product/device codename pair and rejects all unlisted IDs. The connected Pixel 7
-beta fingerprint is therefore package-inspection evidence only and cannot produce an installable
-exact profile under current source.
+The OTA matrix supplies build IDs, but a build ID alone does not identify the complete Android
+fingerprint. The source allowlist therefore admits only the observed full July tuple
+`CP2A.260705.006/15641320`, combined with an exact registered product/device codename pair. The
+August ID remains rejected until its incremental and complete fingerprint receive reproducible
+provenance. The connected Pixel 7 beta fingerprint is package-inspection evidence only and cannot
+produce an installable exact profile under current source. A fingerprint with an approved build ID
+but a substituted incremental is also rejected.
 
 The allowlist is a dated local contract check, not cryptographic attestation. A hostile custom image
 could spoof public properties; trusted attestation would be a separate design.

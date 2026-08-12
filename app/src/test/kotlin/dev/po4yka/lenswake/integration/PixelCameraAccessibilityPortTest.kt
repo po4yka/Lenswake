@@ -891,7 +891,7 @@ class PixelCameraAccessibilityActionRoutingTest : PixelCameraAccessibilityPortTe
 
 class PixelCameraAccessibilityProfileValidationTest : PixelCameraAccessibilityPortTestFixture() {
     @Test
-    fun `computed probable compatibility requires rehearsal`() = runTest {
+    fun `unapproved system build is incompatible before accessibility inspection`() = runTest {
         val gateway = FakeAccessibilityGateway(activeSignals())
         val current = environment().copy(
             androidBuildFingerprint =
@@ -901,7 +901,7 @@ class PixelCameraAccessibilityProfileValidationTest : PixelCameraAccessibilityPo
         val result = port(currentEnvironment = current, gateway = gateway).inspect(profileUse())
 
         val unavailable = assertInstanceOf(PortResult.Unavailable::class.java, result)
-        assertEquals(AutomationFailureCode.PROFILE_REQUIRES_REHEARSAL, unavailable.failure.code)
+        assertEquals(AutomationFailureCode.PROFILE_INCOMPATIBLE, unavailable.failure.code)
         assertEquals(0, gateway.snapshotCalls)
     }
 

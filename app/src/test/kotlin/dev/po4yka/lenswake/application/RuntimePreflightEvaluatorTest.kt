@@ -271,7 +271,7 @@ class RuntimePreflightEvaluatorTest {
     }
 
     @Test
-    fun environmentDriftRequiresRehearsalAndSchemaDriftIsIncompatible() {
+    fun environmentDriftAndSchemaDriftFailClosed() {
         val calibrated = environment()
         val fingerprintDrift = calibrated.copy(
             androidBuildFingerprint =
@@ -283,11 +283,11 @@ class RuntimePreflightEvaluatorTest {
         )
 
         assertEquals(
-            "The closest profile requires a current-device rehearsal.",
+            "No compatible profile is available for the current environment.",
             compatibilityMessage(fingerprintDrift, profile(calibrated)),
         )
         assertEquals(
-            "The Pixel Camera environment changed; rehearsal is required.",
+            "No compatible profile is available for the current environment.",
             compatibilityMessage(versionDrift, profile(calibrated)),
         )
         assertEquals(
@@ -314,13 +314,14 @@ class RuntimePreflightEvaluatorTest {
             "google/husky/husky:17/CP41.260701.005/15834971:user/release-keys",
             "google/husky/husky:17/CP2A.260705.006.A1/15641321:user/release-keys",
             "google/husky/husky:17/CUSTOM.260705.006/1:user/release-keys",
+            "google/husky/husky:17/CP2A.260705.006/1:user/release-keys",
         )
 
         rejectedFingerprints.forEach { fingerprint ->
             val rejected = stable.copy(androidBuildFingerprint = fingerprint)
             val check = evaluator.evaluate(
                 observation = observation(cameraEnvironment = rejected),
-                profiles = listOf(profile(rejected)),
+                profiles = listOf(profile(stable)),
             ).checks.single { it.type == PreflightCheckType.PROFILE_COMPATIBILITY }
 
             assertEquals(PreflightStatus.FAILED, check.status, fingerprint)

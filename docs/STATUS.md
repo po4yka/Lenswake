@@ -35,11 +35,12 @@ Capture exposed:     receipt-gated matrix; no current signed-release physical re
 
 On 2026-08-12 read-only probes observed Pixel 8 Pro on the stable fingerprint above and Pixel 7 on
 a beta fingerprint, both with Pixel Camera versionCode 69481630. Profile installation, preflight,
-and action dispatch now accept only the dated Google-published global Android 17 build-ID window:
-`CP2A.260705.006` for Pixel 6–7a and `CP2A.260705.006`/`CP2A.260805.005` for Pixel 8–10a. The observed
-beta plus carrier-suffixed, custom, older, and cross-cohort IDs are rejected. These probes are not
-installation, rehearsal, saved-media, or acceptance, and the local fingerprint check is not remote
-or hardware-backed OS attestation.
+and action dispatch now accept only the complete dated Android 17 tuple
+`CP2A.260705.006/15641320`; the product and device must also exactly equal the registered codename.
+The listed August build ID is not admitted until its full fingerprint has reproducible provenance.
+The observed beta plus carrier-suffixed, custom, older, and substituted-incremental fingerprints are
+rejected. These probes are not installation, rehearsal, saved-media, or acceptance, and the local
+fingerprint check is not remote or hardware-backed OS attestation.
 
 The same read-only session pinned both installed Pixel Camera 10.4.117 variants by package-part,
 base-APK, signer, resources, and DEX identity. The resulting

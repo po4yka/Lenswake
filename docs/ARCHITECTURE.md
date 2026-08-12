@@ -239,14 +239,15 @@ are part of the definition fingerprint, all pre-promotion rehearsal receipts bec
 artifact-bound repository exposes the persisted profile as Experimental again if a later installed APK
 does not match the receipt.
 
-System-build admission is a dated positive allowlist of Google-published global Android 17 OTA build
-IDs per model cohort. The fingerprint parser requires the exact `google/<codename>/<codename>`
-product/device pair, Android release `17`, a decimal incremental, and `user/release-keys`. Unknown,
-older, beta, carrier-suffixed, custom, and cross-cohort build IDs are rejected at profile installation,
-preflight, and action dispatch even when a persisted profile claims physical provenance. The allowlist
-must be deliberately refreshed from Google's OTA matrix for a later monthly release; matching a public
-fingerprint is a local contract check, not cryptographic attestation against a hostile custom image
-that spoofs every public build property.
+System-build admission is a dated positive allowlist of complete global Android 17 fingerprint
+components. The parser requires the exact `google/<codename>/<codename>` product/device pair,
+Android release `17`, approved build ID plus exact incremental, and `user/release-keys`. Preflight
+validates the current environment directly before it considers persisted profiles. Unknown, older,
+beta, carrier-suffixed, custom, and unproven incrementals are rejected at profile installation,
+preflight, and action dispatch even when a persisted profile claims physical provenance. A later
+monthly release is added only after both its official OTA ID and full fingerprint are recorded;
+matching a public fingerprint remains a local contract check, not cryptographic attestation against
+a hostile custom image that spoofs every public build property.
 
 The domain can represent Video, Time Lapse, Night Sight Time Lapse, five speeds, four lenses, and
 zoom. Runtime authorization comes only from selectors, state signals, and a qualifying rehearsal.

@@ -164,8 +164,9 @@ Dependency direction is `:app → :automation/:core/:data`, `:automation → :co
 
 - A capture is exposed to schedules only after a current exact receipt for mode, speed, lens and
   video settings. Unsupported or unavailable controls fail closed.
-- System builds use a dated positive allowlist of Google-published global OTA IDs. New monthly,
-  beta, carrier-suffixed, custom, and malformed fingerprints fail closed until the policy is reviewed.
+- System builds use a dated positive allowlist of complete Google fingerprint components, including
+  the exact build ID and incremental. New monthly, beta, carrier-suffixed, custom, and malformed
+  fingerprints fail closed until the full fingerprint provenance is reviewed.
   This local check is not cryptographic attestation against a hostile image spoofing public properties.
 - `CERTIFIED` is an immutable release-evidence result limited to Pixel 7/Pixel 8 Pro. The app accepts
   it only from a release-key-signed bundle whose APK SHA-256 and exact Experimental profile fingerprint

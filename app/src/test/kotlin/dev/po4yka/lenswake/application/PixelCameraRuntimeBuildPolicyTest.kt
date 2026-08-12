@@ -16,22 +16,29 @@ class PixelCameraRuntimeBuildPolicyTest {
     }
 
     @Test
-    fun `every supported model accepts its current global stable build window`() {
+    fun `every supported model accepts its current exact global stable build`() {
         SupportedPixelModelRegistry.entries.forEach { model ->
-            val buildId = when (model.globalStableBuildWindow) {
-                PixelGlobalStableBuildWindow.JULY_2026 -> "CP2A.260705.006"
-                PixelGlobalStableBuildWindow.JULY_AUGUST_2026 -> "CP2A.260805.005"
-            }
             val candidate = environment.copy(
                 deviceModel = model.model,
                 deviceCodename = model.codename,
                 androidBuildFingerprint =
-                    "google/${model.codename}/${model.codename}:17/$buildId/1:user/release-keys",
+                    "google/${model.codename}/${model.codename}:17/CP2A.260705.006/15641320:user/release-keys",
             )
 
             assertTrue(isSupportedPixelCameraRuntime(candidate), model.model)
             assertTrue(KnownPixelCameraProfileCatalog.exactMatch(candidate) != null, model.model)
         }
+    }
+
+    @Test
+    fun `build id without exact fingerprint provenance is rejected`() {
+        val candidate = environment.copy(
+            androidBuildFingerprint =
+                "google/husky/husky:17/CP2A.260805.005/15999999:user/release-keys",
+        )
+
+        assertFalse(isSupportedPixelCameraRuntime(candidate))
+        assertNull(KnownPixelCameraProfileCatalog.exactMatch(candidate))
     }
 
     @Test
@@ -50,6 +57,10 @@ class PixelCameraRuntimeBuildPolicyTest {
             environment.copy(
                 androidBuildFingerprint =
                     "google/husky/husky:17/CUSTOM.260705.006/1:user/release-keys",
+            ),
+            environment.copy(
+                androidBuildFingerprint =
+                    "google/husky/husky:17/CP2A.260705.006/1:user/release-keys",
             ),
             environment.copy(
                 androidBuildFingerprint =

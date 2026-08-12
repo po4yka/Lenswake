@@ -88,7 +88,10 @@ internal object PixelSystemBuildPolicy {
         val match = GOOGLE_PIXEL_FINGERPRINT.matchEntire(fingerprint) ?: return false
         return match.groupValues[PRODUCT_GROUP] == model.codename &&
             match.groupValues[DEVICE_GROUP] == model.codename &&
-            model.globalStableBuildWindow.accepts(match.groupValues[BUILD_ID_GROUP])
+            model.globalStableBuildSet.accepts(
+                buildId = match.groupValues[BUILD_ID_GROUP],
+                incremental = match.groupValues[INCREMENTAL_GROUP],
+            )
     }
 
     private val GOOGLE_PIXEL_FINGERPRINT =
@@ -96,4 +99,5 @@ internal object PixelSystemBuildPolicy {
     private const val PRODUCT_GROUP = 1
     private const val DEVICE_GROUP = 2
     private const val BUILD_ID_GROUP = 3
+    private const val INCREMENTAL_GROUP = 4
 }
