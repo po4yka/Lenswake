@@ -31,10 +31,8 @@ class LenswakeDatabaseMigrationTest {
     @Before
     fun createDatabaseDirectory() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val databaseDirectory = checkNotNull(context.getDatabasePath(DATABASE_NAME).parentFile)
-        check(databaseDirectory.isDirectory || databaseDirectory.mkdirs()) {
-            "Unable to create migration database directory: $databaseDirectory"
-        }
+        context.openOrCreateDatabase(DATABASE_DIRECTORY_SENTINEL, Context.MODE_PRIVATE, null).close()
+        check(context.deleteDatabase(DATABASE_DIRECTORY_SENTINEL))
     }
 
     @Test
@@ -448,5 +446,6 @@ class LenswakeDatabaseMigrationTest {
 
     private companion object {
         const val DATABASE_NAME = "lenswake-migration-test"
+        const val DATABASE_DIRECTORY_SENTINEL = "lenswake-migration-directory-sentinel"
     }
 }
