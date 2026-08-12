@@ -12,7 +12,8 @@ import dev.po4yka.lenswake.core.AutomationFailure
 import dev.po4yka.lenswake.core.AutomationFailureCode
 import dev.po4yka.lenswake.core.DisplayOrientation
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
-import dev.po4yka.lenswake.platform.PIXEL_CAMERA_PACKAGE
+import dev.po4yka.lenswake.platform.PixelCameraPackageIdentity
+import dev.po4yka.lenswake.platform.SUPPORTED_PIXEL_CAMERA_IDENTITY
 
 /** Reads the compatibility identity Android exposes instead of relying on build-time constants. */
 class AndroidPixelCameraEnvironmentProbe(context: Context) {
@@ -20,33 +21,36 @@ class AndroidPixelCameraEnvironmentProbe(context: Context) {
 
     fun inspect(): PortResult<PixelCameraEnvironment> {
         val packageManager = applicationContext.packageManager
+        val cameraIdentity = SUPPORTED_PIXEL_CAMERA_IDENTITY
         val packageInfo = pixelCameraPackageInfo(packageManager)
         val cameraResources = pixelCameraResources(packageManager)
         return when {
             packageInfo == null -> unavailable(
-                "$PIXEL_CAMERA_PACKAGE is not installed or visible",
+                "${cameraIdentity.packageName} is not installed or visible",
             )
             cameraResources == null -> unavailable("Pixel Camera resources are not available")
             !packageManager.hasSigningCertificate(
-                PIXEL_CAMERA_PACKAGE,
-                GOOGLE_CAMERA_CERTIFICATE_SHA256.hexToByteArray(),
+                cameraIdentity.packageName,
+                cameraIdentity.signingCertificate.toByteArray(),
                 PackageManager.CERT_INPUT_SHA256,
             ) -> unavailable("Pixel Camera is not signed by the supported Google certificate")
-            else -> observed(packageInfo, cameraResources)
+            else -> observed(packageInfo, cameraResources, cameraIdentity)
         }
     }
 
-    private fun pixelCameraPackageInfo(packageManager: PackageManager): PackageInfo? = try {
+    private fun pixelCameraPackageInfo(packageManager: PackageManager): PackageInfo? =
+        try {
             packageManager.getPackageInfo(
-                PIXEL_CAMERA_PACKAGE,
+                SUPPORTED_PIXEL_CAMERA_IDENTITY.packageName,
                 PackageManager.PackageInfoFlags.of(0),
             )
         } catch (_: PackageManager.NameNotFoundException) {
             null
         }
 
-    private fun pixelCameraResources(packageManager: PackageManager): Resources? = try {
-            packageManager.getResourcesForApplication(PIXEL_CAMERA_PACKAGE)
+    private fun pixelCameraResources(packageManager: PackageManager): Resources? =
+        try {
+            packageManager.getResourcesForApplication(SUPPORTED_PIXEL_CAMERA_IDENTITY.packageName)
         } catch (_: PackageManager.NameNotFoundException) {
             null
         }
@@ -54,6 +58,7 @@ class AndroidPixelCameraEnvironmentProbe(context: Context) {
     private fun observed(
         packageInfo: PackageInfo,
         cameraResources: Resources,
+        cameraIdentity: PixelCameraPackageIdentity,
     ): PortResult<PixelCameraEnvironment> {
         val metrics = applicationContext.resources.displayMetrics
         val configuration = applicationContext.resources.configuration
@@ -65,9 +70,9 @@ class AndroidPixelCameraEnvironmentProbe(context: Context) {
                 deviceCodename = Build.DEVICE,
                 androidSdk = Build.VERSION.SDK_INT,
                 androidBuildFingerprint = Build.FINGERPRINT,
-                cameraPackage = PIXEL_CAMERA_PACKAGE,
+                cameraPackage = cameraIdentity.packageName,
                 cameraVersionCode = packageInfo.longVersionCode,
-                cameraSigningCertificateSha256 = GOOGLE_CAMERA_CERTIFICATE_SHA256,
+                cameraSigningCertificateSha256 = cameraIdentity.signingCertificate.hex,
                 localeTag = locale.toLanguageTag(),
                 displayWidthPx = metrics.widthPixels,
                 displayHeightPx = metrics.heightPixels,
@@ -93,10 +98,6 @@ class AndroidPixelCameraEnvironmentProbe(context: Context) {
         ).isNullOrBlank()
     }.getOrDefault(false)
 
-    private fun String.hexToByteArray(): ByteArray = chunked(HEX_BYTE_CHARACTER_COUNT)
-        .map { it.toInt(HEX_RADIX).toByte() }
-        .toByteArray()
-
     private fun unavailable(message: String): PortResult.Unavailable = PortResult.Unavailable(
         AutomationFailure(
             code = AutomationFailureCode.PIXEL_CAMERA_NOT_INSTALLED,
@@ -105,11 +106,7 @@ class AndroidPixelCameraEnvironmentProbe(context: Context) {
     )
 
     private companion object {
-        const val GOOGLE_CAMERA_CERTIFICATE_SHA256 =
-            "f0fd6c5b410f25cb25c3b53346c8972fae30f8ee7411df910480ad6b2d60db83"
         const val DISPLAY_SIZE_FORCED_SETTING = "display_size_forced"
         const val DISPLAY_DENSITY_FORCED_SETTING = "display_density_forced"
-        const val HEX_BYTE_CHARACTER_COUNT = 2
-        const val HEX_RADIX = 16
     }
 }

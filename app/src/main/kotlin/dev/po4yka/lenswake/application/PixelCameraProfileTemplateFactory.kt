@@ -7,6 +7,7 @@ import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.ProfileSource
+import dev.po4yka.lenswake.platform.SUPPORTED_PIXEL_CAMERA_IDENTITY
 import java.security.MessageDigest
 import java.util.Locale
 
@@ -42,9 +43,7 @@ internal object PixelCameraProfileTemplateFactory {
             androidSdk == SUPPORTED_ANDROID_SDK
 
     private fun PixelCameraEnvironment.hasSupportedCamera(): Boolean =
-        cameraPackage == PIXEL_CAMERA_PACKAGE &&
-            cameraVersionCode == SUPPORTED_CAMERA_VERSION_CODE &&
-            cameraSigningCertificateSha256 == GOOGLE_CAMERA_CERTIFICATE_SHA256
+        SUPPORTED_PIXEL_CAMERA_IDENTITY.matches(this)
 
     private fun PixelCameraEnvironment.hasSupportedDisplayEnvironment(): Boolean {
         val locale = Locale.forLanguageTag(localeTag)
@@ -77,11 +76,7 @@ internal object PixelCameraProfileTemplateFactory {
         return "pixel-${environment.deviceCodename}-exact-v${PixelCameraSelectorSchema.CURRENT_VERSION}-$digest"
     }
 
-    private const val PIXEL_CAMERA_PACKAGE = "com.google.android.GoogleCamera"
     private const val SUPPORTED_ANDROID_SDK = 37
-    private const val SUPPORTED_CAMERA_VERSION_CODE = 69_481_630L
-    private const val GOOGLE_CAMERA_CERTIFICATE_SHA256 =
-        "f0fd6c5b410f25cb25c3b53346c8972fae30f8ee7411df910480ad6b2d60db83"
     private const val PROFILE_ID_HASH_BYTES = 8
 }
 

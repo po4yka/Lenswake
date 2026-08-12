@@ -26,6 +26,7 @@ import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.core.UiSelector
 import dev.po4yka.lenswake.core.UiSelectorSet
+import dev.po4yka.lenswake.platform.SUPPORTED_PIXEL_CAMERA_IDENTITY
 import java.time.Instant
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -1066,10 +1067,10 @@ abstract class PixelCameraAccessibilityPortTestFixture {
         androidSdk = 37,
         androidBuildFingerprint =
             "google/husky/husky:17/CP2A.260705.006/15641320:user/release-keys",
-        cameraPackage = CAMERA_PACKAGE,
-        cameraVersionCode = 69_481_630L,
+        cameraPackage = SUPPORTED_PIXEL_CAMERA_IDENTITY.packageName,
+        cameraVersionCode = SUPPORTED_PIXEL_CAMERA_IDENTITY.versionCode,
         cameraSigningCertificateSha256 =
-            "f0fd6c5b410f25cb25c3b53346c8972fae30f8ee7411df910480ad6b2d60db83",
+            SUPPORTED_PIXEL_CAMERA_IDENTITY.signingCertificate.hex,
         localeTag = "en-US",
         displayWidthPx = 1_344,
         displayHeightPx = 2_992,

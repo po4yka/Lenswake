@@ -18,6 +18,7 @@ import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.core.definitionFingerprint
+import dev.po4yka.lenswake.platform.SUPPORTED_PIXEL_CAMERA_IDENTITY
 import dev.po4yka.lenswake.ui.TestUiStringProvider
 import java.time.Instant
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -408,10 +409,10 @@ class RuntimePreflightEvaluatorTest {
         androidSdk = 37,
         androidBuildFingerprint =
             "google/husky/husky:17/CP2A.260705.006/15641320:user/release-keys",
-        cameraPackage = "com.google.android.GoogleCamera",
-        cameraVersionCode = 69_481_630L,
+        cameraPackage = SUPPORTED_PIXEL_CAMERA_IDENTITY.packageName,
+        cameraVersionCode = SUPPORTED_PIXEL_CAMERA_IDENTITY.versionCode,
         cameraSigningCertificateSha256 =
-            "f0fd6c5b410f25cb25c3b53346c8972fae30f8ee7411df910480ad6b2d60db83",
+            SUPPORTED_PIXEL_CAMERA_IDENTITY.signingCertificate.hex,
         localeTag = "en-US",
         displayWidthPx = 1_008,
         displayHeightPx = 2_244,

@@ -15,6 +15,8 @@ import dev.po4yka.lenswake.core.SupportTier
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.core.UiSelector
 import dev.po4yka.lenswake.core.UiSelectorSet
+import dev.po4yka.lenswake.platform.PIXEL_CAMERA_PACKAGE
+import dev.po4yka.lenswake.platform.SUPPORTED_PIXEL_CAMERA_IDENTITY
 
 /**
  * Version-pinned semantic selector candidates documented in
@@ -39,8 +41,9 @@ object KnownPixelCameraProfileCatalog {
             androidBuildFingerprint =
                 "google/husky/husky:17/CP2A.260705.006/15641320:user/release-keys",
             cameraPackage = PIXEL_CAMERA_PACKAGE,
-            cameraVersionCode = 69_481_630L,
-            cameraSigningCertificateSha256 = GOOGLE_CAMERA_CERTIFICATE_SHA256,
+            cameraVersionCode = SUPPORTED_PIXEL_CAMERA_IDENTITY.versionCode,
+            cameraSigningCertificateSha256 =
+                SUPPORTED_PIXEL_CAMERA_IDENTITY.signingCertificate.hex,
             localeTag = "en-US-u-fw-mon-mu-celsius",
             displayWidthPx = 1_008,
             displayHeightPx = 2_244,
@@ -492,7 +495,6 @@ object KnownPixelCameraProfileCatalog {
         requiresClickable = requiresClickable,
     )
 
-    private const val PIXEL_CAMERA_PACKAGE = "com.google.android.GoogleCamera"
 }
 
 internal fun isSupportedPixelCameraRuntime(environment: PixelCameraEnvironment): Boolean =
@@ -501,6 +503,3 @@ internal fun isSupportedPixelCameraRuntime(environment: PixelCameraEnvironment):
         environment.deviceModel,
         environment.deviceCodename,
     )?.let { model -> PixelCameraProfileTemplateFactory.isSupportedRuntime(model, environment) } == true
-
-private const val GOOGLE_CAMERA_CERTIFICATE_SHA256 =
-    "f0fd6c5b410f25cb25c3b53346c8972fae30f8ee7411df910480ad6b2d60db83"
