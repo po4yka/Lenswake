@@ -9,6 +9,7 @@ new_repository() {
   local directory="$1"
   mkdir -p "$directory/scripts/ci"
   cp "$source_root/scripts/ci/read-version.sh" "$directory/scripts/ci/"
+  cp "$source_root/scripts/ci/semver.sh" "$directory/scripts/ci/"
   cp "$source_root/scripts/ci/validate-release-tag.sh" "$directory/scripts/ci/"
   git -C "$directory" init --initial-branch=main --quiet
   git -C "$directory" config user.name "Lenswake CI"
@@ -41,13 +42,19 @@ expect_failure() {
 
 success_repo="$test_root/success"
 new_repository "$success_repo"
-commit_version "$success_repo" 0.1.0 1
-git -C "$success_repo" tag v0.1.0
+commit_version "$success_repo" 1.2.3-rc.1+build.7 1
+git -C "$success_repo" tag v1.2.3-rc.1+build.7
 git -C "$success_repo" update-ref refs/remotes/origin/main HEAD
-(cd "$success_repo" && scripts/ci/validate-release-tag.sh v0.1.0 origin/main >/dev/null)
+(cd "$success_repo" && scripts/ci/validate-release-tag.sh v1.2.3-rc.1+build.7 origin/main >/dev/null)
 
 expect_failure "Release tag must be v<SemVer>" \
   bash -c "cd '$success_repo' && scripts/ci/validate-release-tag.sh release-0.1.0 origin/main"
+expect_failure "Release tag must be v<SemVer>" \
+  bash -c "cd '$success_repo' && scripts/ci/validate-release-tag.sh v01.2.3 origin/main"
+expect_failure "Release tag must be v<SemVer>" \
+  bash -c "cd '$success_repo' && scripts/ci/validate-release-tag.sh v1.2.3-01 origin/main"
+expect_failure "Release tag must be v<SemVer>" \
+  bash -c "cd '$success_repo' && scripts/ci/validate-release-tag.sh v1.2.3- origin/main"
 expect_failure "does not match versionName" \
   bash -c "cd '$success_repo' && scripts/ci/validate-release-tag.sh v0.2.0 origin/main"
 

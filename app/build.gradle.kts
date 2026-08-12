@@ -9,11 +9,14 @@ plugins {
 val appVersionProperties = Properties().apply {
     rootProject.file("version.properties").inputStream().use { load(it) }
 }
+val semVerPattern = Regex(
+    """^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*)|([0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))(\.((0|[1-9][0-9]*)|([0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)))*)?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$""",
+)
 val appVersionName = requireNotNull(appVersionProperties.getProperty("versionName")) {
     "version.properties must define versionName"
 }.also {
-    require(it.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?"))) {
-        "versionName must be a SemVer-compatible value: $it"
+    require(it.matches(semVerPattern)) {
+        "versionName must be a SemVer 2.0.0 value: $it"
     }
 }
 val appVersionCode = requireNotNull(appVersionProperties.getProperty("versionCode")) {

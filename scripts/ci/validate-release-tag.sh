@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/ci/semver.sh
+source "$script_dir/semver.sh"
+
 tag="${1:-${GITHUB_REF_NAME:-}}"
 main_ref="${2:-origin/main}"
 
-if [[ -z "$tag" || ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+if [[ -z "$tag" ]] || ! is_lenswake_semver "${tag#v}" || [[ "$tag" != v* ]]; then
   echo "Release tag must be v<SemVer>: ${tag:-<empty>}" >&2
   exit 1
 fi
@@ -30,7 +34,9 @@ previous_tag="$(
   git tag --merged "$main_ref" --list 'v*' --sort=-version:refname |
     while IFS= read -r candidate; do
       [[ "$candidate" == "$tag" ]] && continue
-      [[ "$candidate" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || continue
+      if [[ "$candidate" != v* ]] || ! is_lenswake_semver "${candidate#v}"; then
+        continue
+      fi
       printf '%s\n' "$candidate"
       break
     done

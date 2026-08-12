@@ -62,7 +62,7 @@ Download into a fresh directory and verify both digest and GitHub provenance:
 
 ```bash
 gh release download v0.1.0 --repo po4yka/Lenswake
-sha256sum --check SHA256SUMS.txt
+shasum -a 256 --check SHA256SUMS.txt
 gh attestation verify Lenswake-0.1.0.apk --repo po4yka/Lenswake
 scripts/ci/verify-release-apk.sh Lenswake-0.1.0.apk 0.1.0 1
 ```

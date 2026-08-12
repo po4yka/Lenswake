@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/ci/semver.sh
+source "$script_dir/semver.sh"
+
 version_file="${1:-version.properties}"
 
 if [[ ! -f "$version_file" ]]; then
@@ -11,7 +15,7 @@ fi
 version_name="$(sed -n 's/^versionName=//p' "$version_file")"
 version_code="$(sed -n 's/^versionCode=//p' "$version_file")"
 
-if [[ ! "$version_name" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+if ! is_lenswake_semver "$version_name"; then
   echo "Invalid versionName in $version_file: $version_name" >&2
   exit 1
 fi
