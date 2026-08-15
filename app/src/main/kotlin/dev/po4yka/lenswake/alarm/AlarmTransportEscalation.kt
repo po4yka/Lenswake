@@ -15,6 +15,8 @@ import android.util.Base64
 import dev.po4yka.lenswake.MainActivity
 import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.application.LocalizedTextResolver
+import dev.po4yka.lenswake.platform.PlatformCapability
+import dev.po4yka.lenswake.platform.SecurePixelCameraResolver
 import java.nio.charset.StandardCharsets
 
 internal enum class AlarmTransportFailureCode {
@@ -292,7 +294,10 @@ internal class AndroidAlarmTransportFailureNotifier(
 
     private fun notification(marker: AlarmTransportFailureMarker): Notification {
         val actionIntent = if (marker.cameraAction) {
-            context.packageManager.getLaunchIntentForPackage(PIXEL_CAMERA_PACKAGE)
+            when (val camera = SecurePixelCameraResolver(context).resolve()) {
+                is PlatformCapability.Available -> camera.value.intent
+                is PlatformCapability.Unavailable -> null
+            }
         } else {
             null
         } ?: Intent(context, MainActivity::class.java)
@@ -329,7 +334,6 @@ internal class AndroidAlarmTransportFailureNotifier(
         const val CHANNEL_ID = "alarm_transport_failures"
         const val NOTIFICATION_ID_BASE = 20_000
         const val NOTIFICATION_ID_MASK = 0x3fff_ffff
-        const val PIXEL_CAMERA_PACKAGE = "com.google.android.GoogleCamera"
     }
 }
 
