@@ -81,6 +81,15 @@ jobs:
           java-version: "17"
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+      - name: Assemble instrumentation artifacts
+        run: >-
+          ./gradlew
+          :data:assembleDebugAndroidTest
+          :app:assembleDebugAndroidTest
+          --console=plain
+      - name: Stop Gradle daemons before emulator startup
+        if: always()
+        run: ./gradlew --stop
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
@@ -94,12 +103,8 @@ jobs:
           target: aosp_atd
           arch: x86_64
           profile: pixel_7_pro
-          script: >-
-            ./gradlew
-            :data:connectedDebugAndroidTest
-            :app:connectedDebugAndroidTest
-            --rerun-tasks
-            --console=plain
+          disk-size: 6G
+          script: scripts/ci/run-instrumentation.sh
       - name: Upload failure reports
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -124,14 +129,20 @@ jobs:
             api-level: 35
             target: aosp_atd
             channel: stable
+            profile: pixel_7_pro
+            ram-size: 2048M
           - label: 36
             api-level: 36
             target: aosp_atd
             channel: stable
+            profile: pixel_7_pro
+            ram-size: 2048M
           - label: 37
-            api-level: "37.0"
-            target: google_apis
+            api-level: "37.2-beta2"
+            target: google_apis_ps16k
             channel: canary
+            profile: pixel_2
+            ram-size: 4096M
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -144,6 +155,15 @@ jobs:
           java-version: "17"
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+      - name: Assemble instrumentation artifacts
+        run: >-
+          ./gradlew
+          :data:assembleDebugAndroidTest
+          :app:assembleDebugAndroidTest
+          --console=plain
+      - name: Stop Gradle daemons before emulator startup
+        if: always()
+        run: ./gradlew --stop
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
@@ -157,13 +177,10 @@ jobs:
           target: ${{ matrix.target }}
           channel: ${{ matrix.channel }}
           arch: x86_64
-          profile: pixel_7_pro
-          script: >-
-            ./gradlew
-            :data:connectedDebugAndroidTest
-            :app:connectedDebugAndroidTest
-            --rerun-tasks
-            --console=plain
+          profile: ${{ matrix.profile }}
+          ram-size: ${{ matrix.ram-size }}
+          disk-size: 6G
+          script: scripts/ci/run-instrumentation.sh
       - name: Upload failure reports
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

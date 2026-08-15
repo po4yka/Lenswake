@@ -7,6 +7,7 @@ import dev.po4yka.lenswake.core.NormalizedPoint
 import dev.po4yka.lenswake.core.PixelCameraStateSignal
 import dev.po4yka.lenswake.core.PixelCameraDialogKind
 import dev.po4yka.lenswake.core.PixelCameraDialogProfile
+import dev.po4yka.lenswake.core.ProfileCertification
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.core.UiSelector
 import dev.po4yka.lenswake.core.UiSelectorSet
@@ -44,6 +45,17 @@ internal fun JsonColumnCodec.encodeStringMap(values: Map<String, String>): Strin
 
 internal fun JsonColumnCodec.decodeStringMap(encoded: String): Map<String, String> =
     DiagnosticJsonColumnCodec.decode(encoded)
+
+internal object CertificationJsonColumnCodec {
+    fun encode(certification: ProfileCertification): String =
+        json.encodeToString(CertificationPayload.from(certification))
+            .bounded(MAX_DIAGNOSTIC_JSON_LENGTH, "profile certification")
+
+    fun decode(encoded: String): ProfileCertification =
+        json.decodeFromString<CertificationPayload>(
+            encoded.bounded(MAX_DIAGNOSTIC_JSON_LENGTH, "profile certification"),
+        ).toDomain()
+}
 
 internal object JsonColumnCodec {
     fun encodeTargets(targets: Map<AutomationAction, UiSelectorSet>): String {
@@ -209,6 +221,48 @@ internal object JsonColumnCodec {
         }
 
 }
+
+@Serializable
+private data class CertificationPayload(
+    val schemaVersion: Int,
+    val releaseTag: String,
+    val releaseCommit: String,
+    val candidateRunId: Long,
+    val lenswakeApkSha256: String,
+    val bundleSha256: String,
+    val pixel7EvidenceSha256: String,
+    val pixel8ProEvidenceSha256: String,
+) {
+    fun toDomain(): ProfileCertification {
+        require(schemaVersion == CERTIFICATION_JSON_SCHEMA_VERSION) {
+            "Unsupported certification JSON schema version: $schemaVersion"
+        }
+        return ProfileCertification(
+            releaseTag,
+            releaseCommit,
+            candidateRunId,
+            lenswakeApkSha256,
+            bundleSha256,
+            pixel7EvidenceSha256,
+            pixel8ProEvidenceSha256,
+        )
+    }
+
+    companion object {
+        fun from(value: ProfileCertification) = CertificationPayload(
+            schemaVersion = CERTIFICATION_JSON_SCHEMA_VERSION,
+            releaseTag = value.releaseTag,
+            releaseCommit = value.releaseCommit,
+            candidateRunId = value.candidateRunId,
+            lenswakeApkSha256 = value.lenswakeApkSha256,
+            bundleSha256 = value.bundleSha256,
+            pixel7EvidenceSha256 = value.pixel7EvidenceSha256,
+            pixel8ProEvidenceSha256 = value.pixel8ProEvidenceSha256,
+        )
+    }
+}
+
+private const val CERTIFICATION_JSON_SCHEMA_VERSION = 1
 
 private fun String.bounded(maxLength: Int, columnPurpose: String): String {
     require(length <= maxLength) {

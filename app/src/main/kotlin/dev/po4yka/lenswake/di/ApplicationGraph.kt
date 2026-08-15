@@ -1,6 +1,7 @@
 package dev.po4yka.lenswake.di
 
 import android.app.Application
+import dev.po4yka.lenswake.BuildConfig
 import dev.po4yka.lenswake.alarm.AlarmManagerRecordingScheduler
 import dev.po4yka.lenswake.alarm.AlarmManagerRehearsalStopScheduler
 import dev.po4yka.lenswake.alarm.InterruptedScheduledSessionRecovery
@@ -13,6 +14,8 @@ import dev.po4yka.lenswake.application.DefaultRehearsalCoordinator
 import dev.po4yka.lenswake.application.DefaultRehearsalStopTriggerCoordinator
 import dev.po4yka.lenswake.application.AlarmTransportIncidentSource
 import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfile
+import dev.po4yka.lenswake.application.ArtifactBoundAutomationProfileRepository
+import dev.po4yka.lenswake.application.InstallReleaseCertification
 import dev.po4yka.lenswake.application.RehearsalCoordinator
 import dev.po4yka.lenswake.application.RehearsalStopWorkflow
 import dev.po4yka.lenswake.application.RuntimePreflightProbe
@@ -20,11 +23,13 @@ import dev.po4yka.lenswake.application.ScheduleWorkflow
 import dev.po4yka.lenswake.application.MutexRecordingScheduler
 import dev.po4yka.lenswake.application.SharedPreferencesAlarmTransportIncidentSource
 import dev.po4yka.lenswake.automation.DefaultAutomationEngine
+import dev.po4yka.lenswake.automation.PortResult
 import dev.po4yka.lenswake.automation.SelectorMatcher
 import dev.po4yka.lenswake.core.AutomationProfileRepository
 import dev.po4yka.lenswake.core.EnvironmentSnapshotRepository
 import dev.po4yka.lenswake.core.ExecutionRepository
 import dev.po4yka.lenswake.core.LenswakeClock
+import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.RecordingScheduler
 import dev.po4yka.lenswake.core.ScheduleRepository
 import dev.po4yka.lenswake.core.SystemLenswakeClock
@@ -37,12 +42,14 @@ import dev.po4yka.lenswake.integration.AndroidEnvironmentSnapshotCollector
 import dev.po4yka.lenswake.integration.AndroidPixelCameraEnvironmentProbe
 import dev.po4yka.lenswake.integration.AndroidRecordingMediaPort
 import dev.po4yka.lenswake.integration.AndroidRuntimePreflightProbe
+import dev.po4yka.lenswake.integration.AndroidLenswakeArtifactIdentity
+import dev.po4yka.lenswake.integration.AndroidReleaseCertificationBundleReader
 import dev.po4yka.lenswake.integration.PixelCameraAccessibilityPort
 import dev.po4yka.lenswake.platform.SecurePixelCameraLauncher
 import dev.po4yka.lenswake.platform.AndroidDeviceWakeController
 import dev.po4yka.lenswake.privileged.UnavailablePrivilegedBridge
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
 
 /** Small explicit process-wide composition root; no dependency reports synthetic availability. */
 class ApplicationGraph(application: Application) {
@@ -50,7 +57,14 @@ class ApplicationGraph(application: Application) {
         SharedPreferencesAlarmTransportIncidentSource(application)
     val database: LenswakeDatabase = LenswakeDatabase.create(application)
     val scheduleRepository: ScheduleRepository = RoomScheduleRepository(database)
-    val profileRepository: AutomationProfileRepository = RoomAutomationProfileRepository(database)
+    private val lenswakeArtifactIdentity = AndroidLenswakeArtifactIdentity(
+        application,
+        BuildConfig.RELEASE_SIGNING_CERTIFICATE_SHA256,
+    )
+    val profileRepository: AutomationProfileRepository = ArtifactBoundAutomationProfileRepository(
+        RoomAutomationProfileRepository(database),
+        lenswakeArtifactIdentity::releaseApkSha256,
+    )
     private val roomExecutionRepository = RoomExecutionRepository(database)
     val executionRepository: ExecutionRepository = roomExecutionRepository
     val environmentSnapshotRepository: EnvironmentSnapshotRepository = roomExecutionRepository
@@ -71,6 +85,14 @@ class ApplicationGraph(application: Application) {
     private val deviceWakeController = AndroidDeviceWakeController(application)
     val installKnownPixelCameraProfile = InstallKnownPixelCameraProfile(
         environmentProbe = cameraEnvironmentProbe::inspect,
+        profileRepository = profileRepository,
+    )
+    val installReleaseCertification = InstallReleaseCertification(
+        bundleReader = AndroidReleaseCertificationBundleReader(
+            application,
+            BuildConfig.RELEASE_SIGNING_CERTIFICATE_SHA256,
+        ),
+        environmentProbe = { cameraEnvironmentProbe.inspect().observedEnvironmentOrThrow() },
         profileRepository = profileRepository,
     )
     val runtimePreflightProbe: RuntimePreflightProbe = AndroidRuntimePreflightProbe(
@@ -149,13 +171,13 @@ class ApplicationGraph(application: Application) {
         environmentSnapshotRepository = environmentSnapshotRepository,
         environmentSnapshotCollector = environmentSnapshotCollector,
         automationEngine = automationEngine,
-        startReadiness = { profileId ->
-            val profile = profileRepository.get(profileId)
+        startReadiness = { session ->
+            val profile = profileRepository.get(session.profileId)
             if (profile == null) {
                 Result.failure(IllegalStateException("Selected Pixel Camera profile is missing"))
             } else {
                 PreflightAlarmRecoveryReadiness {
-                    runtimePreflightProbe.inspect(listOf(profile))
+                    runtimePreflightProbe.inspectForCapture(listOf(profile), session.capture)
                 }.check()
             }
         },
@@ -178,3 +200,9 @@ class ApplicationGraph(application: Application) {
         },
     )
 }
+
+private fun PortResult<PixelCameraEnvironment>.observedEnvironmentOrThrow() =
+    when (this) {
+        is PortResult.Observed -> value
+        is PortResult.Unavailable -> error(failure.message)
+    }

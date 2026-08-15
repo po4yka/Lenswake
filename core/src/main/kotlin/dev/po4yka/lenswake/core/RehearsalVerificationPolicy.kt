@@ -104,23 +104,58 @@ private class FingerprintWriter(
         writeString(profile.id.value)
         writeEnvironment(profile.environment)
         output.writeInt(profile.selectorSchemaVersion)
+        writeString(profile.supportTier.name)
+        writeCertification(profile.certification)
+        writeString(profile.source.name)
+        writeString(profile.selectorTemplate.id)
+        output.writeInt(profile.selectorTemplate.version)
+        writeString(profile.videoSettings.resolution.name)
+        writeString(profile.videoSettings.frameRate.name)
         writeSelectorSets("action", profile.targets.mapKeys { it.key.name })
         writeSelectorSets("speed", profile.speedTargets.mapKeys { it.key.name })
         writeSelectorSets("signal", profile.stateSignals.mapKeys { it.key.name })
         writeGestures(profile.fallbackGestures)
+        writeDialogs(profile.dialogProfiles)
+    }
+
+    private fun writeCertification(certification: ProfileCertification?) {
+        output.writeBoolean(certification != null)
+        if (certification == null) return
+        writeString(certification.releaseTag)
+        writeString(certification.releaseCommit)
+        output.writeLong(certification.candidateRunId)
+        writeString(certification.lenswakeApkSha256)
+        writeString(certification.bundleSha256)
+        writeString(certification.pixel7EvidenceSha256)
+        writeString(certification.pixel8ProEvidenceSha256)
     }
 
     private fun writeEnvironment(environment: PixelCameraEnvironment) = with(environment) {
         writeString(deviceManufacturer)
         writeString(deviceModel)
+        writeString(deviceCodename)
         output.writeInt(androidSdk)
         writeString(androidBuildFingerprint)
         writeString(cameraPackage)
         output.writeLong(cameraVersionCode)
+        writeString(cameraSigningCertificateSha256)
         writeString(localeTag)
         output.writeInt(displayWidthPx)
         output.writeInt(displayHeightPx)
         output.writeInt(densityDpi)
+        output.writeFloat(fontScale)
+        writeString(orientation.name)
+        output.writeBoolean(defaultDisplayConfiguration)
+    }
+
+    private fun writeDialogs(dialogs: Map<PixelCameraDialogKind, PixelCameraDialogProfile>) {
+        dialogs.toSortedMap().forEach { (kind, dialog) ->
+            writeString("dialog:${kind.name}:presence")
+            writeSelectorSet(dialog.presence)
+            writeString("dialog:${kind.name}:recovery")
+            output.writeBoolean(dialog.recoveryTarget != null)
+            dialog.recoveryTarget?.let(::writeSelectorSet)
+        }
     }
 
     private fun writeSelectorSets(

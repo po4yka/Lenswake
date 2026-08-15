@@ -71,11 +71,64 @@ private suspend fun EngineEnvironment.convergeVideo(
     capture: CaptureConfiguration,
     observed: PixelCameraState.Video,
 ): AutomationRunResult? = if (capture is CaptureConfiguration.Video) {
-    convergeSimpleCapture(context, capture, observed.recording, observed.lens)
+    when {
+        observed.recording && (!observed.resolution4k || !observed.frameRate60) -> fail(
+            context,
+            failure(
+                AutomationFailureCode.CAMERA_STATE_UNKNOWN,
+                "Pixel Camera is already recording without verified 4K 60 FPS settings",
+            ),
+        )
+        !observed.resolution4k -> {
+            selectVideoResolution4k(context)
+            null
+        }
+        !observed.frameRate60 -> {
+            selectVideoFrameRate60(context)
+            null
+        }
+        else -> convergeSimpleCapture(context, capture, observed.recording, observed.lens)
+    }
 } else {
     refuseModeSwitchWhileRecording(context, observed.recording)
     selectCaptureMode(context, capture.mode)
     null
+}
+
+private suspend fun EngineEnvironment.selectVideoResolution4k(context: RunContext) {
+    dispatchAndVerify(
+        context = context,
+        operation = AutomationOperation.SELECT_VIDEO,
+        actionState = AutomationStateName.SELECTING_VIDEO,
+        verificationState = AutomationStateName.VERIFYING_VIDEO,
+        dispatchFailure = failure(
+            AutomationFailureCode.VIDEO_MODE_NOT_FOUND,
+            "Pixel Camera could not select 4K video resolution",
+        ),
+        verificationFailure = failure(
+            AutomationFailureCode.VIDEO_MODE_NOT_VERIFIED,
+            "Pixel Camera did not confirm 4K video resolution",
+        ),
+        action = { pixelCamera.selectVideoResolution4k(context.profileUse) },
+    ) { it is PixelCameraState.Video && it.resolution4k && !it.recording }
+}
+
+private suspend fun EngineEnvironment.selectVideoFrameRate60(context: RunContext) {
+    dispatchAndVerify(
+        context = context,
+        operation = AutomationOperation.SELECT_VIDEO,
+        actionState = AutomationStateName.SELECTING_VIDEO,
+        verificationState = AutomationStateName.VERIFYING_VIDEO,
+        dispatchFailure = failure(
+            AutomationFailureCode.VIDEO_MODE_NOT_FOUND,
+            "Pixel Camera could not select 60 FPS",
+        ),
+        verificationFailure = failure(
+            AutomationFailureCode.VIDEO_MODE_NOT_VERIFIED,
+            "Pixel Camera did not confirm 60 FPS",
+        ),
+        action = { pixelCamera.selectVideoFrameRate60(context.profileUse) },
+    ) { it is PixelCameraState.Video && it.frameRate60 && !it.recording }
 }
 
 private suspend fun EngineEnvironment.convergeNightSight(

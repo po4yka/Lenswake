@@ -35,6 +35,7 @@ import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.TimeLapseSpeed
+import dev.po4yka.lenswake.core.PIXEL_CAMERA_VIDEO_SETTINGS
 import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.CancellationException
@@ -45,6 +46,7 @@ import kotlinx.coroutines.sync.Mutex
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -92,12 +94,28 @@ class DefaultRehearsalCoordinatorTest {
         assertEquals(completed.session.mediaSavedVerifiedAt, completed.verifiedProfile.verifiedAt)
         assertEquals(now.plusSeconds(9), completed.session.rehearsalVerifiedAt)
         assertEquals(ProfileCompatibility.VERIFIED, fixture.profiles.saved.compatibility)
+        assertNull(fixture.executions.snapshots.values.single().videoSettings)
         assertEquals(listOf("schedule", "start", "delay", "stop", "cancel"), fixture.order)
         assertEquals(
             1,
             fixture.executions.events.count {
                 it.name == "automation.rehearsal.verification_receipt_persisted"
             },
+        )
+    }
+
+    @Test
+    fun videoRehearsalAttributesExactSettingsToPersistedSnapshot() = runBlocking {
+        val fixture = fixture()
+
+        val result = fixture.coordinator.run(
+            request.copy(capture = CaptureConfiguration.Video(LensSelection.REAR_MAIN)),
+        )
+
+        assertInstanceOf(RehearsalResult.Completed::class.java, result)
+        assertEquals(
+            PIXEL_CAMERA_VIDEO_SETTINGS,
+            fixture.executions.snapshots.values.single().videoSettings,
         )
     }
 

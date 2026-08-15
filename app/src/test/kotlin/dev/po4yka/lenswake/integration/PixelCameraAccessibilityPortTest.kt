@@ -26,6 +26,7 @@ import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.core.UiSelector
 import dev.po4yka.lenswake.core.UiSelectorSet
+import dev.po4yka.lenswake.platform.SUPPORTED_PIXEL_CAMERA_IDENTITY
 import java.time.Instant
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -759,6 +760,29 @@ class PixelCameraAccessibilityStateSafetyTest : PixelCameraAccessibilityPortTest
 
 class PixelCameraAccessibilityActionRoutingTest : PixelCameraAccessibilityPortTestFixture() {
     @Test
+    fun `4k and 60 fps actions use fresh profile-defined targets`() = runTest {
+        val resolutionTarget = node(VIDEO_4K_ACTION_RESOURCE)
+        val frameRateTarget = node(VIDEO_60_ACTION_RESOURCE)
+        val configured = profile().copy(
+            targets = profile().targets + mapOf(
+                AutomationAction.SELECT_VIDEO_RESOLUTION_4K to selectorSet(VIDEO_4K_ACTION_RESOURCE),
+                AutomationAction.SELECT_VIDEO_FRAME_RATE_60 to selectorSet(VIDEO_60_ACTION_RESOURCE),
+            ),
+        )
+        val gateway = FakeAccessibilityGateway(
+            nodes = listOf(resolutionTarget, frameRateTarget),
+            dispatchResult = AccessibilityDispatchResult.SemanticActionDispatched,
+        )
+        val port = port(gateway = gateway)
+
+        assertInstanceOf(ActionDispatch.Dispatched::class.java, port.selectVideoResolution4k(profileUse(configured)))
+        assertEquals(resolutionTarget, gateway.clickedNode)
+        assertInstanceOf(ActionDispatch.Dispatched::class.java, port.selectVideoFrameRate60(profileUse(configured)))
+        assertEquals(frameRateTarget, gateway.clickedNode)
+        assertEquals(2, gateway.snapshotCalls)
+    }
+
+    @Test
     fun `rear main lens action dispatches only its profile-defined target`() = runTest {
         val target = node(LENS_ACTION_RESOURCE).copy(
             role = "android.widget.Button",
@@ -867,14 +891,17 @@ class PixelCameraAccessibilityActionRoutingTest : PixelCameraAccessibilityPortTe
 
 class PixelCameraAccessibilityProfileValidationTest : PixelCameraAccessibilityPortTestFixture() {
     @Test
-    fun `computed probable compatibility requires rehearsal`() = runTest {
+    fun `unapproved system build is incompatible before accessibility inspection`() = runTest {
         val gateway = FakeAccessibilityGateway(activeSignals())
-        val current = environment().copy(androidBuildFingerprint = "different-build")
+        val current = environment().copy(
+            androidBuildFingerprint =
+                "google/husky/husky:17/CP2A.260805.005/1:user/release-keys",
+        )
 
         val result = port(currentEnvironment = current, gateway = gateway).inspect(profileUse())
 
         val unavailable = assertInstanceOf(PortResult.Unavailable::class.java, result)
-        assertEquals(AutomationFailureCode.PROFILE_REQUIRES_REHEARSAL, unavailable.failure.code)
+        assertEquals(AutomationFailureCode.PROFILE_INCOMPATIBLE, unavailable.failure.code)
         assertEquals(0, gateway.snapshotCalls)
     }
 
@@ -1036,10 +1063,14 @@ abstract class PixelCameraAccessibilityPortTestFixture {
     protected fun environment(): PixelCameraEnvironment = PixelCameraEnvironment(
         deviceManufacturer = "Google",
         deviceModel = "Pixel 8 Pro",
+        deviceCodename = "husky",
         androidSdk = 37,
-        androidBuildFingerprint = "google/husky/verified",
-        cameraPackage = CAMERA_PACKAGE,
-        cameraVersionCode = 700_000_000,
+        androidBuildFingerprint =
+            "google/husky/husky:17/CP2A.260705.006/15641320:user/release-keys",
+        cameraPackage = SUPPORTED_PIXEL_CAMERA_IDENTITY.packageName,
+        cameraVersionCode = SUPPORTED_PIXEL_CAMERA_IDENTITY.versionCode,
+        cameraSigningCertificateSha256 =
+            SUPPORTED_PIXEL_CAMERA_IDENTITY.signingCertificate.hex,
         localeTag = "en-US",
         displayWidthPx = 1_344,
         displayHeightPx = 2_992,
@@ -1119,6 +1150,8 @@ abstract class PixelCameraAccessibilityPortTestFixture {
     protected companion object {
         const val CAMERA_PACKAGE = "com.google.android.GoogleCamera"
         const val VIDEO_ACTION_RESOURCE = "profile.mode.video"
+        const val VIDEO_4K_ACTION_RESOURCE = "profile.video.4k"
+        const val VIDEO_60_ACTION_RESOURCE = "profile.video.60"
         const val TIME_LAPSE_ACTION_RESOURCE = "profile.mode.time-lapse"
         const val NIGHT_ACTION_RESOURCE = "profile.mode.night-sight-time-lapse"
         const val LENS_ACTION_RESOURCE = "profile.lens.rear-main"

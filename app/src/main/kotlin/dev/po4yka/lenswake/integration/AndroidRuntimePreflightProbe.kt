@@ -19,6 +19,7 @@ import dev.po4yka.lenswake.application.localizedText
 import dev.po4yka.lenswake.automation.PortResult
 import dev.po4yka.lenswake.core.ExecutionRepository
 import dev.po4yka.lenswake.core.ExecutionSession
+import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PreflightReport
@@ -54,8 +55,19 @@ class AndroidRuntimePreflightProbe(
     override val invalidations: Flow<Unit> = PixelCameraAccessibilityRuntime.connectionState
         .map { }
 
-    override suspend fun inspect(profiles: List<PixelCameraProfile>): PreflightReport {
-        val camera = observeCamera(profiles)
+    override suspend fun inspect(profiles: List<PixelCameraProfile>): PreflightReport =
+        inspect(profiles, requiredCapture = null)
+
+    override suspend fun inspectForCapture(
+        profiles: List<PixelCameraProfile>,
+        capture: CaptureConfiguration,
+    ): PreflightReport = inspect(profiles, capture)
+
+    private suspend fun inspect(
+        profiles: List<PixelCameraProfile>,
+        requiredCapture: CaptureConfiguration?,
+    ): PreflightReport {
+        val camera = observeCamera(profiles, requiredCapture)
 
         return evaluator.evaluate(
             observation = RuntimePreflightObservation(
@@ -68,7 +80,9 @@ class AndroidRuntimePreflightProbe(
                 secureCameraResolves = secureCameraObservation(),
                 deviceWake = deviceWakeObservation(),
                 accessibilityEnabled = accessibilityEnabledObservation(),
-                accessibilityConnected = accessibilityConnectedObservation(),
+                accessibilityConnected = accessibilityConnectedObservation(
+                    PixelCameraAccessibilityRuntime.isConnected,
+                ),
                 battery = batteryObservation(
                     runCatching {
                         batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
@@ -79,17 +93,21 @@ class AndroidRuntimePreflightProbe(
                         batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS)
                     }.getOrNull(),
                 ),
-                storage = storageObservation(),
+                storage = androidStorageObservation(storageManager),
                 successfulRehearsals = camera.rehearsals.getOrDefault(emptyMap()),
                 rehearsalEvidenceFailure = camera.rehearsals.exceptionOrNull()?.let {
                     localizedText(R.string.preflight_rehearsal_evidence_load_failed)
                 },
+                requiredCapture = requiredCapture,
             ),
             profiles = profiles,
         )
     }
 
-    private suspend fun observeCamera(profiles: List<PixelCameraProfile>): CameraObservation {
+    private suspend fun observeCamera(
+        profiles: List<PixelCameraProfile>,
+        requiredCapture: CaptureConfiguration?,
+    ): CameraObservation {
         val inspection = runSuspendCatchingPreservingCancellation(cameraEnvironmentProbe::inspect)
         val result = inspection.getOrNull()
         val environment = (result as? PortResult.Observed)?.value
@@ -103,7 +121,11 @@ class AndroidRuntimePreflightProbe(
             profiles
                 .filter { profile -> profile.environment == environment }
                 .mapNotNull { profile ->
-                    executionRepository.latestSuccessfulRehearsal(profile.id)
+                    if (requiredCapture == null) {
+                        executionRepository.latestSuccessfulRehearsal(profile.id)
+                    } else {
+                        executionRepository.latestSuccessfulRehearsal(profile.id, requiredCapture)
+                    }
                         ?.let { profile.id to it }
                 }
                 .toMap()
@@ -297,28 +319,24 @@ class AndroidRuntimePreflightProbe(
         )
     }
 
-    private fun accessibilityConnectedObservation(): RuntimeCapabilityObservation {
-        val connected = PixelCameraAccessibilityRuntime.isConnected
-        return RuntimeCapabilityObservation(
-            status = if (connected) PreflightStatus.PASSED else PreflightStatus.FAILED,
-            message = localizedText(
-                if (connected) R.string.preflight_accessibility_connected
-                else R.string.preflight_accessibility_disconnected,
-            ),
-            remediation = if (connected) null else SetupRemediationAction.OPEN_ACCESSIBILITY_SETTINGS,
-        )
-    }
-
-    private fun storageObservation(): RuntimeCapabilityObservation = runCatching {
-        storageObservation(
-            availableBytes = storageManager.getAllocatableBytes(StorageManager.UUID_DEFAULT),
-        )
-    }.getOrElse {
-        storageObservation(
-            availableBytes = null,
-        )
-    }
 }
+
+private fun accessibilityConnectedObservation(connected: Boolean): RuntimeCapabilityObservation =
+    RuntimeCapabilityObservation(
+        status = if (connected) PreflightStatus.PASSED else PreflightStatus.FAILED,
+        message = localizedText(
+            if (connected) R.string.preflight_accessibility_connected
+            else R.string.preflight_accessibility_disconnected,
+        ),
+        remediation = if (connected) null else SetupRemediationAction.OPEN_ACCESSIBILITY_SETTINGS,
+    )
+
+private fun androidStorageObservation(storageManager: StorageManager): RuntimeCapabilityObservation =
+    runCatching {
+        storageObservation(storageManager.getAllocatableBytes(StorageManager.UUID_DEFAULT))
+    }.getOrElse {
+        storageObservation(availableBytes = null)
+    }
 
 internal const val MINIMUM_BATTERY_PERCENT = 30
 internal const val MINIMUM_AVAILABLE_STORAGE_BYTES = 1024L * 1024L * 1024L

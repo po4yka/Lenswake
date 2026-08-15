@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfile
+import dev.po4yka.lenswake.application.InstallReleaseCertification
 import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfileResult
 import dev.po4yka.lenswake.application.AlarmTransportIncident
 import dev.po4yka.lenswake.application.AlarmTransportIncidentAction
@@ -78,6 +79,7 @@ class LenswakeViewModel internal constructor(
     private val rehearsalCoordinator: RehearsalCoordinator,
     private val scheduleWorkflow: ScheduleWorkflow,
     private val strings: UiStringProvider,
+    private val installReleaseCertification: InstallReleaseCertification? = null,
     alarmTransportIncidentSource: AlarmTransportIncidentSource = EmptyAlarmTransportIncidentSource,
     private val clock: LenswakeClock = SystemLenswakeClock(),
     private val actionState: LenswakeViewModelActionState = LenswakeViewModelActionState(),
@@ -87,6 +89,7 @@ class LenswakeViewModel internal constructor(
         scheduleRepository = scheduleRepository,
         executions = executionRepository,
         installKnownPixelCameraProfile = installKnownPixelCameraProfile,
+        installReleaseCertification = installReleaseCertification,
         rehearsalCoordinator = rehearsalCoordinator,
         strings = strings,
     ),
@@ -252,6 +255,7 @@ class LenswakeViewModel internal constructor(
         private val rehearsalCoordinator: RehearsalCoordinator,
         private val scheduleWorkflow: ScheduleWorkflow,
         private val strings: UiStringProvider,
+        private val installReleaseCertification: InstallReleaseCertification? = null,
         private val alarmTransportIncidentSource: AlarmTransportIncidentSource = EmptyAlarmTransportIncidentSource,
         private val clock: LenswakeClock = SystemLenswakeClock(),
     ) : ViewModelProvider.Factory {
@@ -265,6 +269,7 @@ class LenswakeViewModel internal constructor(
             alarmTransportIncidentSource = graph.alarmTransportIncidentSource,
             runtimePreflightProbe = graph.runtimePreflightProbe,
             installKnownPixelCameraProfile = graph.installKnownPixelCameraProfile,
+            installReleaseCertification = graph.installReleaseCertification,
             rehearsalCoordinator = graph.rehearsalCoordinator,
             scheduleWorkflow = graph.scheduleWorkflow,
             strings = strings,
@@ -283,6 +288,7 @@ class LenswakeViewModel internal constructor(
                 alarmTransportIncidentSource = alarmTransportIncidentSource,
                 runtimePreflightProbe = runtimePreflightProbe,
                 installKnownPixelCameraProfile = installKnownPixelCameraProfile,
+                installReleaseCertification = installReleaseCertification,
                 rehearsalCoordinator = rehearsalCoordinator,
                 scheduleWorkflow = scheduleWorkflow,
                 strings = strings,
@@ -371,6 +377,11 @@ internal fun InstallKnownPixelCameraProfileResult.toUiState(
     is InstallKnownPixelCameraProfileResult.UnsupportedEnvironment -> ProfileInstallUiState.Failed(
         message = strings.get(R.string.profile_unsupported_environment, environment.deviceModel),
     )
+
+    is InstallKnownPixelCameraProfileResult.ExperimentalConsentRequired ->
+        ProfileInstallUiState.ExperimentalConsentRequired(
+            message = strings.get(R.string.profile_experimental_consent),
+        )
 
     is InstallKnownPixelCameraProfileResult.EnvironmentUnavailable -> ProfileInstallUiState.Failed(
         message = strings.get(R.string.profile_environment_unavailable),

@@ -1,0 +1,1012 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 10,
+    "identityHash": "036c63ac86e986843978474628e3633a",
+    "entities": [
+      {
+        "tableName": "schedules",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `start_at_epoch_ms` INTEGER NOT NULL, `stop_at_epoch_ms` INTEGER NOT NULL, `zone_id` TEXT NOT NULL, `capture_type` TEXT NOT NULL, `time_lapse_speed` TEXT NOT NULL, `lens_selection` TEXT NOT NULL, `zoom_factor` REAL, `video_resolution` TEXT NOT NULL DEFAULT 'LEGACY_UNKNOWN', `video_frame_rate` TEXT NOT NULL DEFAULT 'LEGACY_UNKNOWN', `experimental_risk_accepted` INTEGER NOT NULL DEFAULT 0, `profile_id` TEXT NOT NULL, `profile_support_tier` TEXT NOT NULL DEFAULT 'EXPERIMENTAL', `profile_source` TEXT NOT NULL DEFAULT 'LEGACY_UNKNOWN', `profile_template_id` TEXT NOT NULL DEFAULT 'legacy', `profile_template_version` INTEGER NOT NULL DEFAULT 1, `enabled` INTEGER NOT NULL, `created_at_epoch_ms` INTEGER NOT NULL, `updated_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`profile_id`) REFERENCES `automation_profiles`(`id`) ON UPDATE RESTRICT ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startAtEpochMs",
+            "columnName": "start_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stopAtEpochMs",
+            "columnName": "stop_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "zoneId",
+            "columnName": "zone_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "captureType",
+            "columnName": "capture_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timeLapseSpeed",
+            "columnName": "time_lapse_speed",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lensSelection",
+            "columnName": "lens_selection",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "zoomFactor",
+            "columnName": "zoom_factor",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "videoResolution",
+            "columnName": "video_resolution",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'LEGACY_UNKNOWN'"
+          },
+          {
+            "fieldPath": "videoFrameRate",
+            "columnName": "video_frame_rate",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'LEGACY_UNKNOWN'"
+          },
+          {
+            "fieldPath": "experimentalRiskAccepted",
+            "columnName": "experimental_risk_accepted",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "profileId",
+            "columnName": "profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "profileSupportTier",
+            "columnName": "profile_support_tier",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'EXPERIMENTAL'"
+          },
+          {
+            "fieldPath": "profileSource",
+            "columnName": "profile_source",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'LEGACY_UNKNOWN'"
+          },
+          {
+            "fieldPath": "profileTemplateId",
+            "columnName": "profile_template_id",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'legacy'"
+          },
+          {
+            "fieldPath": "profileTemplateVersion",
+            "columnName": "profile_template_version",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "enabled",
+            "columnName": "enabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMs",
+            "columnName": "created_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMs",
+            "columnName": "updated_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_schedules_profile_id",
+            "unique": false,
+            "columnNames": [
+              "profile_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_schedules_profile_id` ON `${TABLE_NAME}` (`profile_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "automation_profiles",
+            "onDelete": "RESTRICT",
+            "onUpdate": "RESTRICT",
+            "columns": [
+              "profile_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "automation_profiles",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `device_manufacturer` TEXT NOT NULL, `device_model` TEXT NOT NULL, `device_codename` TEXT NOT NULL DEFAULT 'legacy-unknown', `android_sdk` INTEGER NOT NULL, `android_build_fingerprint` TEXT, `camera_package` TEXT NOT NULL, `camera_version_code` INTEGER NOT NULL, `camera_signing_certificate_sha256` TEXT NOT NULL DEFAULT 'legacy-unknown', `locale_tag` TEXT NOT NULL, `display_width_px` INTEGER NOT NULL, `display_height_px` INTEGER NOT NULL, `density_dpi` INTEGER NOT NULL, `font_scale` REAL NOT NULL DEFAULT -1.0, `display_orientation` TEXT NOT NULL DEFAULT 'LEGACY_UNKNOWN', `default_display_configuration` INTEGER NOT NULL DEFAULT 0, `selector_schema_version` INTEGER NOT NULL, `support_tier` TEXT NOT NULL DEFAULT 'EXPERIMENTAL', `certification_json` TEXT DEFAULT NULL, `profile_source` TEXT NOT NULL DEFAULT 'LEGACY_UNKNOWN', `selector_template_id` TEXT NOT NULL DEFAULT 'legacy', `selector_template_version` INTEGER NOT NULL DEFAULT 1, `video_resolution` TEXT NOT NULL DEFAULT 'LEGACY_UNKNOWN', `video_frame_rate` TEXT NOT NULL DEFAULT 'LEGACY_UNKNOWN', `targets_json` TEXT NOT NULL, `speed_targets_json` TEXT NOT NULL, `state_signals_json` TEXT NOT NULL, `dialog_profiles_json` TEXT NOT NULL, `fallback_gestures_json` TEXT NOT NULL, `compatibility` TEXT NOT NULL, `verified_at_epoch_ms` INTEGER, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceManufacturer",
+            "columnName": "device_manufacturer",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceModel",
+            "columnName": "device_model",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceCodename",
+            "columnName": "device_codename",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'legacy-unknown'"
+          },
+          {
+            "fieldPath": "androidSdk",
+            "columnName": "android_sdk",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "androidBuildFingerprint",
+            "columnName": "android_build_fingerprint",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "cameraPackage",
+            "columnName": "camera_package",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cameraVersionCode",
+            "columnName": "camera_version_code",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cameraSigningCertificateSha256",
+            "columnName": "camera_signing_certificate_sha256",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'legacy-unknown'"
+          },
+          {
+            "fieldPath": "localeTag",
+            "columnName": "locale_tag",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayWidthPx",
+            "columnName": "display_width_px",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayHeightPx",
+            "columnName": "display_height_px",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "densityDpi",
+            "columnName": "density_dpi",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fontScale",
+            "columnName": "font_scale",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "-1.0"
+          },
+          {
+            "fieldPath": "displayOrientation",
+            "columnName": "display_orientation",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'LEGACY_UNKNOWN'"
+          },
+          {
+            "fieldPath": "defaultDisplayConfiguration",
+            "columnName": "default_display_configuration",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "selectorSchemaVersion",
+            "columnName": "selector_schema_version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "supportTier",
+            "columnName": "support_tier",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'EXPERIMENTAL'"
+          },
+          {
+            "fieldPath": "certificationJson",
+            "columnName": "certification_json",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "profileSource",
+            "columnName": "profile_source",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'LEGACY_UNKNOWN'"
+          },
+          {
+            "fieldPath": "selectorTemplateId",
+            "columnName": "selector_template_id",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'legacy'"
+          },
+          {
+            "fieldPath": "selectorTemplateVersion",
+            "columnName": "selector_template_version",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "videoResolution",
+            "columnName": "video_resolution",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'LEGACY_UNKNOWN'"
+          },
+          {
+            "fieldPath": "videoFrameRate",
+            "columnName": "video_frame_rate",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'LEGACY_UNKNOWN'"
+          },
+          {
+            "fieldPath": "targetsJson",
+            "columnName": "targets_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "speedTargetsJson",
+            "columnName": "speed_targets_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stateSignalsJson",
+            "columnName": "state_signals_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dialogProfilesJson",
+            "columnName": "dialog_profiles_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fallbackGesturesJson",
+            "columnName": "fallback_gestures_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "compatibility",
+            "columnName": "compatibility",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "verifiedAtEpochMs",
+            "columnName": "verified_at_epoch_ms",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "execution_sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `execution_key` TEXT NOT NULL, `kind` TEXT NOT NULL, `schedule_id` TEXT, `schedule_name` TEXT, `profile_id` TEXT NOT NULL, `profile_support_tier` TEXT NOT NULL DEFAULT 'EXPERIMENTAL', `profile_source` TEXT NOT NULL DEFAULT 'LEGACY_UNKNOWN', `profile_template_id` TEXT NOT NULL DEFAULT 'legacy', `profile_template_version` INTEGER NOT NULL DEFAULT 1, `capture_type` TEXT NOT NULL, `time_lapse_speed` TEXT NOT NULL, `lens_selection` TEXT NOT NULL, `zoom_factor` REAL, `video_resolution` TEXT NOT NULL DEFAULT 'LEGACY_UNKNOWN', `video_frame_rate` TEXT NOT NULL DEFAULT 'LEGACY_UNKNOWN', `expected_start_at_epoch_ms` INTEGER NOT NULL, `expected_stop_at_epoch_ms` INTEGER NOT NULL, `alarm_start_delivered_at_epoch_ms` INTEGER, `alarm_stop_delivered_at_epoch_ms` INTEGER, `status` TEXT NOT NULL, `current_automation_state` TEXT, `record_action_at_epoch_ms` INTEGER, `recording_verified_at_epoch_ms` INTEGER, `rehearsal_verified_at_epoch_ms` INTEGER, `media_baseline_generation` INTEGER, `media_store_version` TEXT, `media_verification_required` INTEGER NOT NULL DEFAULT 1, `media_saved_verified_at_epoch_ms` INTEGER, `saved_media_generation` INTEGER, `stop_action_at_epoch_ms` INTEGER, `stopped_verified_at_epoch_ms` INTEGER, `camera_ownership_released_at_epoch_ms` INTEGER, `environment_snapshot_id` TEXT, `failure_code` TEXT, `failure_message` TEXT, `failure_context_json` TEXT, `revision` INTEGER NOT NULL, `created_at_epoch_ms` INTEGER NOT NULL, `updated_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "executionKey",
+            "columnName": "execution_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scheduleId",
+            "columnName": "schedule_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "scheduleName",
+            "columnName": "schedule_name",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "profileId",
+            "columnName": "profile_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "profileSupportTier",
+            "columnName": "profile_support_tier",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'EXPERIMENTAL'"
+          },
+          {
+            "fieldPath": "profileSource",
+            "columnName": "profile_source",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'LEGACY_UNKNOWN'"
+          },
+          {
+            "fieldPath": "profileTemplateId",
+            "columnName": "profile_template_id",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'legacy'"
+          },
+          {
+            "fieldPath": "profileTemplateVersion",
+            "columnName": "profile_template_version",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "captureType",
+            "columnName": "capture_type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timeLapseSpeed",
+            "columnName": "time_lapse_speed",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lensSelection",
+            "columnName": "lens_selection",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "zoomFactor",
+            "columnName": "zoom_factor",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "videoResolution",
+            "columnName": "video_resolution",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'LEGACY_UNKNOWN'"
+          },
+          {
+            "fieldPath": "videoFrameRate",
+            "columnName": "video_frame_rate",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'LEGACY_UNKNOWN'"
+          },
+          {
+            "fieldPath": "expectedStartAtEpochMs",
+            "columnName": "expected_start_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "expectedStopAtEpochMs",
+            "columnName": "expected_stop_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "alarmStartDeliveredAtEpochMs",
+            "columnName": "alarm_start_delivered_at_epoch_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "alarmStopDeliveredAtEpochMs",
+            "columnName": "alarm_stop_delivered_at_epoch_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentAutomationState",
+            "columnName": "current_automation_state",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "recordActionAtEpochMs",
+            "columnName": "record_action_at_epoch_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "recordingVerifiedAtEpochMs",
+            "columnName": "recording_verified_at_epoch_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "rehearsalVerifiedAtEpochMs",
+            "columnName": "rehearsal_verified_at_epoch_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "mediaBaselineGeneration",
+            "columnName": "media_baseline_generation",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "mediaStoreVersion",
+            "columnName": "media_store_version",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "mediaVerificationRequired",
+            "columnName": "media_verification_required",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "mediaSavedVerifiedAtEpochMs",
+            "columnName": "media_saved_verified_at_epoch_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "savedMediaGeneration",
+            "columnName": "saved_media_generation",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "stopActionAtEpochMs",
+            "columnName": "stop_action_at_epoch_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "stoppedVerifiedAtEpochMs",
+            "columnName": "stopped_verified_at_epoch_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "cameraOwnershipReleasedAtEpochMs",
+            "columnName": "camera_ownership_released_at_epoch_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "environmentSnapshotId",
+            "columnName": "environment_snapshot_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "failureCode",
+            "columnName": "failure_code",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "failureMessage",
+            "columnName": "failure_message",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "failureContextJson",
+            "columnName": "failure_context_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "revision",
+            "columnName": "revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMs",
+            "columnName": "created_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMs",
+            "columnName": "updated_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_execution_sessions_execution_key",
+            "unique": true,
+            "columnNames": [
+              "execution_key"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_execution_sessions_execution_key` ON `${TABLE_NAME}` (`execution_key`)"
+          },
+          {
+            "name": "index_execution_sessions_schedule_id",
+            "unique": false,
+            "columnNames": [
+              "schedule_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_execution_sessions_schedule_id` ON `${TABLE_NAME}` (`schedule_id`)"
+          },
+          {
+            "name": "index_execution_sessions_status",
+            "unique": false,
+            "columnNames": [
+              "status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_execution_sessions_status` ON `${TABLE_NAME}` (`status`)"
+          }
+        ]
+      },
+      {
+        "tableName": "execution_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `session_id` TEXT NOT NULL, `name` TEXT NOT NULL, `sequence` INTEGER NOT NULL, `timestamp_epoch_ms` INTEGER NOT NULL, `state` TEXT NOT NULL, `operation` TEXT, `outcome` TEXT NOT NULL, `interaction_method` TEXT, `attempt` INTEGER, `duration_ms` INTEGER, `failure_code` TEXT, `failure_message` TEXT, `failure_context_json` TEXT, `metadata_json` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`session_id`) REFERENCES `execution_sessions`(`id`) ON UPDATE RESTRICT ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sequence",
+            "columnName": "sequence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestampEpochMs",
+            "columnName": "timestamp_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "operation",
+            "columnName": "operation",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "outcome",
+            "columnName": "outcome",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "interactionMethod",
+            "columnName": "interaction_method",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "attempt",
+            "columnName": "attempt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "durationMs",
+            "columnName": "duration_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "failureCode",
+            "columnName": "failure_code",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "failureMessage",
+            "columnName": "failure_message",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "failureContextJson",
+            "columnName": "failure_context_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "metadataJson",
+            "columnName": "metadata_json",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_execution_events_session_id",
+            "unique": false,
+            "columnNames": [
+              "session_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_execution_events_session_id` ON `${TABLE_NAME}` (`session_id`)"
+          },
+          {
+            "name": "index_execution_events_session_id_sequence",
+            "unique": true,
+            "columnNames": [
+              "session_id",
+              "sequence"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_execution_events_session_id_sequence` ON `${TABLE_NAME}` (`session_id`, `sequence`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "execution_sessions",
+            "onDelete": "CASCADE",
+            "onUpdate": "RESTRICT",
+            "columns": [
+              "session_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "environment_snapshots",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `session_id` TEXT NOT NULL, `profile_support_tier` TEXT NOT NULL DEFAULT 'EXPERIMENTAL', `profile_source` TEXT NOT NULL DEFAULT 'LEGACY_UNKNOWN', `profile_template_id` TEXT NOT NULL DEFAULT 'legacy', `profile_template_version` INTEGER NOT NULL DEFAULT 1, `video_resolution` TEXT DEFAULT NULL, `video_frame_rate` TEXT DEFAULT NULL, `captured_at_epoch_ms` INTEGER NOT NULL, `lenswake_version` TEXT NOT NULL, `device_manufacturer` TEXT NOT NULL, `device_model` TEXT NOT NULL, `device_codename` TEXT NOT NULL DEFAULT 'legacy-unknown', `android_sdk` INTEGER NOT NULL, `android_build_fingerprint` TEXT, `camera_package` TEXT NOT NULL, `camera_version_code` INTEGER NOT NULL, `camera_signing_certificate_sha256` TEXT NOT NULL DEFAULT 'legacy-unknown', `locale_tag` TEXT NOT NULL, `display_width_px` INTEGER NOT NULL, `display_height_px` INTEGER NOT NULL, `density_dpi` INTEGER NOT NULL, `font_scale` REAL NOT NULL DEFAULT -1.0, `display_orientation` TEXT NOT NULL DEFAULT 'LEGACY_UNKNOWN', `default_display_configuration` INTEGER NOT NULL DEFAULT 0, `accessibility_status` TEXT NOT NULL, `privileged_bridge_status` TEXT NOT NULL, `screen_interactive` INTEGER NOT NULL, `keyguard_locked` INTEGER NOT NULL, `battery_percent` INTEGER, `charging` INTEGER, `available_storage_bytes` INTEGER, PRIMARY KEY(`id`), FOREIGN KEY(`session_id`) REFERENCES `execution_sessions`(`id`) ON UPDATE RESTRICT ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "profileSupportTier",
+            "columnName": "profile_support_tier",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'EXPERIMENTAL'"
+          },
+          {
+            "fieldPath": "profileSource",
+            "columnName": "profile_source",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'LEGACY_UNKNOWN'"
+          },
+          {
+            "fieldPath": "profileTemplateId",
+            "columnName": "profile_template_id",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'legacy'"
+          },
+          {
+            "fieldPath": "profileTemplateVersion",
+            "columnName": "profile_template_version",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "videoResolution",
+            "columnName": "video_resolution",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "videoFrameRate",
+            "columnName": "video_frame_rate",
+            "affinity": "TEXT",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "capturedAtEpochMs",
+            "columnName": "captured_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lenswakeVersion",
+            "columnName": "lenswake_version",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceManufacturer",
+            "columnName": "device_manufacturer",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceModel",
+            "columnName": "device_model",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deviceCodename",
+            "columnName": "device_codename",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'legacy-unknown'"
+          },
+          {
+            "fieldPath": "androidSdk",
+            "columnName": "android_sdk",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "androidBuildFingerprint",
+            "columnName": "android_build_fingerprint",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "cameraPackage",
+            "columnName": "camera_package",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cameraVersionCode",
+            "columnName": "camera_version_code",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cameraSigningCertificateSha256",
+            "columnName": "camera_signing_certificate_sha256",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'legacy-unknown'"
+          },
+          {
+            "fieldPath": "localeTag",
+            "columnName": "locale_tag",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayWidthPx",
+            "columnName": "display_width_px",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayHeightPx",
+            "columnName": "display_height_px",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "densityDpi",
+            "columnName": "density_dpi",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fontScale",
+            "columnName": "font_scale",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "-1.0"
+          },
+          {
+            "fieldPath": "displayOrientation",
+            "columnName": "display_orientation",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'LEGACY_UNKNOWN'"
+          },
+          {
+            "fieldPath": "defaultDisplayConfiguration",
+            "columnName": "default_display_configuration",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "accessibilityStatus",
+            "columnName": "accessibility_status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "privilegedBridgeStatus",
+            "columnName": "privileged_bridge_status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "screenInteractive",
+            "columnName": "screen_interactive",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keyguardLocked",
+            "columnName": "keyguard_locked",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "batteryPercent",
+            "columnName": "battery_percent",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "charging",
+            "columnName": "charging",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "availableStorageBytes",
+            "columnName": "available_storage_bytes",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_environment_snapshots_session_id",
+            "unique": true,
+            "columnNames": [
+              "session_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_environment_snapshots_session_id` ON `${TABLE_NAME}` (`session_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "execution_sessions",
+            "onDelete": "CASCADE",
+            "onUpdate": "RESTRICT",
+            "columns": [
+              "session_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '036c63ac86e986843978474628e3633a')"
+    ]
+  }
+}

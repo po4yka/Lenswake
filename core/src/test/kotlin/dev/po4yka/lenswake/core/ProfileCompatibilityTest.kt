@@ -8,6 +8,7 @@ class ProfileCompatibilityTest {
     private val calibrated = PixelCameraEnvironment(
         deviceManufacturer = "Google",
         deviceModel = "Pixel 8 Pro",
+        deviceCodename = "husky",
         androidSdk = 37,
         androidBuildFingerprint = "google/husky/build-a",
         cameraPackage = "com.google.android.GoogleCamera",
@@ -16,6 +17,8 @@ class ProfileCompatibilityTest {
         displayWidthPx = 1344,
         displayHeightPx = 2992,
         densityDpi = 480,
+        fontScale = 1f,
+        orientation = DisplayOrientation.PORTRAIT,
     )
 
     @Test
@@ -43,6 +46,26 @@ class ProfileCompatibilityTest {
             ProfileCompatibility.INCOMPATIBLE,
             ProfileCompatibilityEvaluator.evaluate(calibrated, calibrated.copy(deviceModel = "Pixel 9 Pro")),
         )
+    }
+
+    @Test
+    fun `codename drift is incompatible while runtime display drift requires rehearsal`() {
+        assertEquals(
+            ProfileCompatibility.INCOMPATIBLE,
+            ProfileCompatibilityEvaluator.evaluate(
+                calibrated,
+                calibrated.copy(deviceCodename = "shiba"),
+            ),
+        )
+        listOf(
+            calibrated.copy(fontScale = 1.15f),
+            calibrated.copy(orientation = DisplayOrientation.LANDSCAPE),
+        ).forEach { current ->
+            assertEquals(
+                ProfileCompatibility.NEEDS_REHEARSAL,
+                ProfileCompatibilityEvaluator.evaluate(calibrated, current),
+            )
+        }
     }
 
     @Test

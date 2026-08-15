@@ -46,7 +46,13 @@ internal fun CaptureConfiguration.label(): String = when (this) {
         speed.label(),
         lens.label(),
     )
-    is CaptureConfiguration.Video,
-    is CaptureConfiguration.NightSightTimeLapse,
-    -> stringResource(R.string.schedule_capture_summary, mode.label(), lens.label())
+    is CaptureConfiguration.Video -> stringResource(
+        R.string.schedule_video_capture_summary,
+        mode.label(),
+        stringResource(R.string.video_resolution_4k),
+        stringResource(R.string.video_frame_rate_60),
+        lens.label(),
+    )
+    is CaptureConfiguration.NightSightTimeLapse ->
+        stringResource(R.string.schedule_capture_summary, mode.label(), lens.label())
 }

@@ -102,6 +102,7 @@ private fun ScheduleEditorContent(
         ScheduleTimingSection(form, validation.timingError, enabled, onChoosePicker)
         ScheduleCameraSection(form, profiles, validation.captureError, enabled, onUpdateForm)
         ScheduleProfileSection(form, profiles, validation.profileError, enabled, onUpdateForm)
+        ScheduleExperimentalConsent(form, profiles, enabled, onUpdateForm)
         ScheduleActivationSection(form, enabled, onUpdateForm)
         ScheduleEditorError(editor.error)
         ScheduleEditorActions(editor.mode, validation.canSubmit, busyMessage, onSubmit, onCancel)
@@ -219,7 +220,7 @@ private fun ProfileRadioOption(
                 },
             )
             Text(
-                text = profile.environment,
+                text = "${profile.supportTier.label()} · ${profile.environment}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -331,8 +332,14 @@ private fun ScheduleFormUiState.forProfile(profile: ProfileSummaryUiState): Sche
         ?: profile.supportedCaptures.preferredFor(captureMode, this)
         ?: profile.supportedCaptures.preferredForAny()
     return if (selectedCapture == null) {
-        copy(profileId = profile.id)
+        copy(
+            profileId = profile.id,
+            experimentalRiskAccepted = false,
+        )
     } else {
-        copy(profileId = profile.id).withCapture(selectedCapture)
+        copy(
+            profileId = profile.id,
+            experimentalRiskAccepted = false,
+        ).withCapture(selectedCapture)
     }
 }

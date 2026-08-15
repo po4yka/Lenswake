@@ -9,6 +9,7 @@ data class ExecutionSession(
     val scheduleId: ScheduleId?,
     val scheduleName: String?,
     val profileId: ProfileId,
+    val profileProvenance: ProfileProvenance = LEGACY_PROFILE_PROVENANCE,
     val capture: CaptureConfiguration,
     val expectedStartAt: Instant,
     val expectedStopAt: Instant,

@@ -1,8 +1,8 @@
 # GitHub Releases runbook
 
-Lenswake publishes a signed, minified APK for personal sideloading. GitHub Actions is the build and
-provenance boundary; a release does not claim that the APK passed the separate physical Pixel 8 Pro
-acceptance matrix.
+Lenswake publishes a signed, minified APK for personal sideloading only after that exact artifact
+passes the complete physical gate on both Pixel 7 and Pixel 8 Pro. GitHub Actions separates candidate
+construction from publication so no tag-triggered run can publish an untested rebuild.
 
 ## Permanent signing identity
 
@@ -39,22 +39,55 @@ property file. To rotate it, treat the new certificate as a distribution-breakin
    ```
 
 3. Confirm the intended commit is on `main` and all hosted CI/security checks are green.
-4. Create and push an annotated `v<versionName>` tag only after explicit release authorization:
+4. Create and push an annotated `v<versionName>` tag only after explicit candidate-build
+   authorization:
 
    ```bash
    git tag -a v0.1.0 -m "Lenswake 0.1.0"
    git push origin v0.1.0
    ```
 
-The tag starts `.github/workflows/release.yml`. Validation, the full host gate, API-35/36 AOSP ATD,
-and the available API-37 Google APIs preview image run before the protected `release` environment
-exposes signing secrets. Approve the `publish` deployment only after those jobs pass and the
-tag/commit are correct.
+The tag starts the candidate phase of `.github/workflows/release.yml`. Validation, the full host
+gate, API-35/36 AOSP ATD, and the available API-37 Google APIs preview image run before the protected
+`release` environment exposes signing secrets. Approval builds one signed APK, verifies it, creates
+provenance, records `RELEASE-CANDIDATE.txt`, and uploads `release-candidate-<tag>` for 30 days. The
+tag-triggered run has no publication job or `contents: write` permission.
 
-The protected job builds the signed minified APK, verifies package/version/certificate/permissions,
-generates `SHA256SUMS.txt`, creates provenance, uploads both assets to a draft, verifies the uploaded
-bytes, and only then publishes the release. A rerun resumes the same draft. A published release is
-accepted only when its downloaded APK and checksum file are byte-identical to the rebuilt files.
+## Accept the exact candidate
+
+Download the candidate from the successful tag-triggered run, retaining its run ID:
+
+```bash
+gh run download "$CANDIDATE_RUN_ID" --repo po4yka/Lenswake \
+  --name "release-candidate-$RELEASE_TAG" --dir release-candidate
+cd release-candidate
+sha256sum --check SHA256SUMS.txt
+gh attestation verify "Lenswake-${RELEASE_TAG#v}.apk" --repo po4yka/Lenswake
+```
+
+Install that exact APK on Pixel 7 and Pixel 8 Pro. Follow
+[`docs/testing/PHYSICAL_PIXEL.md`](../testing/PHYSICAL_PIXEL.md), including installed-artifact
+identity, every offered capture combination, reliability scenarios, failure paths, saved media, and
+cleanup. Produce a complete acceptance record for each device, calculate each record's SHA-256,
+record the full Experimental profile definition fingerprint shown in Profiles, and store each record
+at a durable HTTPS URL. Neither an older APK nor a rebuild qualifies.
+
+After both records pass, manually run the **Release** workflow from the exact tag ref and provide:
+
+- candidate workflow run ID and tag;
+- the accepted APK SHA-256 from `SHA256SUMS.txt`;
+- the durable URL and SHA-256 of the Pixel 7 record;
+- the durable URL and SHA-256 of the Pixel 8 Pro record;
+- the exact Experimental profile fingerprint from each device.
+
+The publication run checks that its selected ref is the tag, the candidate came from a successful
+tag-triggered `release.yml` run at the same commit, the downloaded APK/manifests match the accepted
+SHA-256, and both evidence identities are present. The protected `release` environment then requires
+a separate final approval. Only this run has `contents: write`; it publishes the unchanged candidate,
+`SHA256SUMS.txt`, `PHYSICAL-ACCEPTANCE.txt`, and a release-key-signed
+`Lenswake-<version>-certification.jar`. The bundle binds both accepted profile fingerprints and the
+APK digest; importing it is the only production path from Experimental to Certified. A rerun resumes
+an identical draft but refuses any published asset drift.
 
 ## Verify a published release
 
@@ -65,11 +98,14 @@ gh release download v0.1.0 --repo po4yka/Lenswake
 shasum -a 256 --check SHA256SUMS.txt
 gh attestation verify Lenswake-0.1.0.apk --repo po4yka/Lenswake
 scripts/ci/verify-release-apk.sh Lenswake-0.1.0.apk 0.1.0 1
+test -s PHYSICAL-ACCEPTANCE.txt
+jarsigner -verify Lenswake-0.1.0-certification.jar
 ```
 
 Record the release tag, commit, APK SHA-256, certificate fingerprint, workflow run, and verification
-result. Physical acceptance must separately follow
-[`docs/testing/PHYSICAL_PIXEL.md`](../testing/PHYSICAL_PIXEL.md) using that exact APK.
+result. Verify that `PHYSICAL-ACCEPTANCE.txt` names the downloaded APK digest, candidate run, both
+content-addressed device records, and both accepted profile fingerprints. Import the signed bundle in
+Profiles; the app rejects it unless its release signature and installed APK/profile identities match.
 
 ## One-time post-first-release hardening
 

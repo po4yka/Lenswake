@@ -31,6 +31,9 @@ internal fun LenswakeNavigationHost(
                     state = state,
                     contentPadding = contentPadding,
                     onInstallCandidateProfile = actions.profiles.onInstallCandidateProfile,
+                    onConfirmExperimentalProfileInstallation =
+                        actions.profiles.onConfirmExperimentalProfileInstallation,
+                    onImportReleaseCertification = actions.profiles.onImportReleaseCertification,
                     onRunRehearsal = actions.profiles.onRunRehearsal,
                 )
             }
