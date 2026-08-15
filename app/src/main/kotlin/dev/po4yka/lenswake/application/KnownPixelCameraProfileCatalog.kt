@@ -10,41 +10,64 @@ import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
 import dev.po4yka.lenswake.core.PixelCameraStateSignal
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
+import dev.po4yka.lenswake.core.ProfileSource
+import dev.po4yka.lenswake.core.SupportTier
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.core.UiSelector
 import dev.po4yka.lenswake.core.UiSelectorSet
+import dev.po4yka.lenswake.platform.PIXEL_CAMERA_PACKAGE
+import dev.po4yka.lenswake.platform.SUPPORTED_PIXEL_CAMERA_IDENTITY
 
 /**
- * Profiles backed by a reproducible physical-device calibration.
+ * Version-pinned semantic selector candidates documented in
+ * `docs/research/pixel-6-10a-template-provenance.md`.
  *
- * A catalog entry is offered only for an exact environment identity. Installing it does not make
- * it verified: the production automation stack must still complete a rehearsal on that device.
+ * The standard definition comes from an explicitly authorized live Pixel 7 beta calibration; the
+ * telephoto definition remains version-pinned static APK evidence. Neither is physical
+ * certification. A catalog entry is offered only for an admitted exact stable environment, and
+ * production use still requires a successful rehearsal of the exact capture configuration there.
  */
 object KnownPixelCameraProfileCatalog {
     private val ACTIVE_MODE_REGION = NormalizedBounds(0.35f, 0.80f, 0.65f, 0.90f)
 
     val pixel8ProAndroid17Camera69481630: PixelCameraProfile = PixelCameraProfile(
         id = ProfileId(
-            "google-pixel-8-pro-sdk37-cp2a-260705-006-camera-69481630-1008x2244-en-us-v4",
+            "google-pixel-8-pro-sdk37-cp2a-260705-006-camera-69481630-1008x2244-en-us-v5",
         ),
         environment = PixelCameraEnvironment(
             deviceManufacturer = "Google",
             deviceModel = "Pixel 8 Pro",
+            deviceCodename = "husky",
             androidSdk = 37,
             androidBuildFingerprint =
                 "google/husky/husky:17/CP2A.260705.006/15641320:user/release-keys",
             cameraPackage = PIXEL_CAMERA_PACKAGE,
-            cameraVersionCode = 69_481_630L,
+            cameraVersionCode = SUPPORTED_PIXEL_CAMERA_IDENTITY.versionCode,
+            cameraSigningCertificateSha256 =
+                SUPPORTED_PIXEL_CAMERA_IDENTITY.signingCertificate.hex,
             localeTag = "en-US-u-fw-mon-mu-celsius",
             displayWidthPx = 1_008,
             displayHeightPx = 2_244,
             densityDpi = 360,
         ),
         selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
+        supportTier = SupportTier.EXPERIMENTAL,
+        source = ProfileSource.STATIC_RESOURCE_TEMPLATE,
+        selectorTemplate = PixelCameraTemplateKind.SEMANTIC_TELEPHOTO.reference,
         targets = mapOf(
             AutomationAction.SELECT_VIDEO to actionSelector(
                 resourceId = "video_supermode",
                 minimumScore = 110,
+            ),
+            AutomationAction.SELECT_VIDEO_RESOLUTION_4K to actionSelector(
+                contentDescription = "4K Ultra HD",
+                text = "4K (Ultra HD)",
+                minimumScore = 90,
+            ),
+            AutomationAction.SELECT_VIDEO_FRAME_RATE_60 to actionSelector(
+                contentDescription = "60 FPS",
+                text = "60",
+                minimumScore = 90,
             ),
             AutomationAction.SELECT_TIME_LAPSE to UiSelectorSet(
                 selectors = listOf(
@@ -68,6 +91,24 @@ object KnownPixelCameraProfileCatalog {
                 minimumScore = 60,
                 requiresClickable = false,
             ),
+            AutomationAction.SELECT_NIGHT_SIGHT_TIME_LAPSE to actionSelector(
+                text = "Night Sight",
+                minimumScore = 30,
+            ),
+            AutomationAction.SELECT_REAR_ULTRAWIDE_LENS to actionSelector(
+                contentDescription = "Ultrawide",
+                minimumScore = 60,
+                requiresClickable = false,
+            ),
+            AutomationAction.SELECT_REAR_TELEPHOTO_LENS to actionSelector(
+                contentDescription = "Tele",
+                minimumScore = 60,
+                requiresClickable = false,
+            ),
+            AutomationAction.SELECT_FRONT_LENS to actionSelector(
+                contentDescription = "Switch to front camera",
+                minimumScore = 60,
+            ),
             AutomationAction.SELECT_REAR_MAIN_LENS to actionSelector(
                 resourceId = "zoom_toggle_1×",
                 text = "1×",
@@ -84,8 +125,36 @@ object KnownPixelCameraProfileCatalog {
                 contentDescription = "Stop time lapse",
                 minimumScore = 170,
             ),
+            AutomationAction.START_VIDEO_RECORDING to actionSelector(
+                resourceId = "ComposeShutter",
+                contentDescription = "Start video",
+                minimumScore = 170,
+            ),
+            AutomationAction.STOP_VIDEO_RECORDING to actionSelector(
+                resourceId = "ComposeShutter",
+                contentDescription = "Stop video",
+                minimumScore = 170,
+            ),
+            AutomationAction.START_NIGHT_SIGHT_TIME_LAPSE_RECORDING to actionSelector(
+                resourceId = "ComposeShutter",
+                contentDescription = "Start time lapse",
+                minimumScore = 170,
+            ),
+            AutomationAction.STOP_NIGHT_SIGHT_TIME_LAPSE_RECORDING to actionSelector(
+                resourceId = "ComposeShutter",
+                contentDescription = "Stop time lapse",
+                minimumScore = 170,
+            ),
         ),
         speedTargets = mapOf(
+            TimeLapseSpeed.AUTO to actionSelector(
+                contentDescription = "Time Lapse auto speed",
+                text = "Auto",
+                minimumScore = 90,
+            ),
+            TimeLapseSpeed.X5 to timeLapseSpeedSelector(5),
+            TimeLapseSpeed.X10 to timeLapseSpeedSelector(10),
+            TimeLapseSpeed.X30 to timeLapseSpeedSelector(30),
             TimeLapseSpeed.X120 to actionSelector(
                 contentDescription = "Time Lapse 120 times speed",
                 text = "120×",
@@ -135,6 +204,18 @@ object KnownPixelCameraProfileCatalog {
                 expectedRegion = ACTIVE_MODE_REGION,
                 minimumScore = 155,
             ),
+            PixelCameraStateSignal.VIDEO_RESOLUTION_4K_ACTIVE to stateSelector(
+                contentDescription = "4K Ultra HD",
+                text = "4K (Ultra HD)",
+                expectedChecked = true,
+                minimumScore = 105,
+            ),
+            PixelCameraStateSignal.VIDEO_FRAME_RATE_60_ACTIVE to stateSelector(
+                contentDescription = "60 FPS",
+                text = "60",
+                expectedChecked = true,
+                minimumScore = 105,
+            ),
             PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE to stateSelector(
                 resourceId = "$PIXEL_CAMERA_PACKAGE:id/mode_chip_text",
                 contentDescription = "Time Lapse",
@@ -161,9 +242,35 @@ object KnownPixelCameraProfileCatalog {
                 ),
                 minimumScore = 40,
             ),
-            PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN to stateSelector(
-                contentDescription = "Time Lapse 120 times speed",
+            PixelCameraStateSignal.TIME_LAPSE_SPEED_AUTO_ACTIVE to speedStateSelector(
+                "Time Lapse auto speed",
+                "Auto",
+            ),
+            PixelCameraStateSignal.TIME_LAPSE_SPEED_X5_ACTIVE to speedStateSelector(
+                "Time Lapse 5 times speed",
+                "5×",
+            ),
+            PixelCameraStateSignal.TIME_LAPSE_SPEED_X10_ACTIVE to speedStateSelector(
+                "Time Lapse 10 times speed",
+                "10×",
+            ),
+            PixelCameraStateSignal.TIME_LAPSE_SPEED_X30_ACTIVE to speedStateSelector(
+                "Time Lapse 30 times speed",
+                "30×",
+            ),
+            PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN to UiSelectorSet(
+                selectors = listOf(
+                    cameraSelector(contentDescription = "Time Lapse auto speed", requiresClickable = false),
+                    cameraSelector(contentDescription = "Time Lapse 5 times speed", requiresClickable = false),
+                    cameraSelector(contentDescription = "Time Lapse 10 times speed", requiresClickable = false),
+                    cameraSelector(contentDescription = "Time Lapse 30 times speed", requiresClickable = false),
+                    cameraSelector(contentDescription = "Time Lapse 120 times speed", requiresClickable = false),
+                ),
                 minimumScore = 60,
+            ),
+            PixelCameraStateSignal.NIGHT_SIGHT_TIME_LAPSE_MODE_ACTIVE to stateSelector(
+                text = "Night Sight auto enabled. Learn more",
+                minimumScore = 30,
             ),
             PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE to stateSelector(
                 expectedChecked = true,
@@ -171,9 +278,20 @@ object KnownPixelCameraProfileCatalog {
                 minimumScore = 35,
                 requiresClickable = true,
             ),
-            PixelCameraStateSignal.RECORDING_ACTIVE to stateSelector(
-                resourceId = "ComposeShutter",
-                contentDescription = "Stop time lapse",
+            PixelCameraStateSignal.REAR_ULTRAWIDE_LENS_ACTIVE to lensStateSelector("Ultrawide"),
+            PixelCameraStateSignal.REAR_TELEPHOTO_LENS_ACTIVE to lensStateSelector("Tele"),
+            PixelCameraStateSignal.FRONT_LENS_ACTIVE to stateSelector(
+                contentDescription = "Switch to back camera",
+                minimumScore = 60,
+            ),
+            PixelCameraStateSignal.RECORDING_ACTIVE to UiSelectorSet(
+                selectors = listOf("Stop video", "Stop time lapse").map { description ->
+                    cameraSelector(
+                        resourceId = "ComposeShutter",
+                        contentDescription = description,
+                        requiresClickable = false,
+                    )
+                },
                 minimumScore = 160,
             ),
             PixelCameraStateSignal.NOT_RECORDING to UiSelectorSet(
@@ -198,14 +316,32 @@ object KnownPixelCameraProfileCatalog {
         verifiedAt = null,
     )
 
-    private val profiles = listOf(pixel8ProAndroid17Camera69481630)
+    internal val pixel7SemanticTemplate: PixelCameraProfile = Pixel7SemanticTemplate.profile
 
-    fun exactMatch(environment: PixelCameraEnvironment): PixelCameraProfile? =
-        profiles.singleOrNull { it.environment == environment }
+    fun exactMatch(environment: PixelCameraEnvironment): PixelCameraProfile? {
+        val model = SupportedPixelModelRegistry.find(
+            environment.deviceManufacturer,
+            environment.deviceModel,
+            environment.deviceCodename,
+        ) ?: return null
+        if (!PixelCameraProfileTemplateFactory.isSupportedRuntime(model, environment)) return null
+        if (environment == pixel8ProAndroid17Camera69481630.environment) {
+            return pixel8ProAndroid17Camera69481630
+        }
+        val template = when (model.template) {
+            PixelCameraTemplateKind.SEMANTIC_STANDARD -> pixel7SemanticTemplate
+            PixelCameraTemplateKind.SEMANTIC_TELEPHOTO -> pixel8ProAndroid17Camera69481630
+        }
+        return PixelCameraProfileTemplateFactory.derivedProfile(
+            model,
+            environment,
+            template,
+        )
+    }
 
-    /** True when [profile] is this catalog entry, allowing rehearsal status to differ. */
+    /** True when [profile] has the current catalog definition, allowing runtime evidence to differ. */
     fun containsDefinition(profile: PixelCameraProfile): Boolean {
-        val known = profiles.singleOrNull { it.id == profile.id } ?: return false
+        val known = exactMatch(profile.environment)?.takeIf { it.id == profile.id } ?: return false
         val installableStatuses = setOf(
             ProfileCompatibility.NEEDS_REHEARSAL,
             ProfileCompatibility.VERIFIED,
@@ -214,10 +350,40 @@ object KnownPixelCameraProfileCatalog {
             return false
         }
         return profile.copy(
+            supportTier = known.supportTier,
+            certification = known.certification,
             compatibility = known.compatibility,
             verifiedAt = known.verifiedAt,
         ) == known
     }
+
+    private fun timeLapseSpeedSelector(speed: Int): UiSelectorSet = actionSelector(
+        contentDescription = "Time Lapse $speed times speed",
+        text = "$speed×",
+        minimumScore = 90,
+    )
+
+    private fun speedStateSelector(
+        description: String,
+        text: String,
+    ): UiSelectorSet = UiSelectorSet(
+        selectors = listOf(
+            cameraSelector(
+                contentDescription = description,
+                text = text,
+                expectedSelected = true,
+                requiresClickable = false,
+            ),
+        ),
+        minimumScore = 105,
+    )
+
+    private fun lensStateSelector(description: String): UiSelectorSet = stateSelector(
+        contentDescription = description,
+        expectedChecked = true,
+        minimumScore = 75,
+        requiresClickable = false,
+    )
 
     private fun actionSelector(
         resourceId: String? = null,
@@ -322,5 +488,11 @@ object KnownPixelCameraProfileCatalog {
         requiresClickable = requiresClickable,
     )
 
-    private const val PIXEL_CAMERA_PACKAGE = "com.google.android.GoogleCamera"
 }
+
+internal fun isSupportedPixelCameraRuntime(environment: PixelCameraEnvironment): Boolean =
+    SupportedPixelModelRegistry.find(
+        environment.deviceManufacturer,
+        environment.deviceModel,
+        environment.deviceCodename,
+    )?.let { model -> PixelCameraProfileTemplateFactory.isSupportedRuntime(model, environment) } == true

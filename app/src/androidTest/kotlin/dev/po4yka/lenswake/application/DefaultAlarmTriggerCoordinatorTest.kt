@@ -31,6 +31,7 @@ import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.TimeLapseSpeed
+import dev.po4yka.lenswake.core.PIXEL_CAMERA_VIDEO_SETTINGS
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -39,6 +40,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -85,10 +87,32 @@ class DefaultAlarmTriggerCoordinatorTest {
         assertEquals(listOf(true, true), engine.startSawPersistedSnapshot)
         assertEquals(1, collector.calls)
         assertEquals(1, executions.snapshots.size)
+        assertNull(executions.snapshots.values.single().videoSettings)
         assertEquals(
             "schedule/${schedule.id.value}/${schedule.startAt.toEpochMilli()}",
             executions.sessions.values.single().executionKey,
         )
+    }
+
+    @Test
+    fun videoStartAttributesExactSettingsToPersistedSnapshot() = runBlocking {
+        val videoSchedule = schedule.copy(
+            id = ScheduleId("morning-video"),
+            capture = CaptureConfiguration.Video(),
+        )
+        val executions = FakeExecutionRepository()
+        val engine = FakeAutomationEngine(executions)
+
+        assertTrue(
+            coordinator(
+                executions,
+                engine,
+                CoordinatorOptions(now = startAt.plusSeconds(1)),
+                scheduled = videoSchedule,
+            ).handle(startTrigger(videoSchedule.updatedAt, videoSchedule)) is AlarmHandlingResult.Accepted,
+        )
+
+        assertEquals(PIXEL_CAMERA_VIDEO_SETTINGS, executions.snapshots.values.single().videoSettings)
     }
 
     @Test
@@ -437,8 +461,9 @@ class DefaultAlarmTriggerCoordinatorTest {
         executions: FakeExecutionRepository,
         engine: FakeAutomationEngine,
         options: CoordinatorOptions = CoordinatorOptions(now = startAt.plusSeconds(1)),
+        scheduled: RecordingSchedule = schedule,
     ): DefaultAlarmTriggerCoordinator = DefaultAlarmTriggerCoordinator(
-        scheduleRepository = FakeScheduleRepository(schedule),
+        scheduleRepository = FakeScheduleRepository(scheduled),
         executionRepository = executions,
         environmentSnapshotRepository = executions,
         environmentSnapshotCollector = options.collector,
@@ -452,14 +477,17 @@ class DefaultAlarmTriggerCoordinatorTest {
         val now: Instant,
         val collector: EnvironmentSnapshotCollector = FakeEnvironmentSnapshotCollector(),
         val snapshotTimeoutMillis: Long = 5_000,
-        val startReadiness: suspend (ProfileId) -> Result<Unit> = { Result.success(Unit) },
+        val startReadiness: suspend (ExecutionSession) -> Result<Unit> = { Result.success(Unit) },
     )
 
-    private fun startTrigger(updatedAt: Instant) = AlarmTrigger(
+    private fun startTrigger(
+        updatedAt: Instant,
+        scheduled: RecordingSchedule = schedule,
+    ) = AlarmTrigger(
         kind = AlarmKind.START,
-        scheduleId = schedule.id,
+        scheduleId = scheduled.id,
         scheduleUpdatedAt = updatedAt,
-        expectedAt = schedule.startAt,
+        expectedAt = scheduled.startAt,
     )
 
     private fun stopTrigger() = AlarmTrigger(

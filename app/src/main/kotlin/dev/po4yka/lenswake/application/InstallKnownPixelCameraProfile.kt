@@ -6,6 +6,7 @@ import dev.po4yka.lenswake.core.AutomationFailureCode
 import dev.po4yka.lenswake.core.AutomationProfileRepository
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraProfile
+import dev.po4yka.lenswake.core.SupportTier
 import kotlinx.coroutines.CancellationException
 
 sealed interface InstallKnownPixelCameraProfileResult {
@@ -20,6 +21,10 @@ sealed interface InstallKnownPixelCameraProfileResult {
 
     data class UnsupportedEnvironment(
         val environment: PixelCameraEnvironment,
+    ) : InstallKnownPixelCameraProfileResult
+
+    data class ExperimentalConsentRequired(
+        val profile: PixelCameraProfile,
     ) : InstallKnownPixelCameraProfileResult
 
     data class EnvironmentUnavailable(
@@ -47,9 +52,11 @@ class InstallKnownPixelCameraProfile(
     private val environmentProbe: () -> PortResult<PixelCameraEnvironment>,
     private val profileRepository: AutomationProfileRepository,
 ) {
-    suspend operator fun invoke(): InstallKnownPixelCameraProfileResult =
+    suspend operator fun invoke(
+        experimentalRiskAccepted: Boolean = false,
+    ): InstallKnownPixelCameraProfileResult =
         when (val observation = inspectEnvironment()) {
-            is PortResult.Observed -> installFor(observation.value)
+            is PortResult.Observed -> installFor(observation.value, experimentalRiskAccepted)
             is PortResult.Unavailable -> InstallKnownPixelCameraProfileResult.EnvironmentUnavailable(
                 observation.failure,
             )
@@ -57,10 +64,15 @@ class InstallKnownPixelCameraProfile(
 
     private suspend fun installFor(
         environment: PixelCameraEnvironment,
+        experimentalRiskAccepted: Boolean,
     ): InstallKnownPixelCameraProfileResult {
         val catalogProfile = KnownPixelCameraProfileCatalog.exactMatch(environment)
         return if (catalogProfile == null) {
             InstallKnownPixelCameraProfileResult.UnsupportedEnvironment(environment)
+        } else if (
+            catalogProfile.supportTier == SupportTier.EXPERIMENTAL && !experimentalRiskAccepted
+        ) {
+            InstallKnownPixelCameraProfileResult.ExperimentalConsentRequired(catalogProfile)
         } else {
             install(catalogProfile)
         }

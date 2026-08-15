@@ -3,9 +3,109 @@ package dev.po4yka.lenswake.core
 import java.time.Instant
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Test
 
 class PixelCameraProfileTest {
+    @Test
+    fun `video contract changes definition fingerprint and support`() {
+        val profile = PixelCameraProfile(
+            id = ProfileId("video-contract"),
+            environment = environment(),
+            selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
+            videoSettings = PIXEL_CAMERA_VIDEO_SETTINGS,
+            targets = videoTargets(),
+            stateSignals = videoSignals(),
+            compatibility = ProfileCompatibility.NEEDS_REHEARSAL,
+            verifiedAt = null,
+        )
+
+        assertEquals(true, profile.supports(CaptureConfiguration.Video()))
+        assertEquals(
+            false,
+            profile.copy(videoSettings = LEGACY_UNKNOWN_VIDEO_SETTINGS)
+                .supports(CaptureConfiguration.Video()),
+        )
+        assertNotEquals(
+            profile.definitionFingerprint(),
+            profile.copy(videoSettings = LEGACY_UNKNOWN_VIDEO_SETTINGS).definitionFingerprint(),
+        )
+    }
+
+    @Test
+    fun `certified tier requires immutable release evidence and changes definition fingerprint`() {
+        val experimental = PixelCameraProfile(
+            id = ProfileId("certification-target"),
+            environment = environment(),
+            selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
+            compatibility = ProfileCompatibility.NEEDS_REHEARSAL,
+            verifiedAt = null,
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            experimental.copy(supportTier = SupportTier.CERTIFIED)
+        }
+
+        val certified = experimental.copy(
+            supportTier = SupportTier.CERTIFIED,
+            certification = certification(),
+        )
+
+        assertEquals(SupportTier.CERTIFIED, certified.supportTier)
+        assertNotEquals(experimental.definitionFingerprint(), certified.definitionFingerprint())
+        assertNotEquals(
+            certified.definitionFingerprint(),
+            certified.copy(certification = certification().copy(bundleSha256 = "7".repeat(64)))
+                .definitionFingerprint(),
+        )
+    }
+    @Test
+    fun `support tier is independent from local rehearsal state`() {
+        val profile = PixelCameraProfile(
+            id = ProfileId("experimental-profile"),
+            environment = environment(),
+            selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
+            supportTier = SupportTier.EXPERIMENTAL,
+            selectorTemplate = SelectorTemplateReference("pixel-7-semantic", 1),
+            compatibility = ProfileCompatibility.VERIFIED,
+            verifiedAt = Instant.parse("2026-08-12T00:00:00Z"),
+        )
+
+        assertEquals(SupportTier.EXPERIMENTAL, profile.supportTier)
+    }
+
+    private fun certification() = ProfileCertification(
+        releaseTag = "v1.2.3",
+        releaseCommit = "1".repeat(40),
+        candidateRunId = 123,
+        lenswakeApkSha256 = "2".repeat(64),
+        bundleSha256 = "3".repeat(64),
+        pixel7EvidenceSha256 = "4".repeat(64),
+        pixel8ProEvidenceSha256 = "5".repeat(64),
+    )
+
+    private fun videoTargets(): Map<AutomationAction, UiSelectorSet> = listOf(
+        AutomationAction.SELECT_VIDEO,
+        AutomationAction.SELECT_VIDEO_RESOLUTION_4K,
+        AutomationAction.SELECT_VIDEO_FRAME_RATE_60,
+        AutomationAction.SELECT_REAR_MAIN_LENS,
+        AutomationAction.START_VIDEO_RECORDING,
+        AutomationAction.STOP_VIDEO_RECORDING,
+    ).associateWith {
+        UiSelectorSet(listOf(UiSelector("com.google.android.GoogleCamera", role = "Button")), 1)
+    }
+
+    private fun videoSignals(): Map<PixelCameraStateSignal, UiSelectorSet> = listOf(
+        PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
+        PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
+        PixelCameraStateSignal.VIDEO_RESOLUTION_4K_ACTIVE,
+        PixelCameraStateSignal.VIDEO_FRAME_RATE_60_ACTIVE,
+        PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
+        PixelCameraStateSignal.RECORDING_ACTIVE,
+        PixelCameraStateSignal.NOT_RECORDING,
+    ).associateWith {
+        UiSelectorSet(listOf(UiSelector("com.google.android.GoogleCamera", role = "Button")), 1)
+    }
+
     @Test
     fun `profile carries data-driven observation signals`() {
         val recordingSelector = UiSelectorSet(

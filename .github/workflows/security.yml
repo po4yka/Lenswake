@@ -49,13 +49,22 @@ jobs:
           java-version: "17"
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-disabled: true
       - name: Initialize CodeQL
         uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
         with:
           languages: java-kotlin
           build-mode: manual
       - name: Build Java and Kotlin sources
-        run: ./gradlew :app:assembleDebug :data:assembleDebug --console=plain
+        run: >-
+          ./gradlew
+          clean
+          :app:assembleDebug
+          :data:assembleDebug
+          --no-build-cache
+          --no-configuration-cache
+          --console=plain
       - name: Analyze
         uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4
 

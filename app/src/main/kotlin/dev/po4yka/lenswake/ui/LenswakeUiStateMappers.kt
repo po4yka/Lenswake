@@ -4,10 +4,14 @@ import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.alarm.AlarmTransportFailureCode
 import dev.po4yka.lenswake.application.AlarmTransportIncident
 import dev.po4yka.lenswake.application.AlarmTransportIncidentAction
+import dev.po4yka.lenswake.application.PixelCameraTemplateKind
+import dev.po4yka.lenswake.application.SupportedPixelModelRegistry
 import dev.po4yka.lenswake.core.AutomationEvent
+import dev.po4yka.lenswake.core.AutomationFailureCode
 import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.InteractionMethod
+import dev.po4yka.lenswake.core.LensSelection
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PreflightCheck
 import dev.po4yka.lenswake.core.PreflightCheckType
@@ -22,6 +26,8 @@ import dev.po4yka.lenswake.core.ScheduleReadiness
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.supportedCaptureConfigurations
+import dev.po4yka.lenswake.core.TimeLapseSpeed
+import dev.po4yka.lenswake.core.definitionFingerprint
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -342,6 +348,7 @@ internal object LenswakeScheduleUiMapper {
             zoneId = schedule.zoneId,
             capture = schedule.capture,
             profileId = schedule.profileId.value,
+            experimentalRiskAccepted = schedule.experimentalRiskAccepted,
             enabled = schedule.enabled,
         )
     }
@@ -376,9 +383,54 @@ internal object LenswakeProfileUiMapper {
                 ProfileCompatibility.INCOMPATIBLE -> strings.get(R.string.profile_compatibility_incompatible)
             },
             verifiedForScheduling = verifiedCaptures.isNotEmpty(),
+            supportTier = profile.supportTier,
+            definitionFingerprint = profile.definitionFingerprint(),
             supportedCaptures = verifiedCaptures,
+            captureMatrix = captureMatrix(profile, executions),
         )
     }
+
+    private fun captureMatrix(
+        profile: PixelCameraProfile,
+        executions: List<ExecutionSession>,
+    ): List<CaptureMatrixRowUiState> {
+        val configured = profile.supportedCaptureConfigurations()
+        return buildList {
+            LensSelection.entries.forEach { lens ->
+                add(CaptureConfiguration.Video(lens))
+                TimeLapseSpeed.entries.forEach { speed ->
+                    add(CaptureConfiguration.TimeLapse(speed, lens))
+                }
+                add(CaptureConfiguration.NightSightTimeLapse(lens))
+            }
+        }.map { capture ->
+            val matching = executions.filter { session ->
+                session.profileId == profile.id && session.capture == capture &&
+                    session.kind == SessionKind.REHEARSAL
+            }
+            val status = when {
+                capture !in configured -> CaptureMatrixStatus.UNAVAILABLE
+                matching.any { RehearsalVerificationPolicy.qualifies(it, profile, capture) } ->
+                    CaptureMatrixStatus.VERIFIED_LOCALLY
+                matching.maxByOrNull(ExecutionSession::updatedAt)?.let { latest ->
+                    latest.status == SessionStatus.FAILED && latest.failure?.code in unavailableCaptureFailures
+                } == true -> CaptureMatrixStatus.UNAVAILABLE
+                matching.maxByOrNull(ExecutionSession::updatedAt)?.status == SessionStatus.FAILED ->
+                    CaptureMatrixStatus.FAILED
+                else -> CaptureMatrixStatus.UNTESTED
+            }
+            CaptureMatrixRowUiState(capture, status)
+        }
+    }
+
+    private val unavailableCaptureFailures = setOf(
+        AutomationFailureCode.VIDEO_MODE_NOT_FOUND,
+        AutomationFailureCode.TIME_LAPSE_MODE_NOT_FOUND,
+        AutomationFailureCode.NIGHT_SIGHT_TIME_LAPSE_MODE_NOT_FOUND,
+        AutomationFailureCode.TIME_LAPSE_SPEED_NOT_FOUND,
+        AutomationFailureCode.LENS_NOT_FOUND,
+        AutomationFailureCode.UNSUPPORTED_CAPTURE_CONFIGURATION,
+    )
 
     fun verifiedCaptures(
         profile: PixelCameraProfile,

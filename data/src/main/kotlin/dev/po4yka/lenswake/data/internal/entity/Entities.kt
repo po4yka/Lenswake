@@ -14,6 +14,8 @@ internal data class AutomationProfileEntity(
     val deviceManufacturer: String,
     @ColumnInfo(name = "device_model")
     val deviceModel: String,
+    @ColumnInfo(name = "device_codename", defaultValue = "'legacy-unknown'")
+    val deviceCodename: String,
     @ColumnInfo(name = "android_sdk")
     val androidSdk: Int,
     @ColumnInfo(name = "android_build_fingerprint")
@@ -22,6 +24,8 @@ internal data class AutomationProfileEntity(
     val cameraPackage: String,
     @ColumnInfo(name = "camera_version_code")
     val cameraVersionCode: Long,
+    @ColumnInfo(name = "camera_signing_certificate_sha256", defaultValue = "'legacy-unknown'")
+    val cameraSigningCertificateSha256: String,
     @ColumnInfo(name = "locale_tag")
     val localeTag: String,
     @ColumnInfo(name = "display_width_px")
@@ -30,8 +34,28 @@ internal data class AutomationProfileEntity(
     val displayHeightPx: Int,
     @ColumnInfo(name = "density_dpi")
     val densityDpi: Int,
+    @ColumnInfo(name = "font_scale", defaultValue = "-1.0")
+    val fontScale: Float,
+    @ColumnInfo(name = "display_orientation", defaultValue = "'LEGACY_UNKNOWN'")
+    val displayOrientation: String,
+    @ColumnInfo(name = "default_display_configuration", defaultValue = "0")
+    val defaultDisplayConfiguration: Boolean,
     @ColumnInfo(name = "selector_schema_version")
     val selectorSchemaVersion: Int,
+    @ColumnInfo(name = "support_tier", defaultValue = "'EXPERIMENTAL'")
+    val supportTier: String,
+    @ColumnInfo(name = "certification_json", defaultValue = "NULL")
+    val certificationJson: String?,
+    @ColumnInfo(name = "profile_source", defaultValue = "'LEGACY_UNKNOWN'")
+    val profileSource: String,
+    @ColumnInfo(name = "selector_template_id", defaultValue = "'legacy'")
+    val selectorTemplateId: String,
+    @ColumnInfo(name = "selector_template_version", defaultValue = "1")
+    val selectorTemplateVersion: Int,
+    @ColumnInfo(name = "video_resolution", defaultValue = "'LEGACY_UNKNOWN'")
+    val videoResolution: String,
+    @ColumnInfo(name = "video_frame_rate", defaultValue = "'LEGACY_UNKNOWN'")
+    val videoFrameRate: String,
     @ColumnInfo(name = "targets_json")
     val targetsJson: String,
     @ColumnInfo(name = "speed_targets_json")
@@ -78,8 +102,22 @@ internal data class ScheduleEntity(
     val lensSelection: String,
     @ColumnInfo(name = "zoom_factor")
     val zoomFactor: Float?,
+    @ColumnInfo(name = "video_resolution", defaultValue = "'LEGACY_UNKNOWN'")
+    val videoResolution: String,
+    @ColumnInfo(name = "video_frame_rate", defaultValue = "'LEGACY_UNKNOWN'")
+    val videoFrameRate: String,
+    @ColumnInfo(name = "experimental_risk_accepted", defaultValue = "0")
+    val experimentalRiskAccepted: Boolean,
     @ColumnInfo(name = "profile_id")
     val profileId: String,
+    @ColumnInfo(name = "profile_support_tier", defaultValue = "'EXPERIMENTAL'")
+    val profileSupportTier: String,
+    @ColumnInfo(name = "profile_source", defaultValue = "'LEGACY_UNKNOWN'")
+    val profileSource: String,
+    @ColumnInfo(name = "profile_template_id", defaultValue = "'legacy'")
+    val profileTemplateId: String,
+    @ColumnInfo(name = "profile_template_version", defaultValue = "1")
+    val profileTemplateVersion: Int,
     val enabled: Boolean,
     @ColumnInfo(name = "created_at_epoch_ms")
     val createdAtEpochMs: Long,
@@ -107,6 +145,14 @@ internal data class ExecutionSessionEntity(
     val scheduleName: String?,
     @ColumnInfo(name = "profile_id")
     val profileId: String,
+    @ColumnInfo(name = "profile_support_tier", defaultValue = "'EXPERIMENTAL'")
+    val profileSupportTier: String,
+    @ColumnInfo(name = "profile_source", defaultValue = "'LEGACY_UNKNOWN'")
+    val profileSource: String,
+    @ColumnInfo(name = "profile_template_id", defaultValue = "'legacy'")
+    val profileTemplateId: String,
+    @ColumnInfo(name = "profile_template_version", defaultValue = "1")
+    val profileTemplateVersion: Int,
     @ColumnInfo(name = "capture_type")
     val captureType: String,
     @ColumnInfo(name = "time_lapse_speed")
@@ -115,6 +161,10 @@ internal data class ExecutionSessionEntity(
     val lensSelection: String,
     @ColumnInfo(name = "zoom_factor")
     val zoomFactor: Float?,
+    @ColumnInfo(name = "video_resolution", defaultValue = "'LEGACY_UNKNOWN'")
+    val videoResolution: String,
+    @ColumnInfo(name = "video_frame_rate", defaultValue = "'LEGACY_UNKNOWN'")
+    val videoFrameRate: String,
     @ColumnInfo(name = "expected_start_at_epoch_ms")
     val expectedStartAtEpochMs: Long,
     @ColumnInfo(name = "expected_stop_at_epoch_ms")
@@ -181,6 +231,18 @@ internal data class EnvironmentSnapshotEntity(
     val id: String,
     @ColumnInfo(name = "session_id")
     val sessionId: String,
+    @ColumnInfo(name = "profile_support_tier", defaultValue = "'EXPERIMENTAL'")
+    val profileSupportTier: String,
+    @ColumnInfo(name = "profile_source", defaultValue = "'LEGACY_UNKNOWN'")
+    val profileSource: String,
+    @ColumnInfo(name = "profile_template_id", defaultValue = "'legacy'")
+    val profileTemplateId: String,
+    @ColumnInfo(name = "profile_template_version", defaultValue = "1")
+    val profileTemplateVersion: Int,
+    @ColumnInfo(name = "video_resolution", defaultValue = "NULL")
+    val videoResolution: String?,
+    @ColumnInfo(name = "video_frame_rate", defaultValue = "NULL")
+    val videoFrameRate: String?,
     @ColumnInfo(name = "captured_at_epoch_ms")
     val capturedAtEpochMs: Long,
     @ColumnInfo(name = "lenswake_version")
@@ -189,6 +251,8 @@ internal data class EnvironmentSnapshotEntity(
     val deviceManufacturer: String,
     @ColumnInfo(name = "device_model")
     val deviceModel: String,
+    @ColumnInfo(name = "device_codename", defaultValue = "'legacy-unknown'")
+    val deviceCodename: String,
     @ColumnInfo(name = "android_sdk")
     val androidSdk: Int,
     @ColumnInfo(name = "android_build_fingerprint")
@@ -197,6 +261,8 @@ internal data class EnvironmentSnapshotEntity(
     val cameraPackage: String,
     @ColumnInfo(name = "camera_version_code")
     val cameraVersionCode: Long,
+    @ColumnInfo(name = "camera_signing_certificate_sha256", defaultValue = "'legacy-unknown'")
+    val cameraSigningCertificateSha256: String,
     @ColumnInfo(name = "locale_tag")
     val localeTag: String,
     @ColumnInfo(name = "display_width_px")
@@ -205,6 +271,12 @@ internal data class EnvironmentSnapshotEntity(
     val displayHeightPx: Int,
     @ColumnInfo(name = "density_dpi")
     val densityDpi: Int,
+    @ColumnInfo(name = "font_scale", defaultValue = "-1.0")
+    val fontScale: Float,
+    @ColumnInfo(name = "display_orientation", defaultValue = "'LEGACY_UNKNOWN'")
+    val displayOrientation: String,
+    @ColumnInfo(name = "default_display_configuration", defaultValue = "0")
+    val defaultDisplayConfiguration: Boolean,
     @ColumnInfo(name = "accessibility_status")
     val accessibilityStatus: String,
     @ColumnInfo(name = "privileged_bridge_status")

@@ -43,6 +43,15 @@ require(
     "Release signing is partially configured; missing: ${missing.joinToString()}"
 }
 val releaseSigningEnabled = configuredReleaseSigningProperties.isNotEmpty()
+val releaseSigningCertificateSha256 = rootProject.file("release-signing-certificate.sha256")
+    .readText()
+    .filterNot(Char::isWhitespace)
+    .lowercase()
+    .also { digest ->
+        require(digest.matches(Regex("^[0-9a-f]{64}$"))) {
+            "release-signing-certificate.sha256 must contain one SHA-256 digest"
+        }
+    }
 
 android {
     namespace = "dev.po4yka.lenswake"
@@ -55,6 +64,11 @@ android {
         versionCode = appVersionCode
         versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField(
+            "String",
+            "RELEASE_SIGNING_CERTIFICATE_SHA256",
+            "\"$releaseSigningCertificateSha256\"",
+        )
     }
 
     signingConfigs {
@@ -141,6 +155,7 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.androidx.room.testing)
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)

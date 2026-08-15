@@ -14,6 +14,7 @@ import dev.po4yka.lenswake.core.RehearsalVerificationPolicy
 import dev.po4yka.lenswake.core.ScheduleValidation
 import dev.po4yka.lenswake.core.ScheduleValidationError
 import dev.po4yka.lenswake.core.ScheduleValidator
+import dev.po4yka.lenswake.core.SupportTier
 import dev.po4yka.lenswake.core.supports
 import java.time.Instant
 
@@ -56,7 +57,8 @@ internal class ScheduleReadiness(
                     message = "The selected Pixel Camera profile is not installed.",
                 )
             } else {
-                profile.readinessFailure(schedule.capture)
+                profile.experimentalConsentFailure(schedule)
+                    ?: profile.readinessFailure(schedule.capture)
                     ?: profile.rehearsalFailure(schedule.capture)
                     ?: profile.runtimeFailure(schedule.enabled)
             }
@@ -96,6 +98,19 @@ internal class ScheduleReadiness(
             )
         }
     }
+}
+
+private fun PixelCameraProfile.experimentalConsentFailure(
+    schedule: RecordingSchedule,
+): ScheduleWorkflowResult.Rejected? = if (
+    supportTier == SupportTier.EXPERIMENTAL && !schedule.experimentalRiskAccepted
+) {
+    ScheduleWorkflowResult.Rejected(
+        code = ScheduleWorkflowFailureCode.EXPERIMENTAL_CONSENT_REQUIRED,
+        message = "Experimental schedules require explicit risk acceptance.",
+    )
+} else {
+    null
 }
 
 private suspend fun ExecutionRepository.hasVerifiedRehearsal(

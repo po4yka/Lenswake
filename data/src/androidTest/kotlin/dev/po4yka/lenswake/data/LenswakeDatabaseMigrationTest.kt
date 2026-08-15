@@ -12,12 +12,15 @@ import dev.po4yka.lenswake.core.PixelCameraStateSignal
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.TimeLapseSpeed
+import dev.po4yka.lenswake.core.LEGACY_UNKNOWN_VIDEO_SETTINGS
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class LenswakeDatabaseMigrationTest {
@@ -27,13 +30,22 @@ class LenswakeDatabaseMigrationTest {
         LenswakeDatabase::class.java,
     )
 
+    private val databaseName: String
+        get() {
+            val fixtureDirectory = InstrumentationRegistry.getInstrumentation().context.cacheDir
+            check(fixtureDirectory.isDirectory || fixtureDirectory.mkdirs()) {
+                "Unable to create migration fixture directory: $fixtureDirectory"
+            }
+            return File(fixtureDirectory, DATABASE_FILE_NAME).absolutePath
+        }
+
     @Test
     fun migratesVersionOneToCurrentAndKeepsLegacyProfileReadable() {
         createVersionOneDatabase()
 
         val migrated = migrationHelper.runMigrationsAndValidate(
-            DATABASE_NAME,
-            7,
+            databaseName,
+            10,
             true,
             LenswakeDatabase.MIGRATION_1_2,
             LenswakeDatabase.MIGRATION_2_3,
@@ -41,6 +53,9 @@ class LenswakeDatabaseMigrationTest {
             LenswakeDatabase.MIGRATION_4_5,
             LenswakeDatabase.MIGRATION_5_6,
             LenswakeDatabase.MIGRATION_6_7,
+            LenswakeDatabase.MIGRATION_7_8,
+            LenswakeDatabase.MIGRATION_8_9,
+            LenswakeDatabase.MIGRATION_9_10,
         )
         migrated.query(
             "SELECT id FROM automation_profiles WHERE id = 'profile-migration'",
@@ -51,7 +66,7 @@ class LenswakeDatabaseMigrationTest {
         migrated.close()
 
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val database = Room.databaseBuilder(context, LenswakeDatabase::class.java, DATABASE_NAME)
+        val database = Room.databaseBuilder(context, LenswakeDatabase::class.java, databaseName)
             .addMigrations(
                 LenswakeDatabase.MIGRATION_1_2,
                 LenswakeDatabase.MIGRATION_2_3,
@@ -59,6 +74,9 @@ class LenswakeDatabaseMigrationTest {
                 LenswakeDatabase.MIGRATION_4_5,
                 LenswakeDatabase.MIGRATION_5_6,
                 LenswakeDatabase.MIGRATION_6_7,
+                LenswakeDatabase.MIGRATION_7_8,
+                LenswakeDatabase.MIGRATION_8_9,
+                LenswakeDatabase.MIGRATION_9_10,
             )
             .build()
         val (rawProfile, schedule) = runBlocking {
@@ -69,6 +87,8 @@ class LenswakeDatabaseMigrationTest {
 
         checkNotNull(rawProfile)
         assertEquals("profile-migration", rawProfile.id.value)
+        assertEquals("INCOMPATIBLE", rawProfile.compatibility.name)
+        assertEquals(LEGACY_UNKNOWN_VIDEO_SETTINGS, rawProfile.videoSettings)
         val rawSelector = checkNotNull(rawProfile.targets[AutomationAction.SELECT_VIDEO])
             .selectors
             .single()
@@ -79,11 +99,12 @@ class LenswakeDatabaseMigrationTest {
         checkNotNull(schedule)
         assertEquals("schedule-migration", schedule.id.value)
         assertEquals(rawProfile.id, schedule.profileId)
+        assertFalse(schedule.enabled)
     }
 
     @Test
     fun migratesVersionTwoToThreeWithExistingExecutionOwnershipUnreleased() {
-        migrationHelper.createDatabase(DATABASE_NAME, 2).apply {
+        migrationHelper.createDatabase(databaseName, 2).apply {
             execSQL(
                 """
                 INSERT INTO execution_sessions (
@@ -102,7 +123,7 @@ class LenswakeDatabaseMigrationTest {
         }
 
         val migrated = migrationHelper.runMigrationsAndValidate(
-            DATABASE_NAME,
+            databaseName,
             3,
             true,
             LenswakeDatabase.MIGRATION_2_3,
@@ -126,19 +147,22 @@ class LenswakeDatabaseMigrationTest {
         createVersionThreeDatabase()
 
         migrationHelper.runMigrationsAndValidate(
-            DATABASE_NAME,
+            databaseName,
             4,
             true,
             LenswakeDatabase.MIGRATION_3_4,
         ).close()
 
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val database = Room.databaseBuilder(context, LenswakeDatabase::class.java, DATABASE_NAME)
+        val database = Room.databaseBuilder(context, LenswakeDatabase::class.java, databaseName)
             .addMigrations(
                 LenswakeDatabase.MIGRATION_3_4,
                 LenswakeDatabase.MIGRATION_4_5,
                 LenswakeDatabase.MIGRATION_5_6,
                 LenswakeDatabase.MIGRATION_6_7,
+                LenswakeDatabase.MIGRATION_7_8,
+                LenswakeDatabase.MIGRATION_8_9,
+                LenswakeDatabase.MIGRATION_9_10,
             )
             .build()
         val (profile, schemaOneProfile) = runBlocking {
@@ -178,7 +202,7 @@ class LenswakeDatabaseMigrationTest {
         createVersionFourDatabase()
 
         val migrated = migrationHelper.runMigrationsAndValidate(
-            DATABASE_NAME,
+            databaseName,
             5,
             true,
             LenswakeDatabase.MIGRATION_4_5,
@@ -213,7 +237,7 @@ class LenswakeDatabaseMigrationTest {
 
     @Test
     fun migratesVersionFiveWithNullableRehearsalVerificationReceipt() {
-        migrationHelper.createDatabase(DATABASE_NAME, 5).apply {
+        migrationHelper.createDatabase(databaseName, 5).apply {
             execSQL(
                 """
                 INSERT INTO execution_sessions (
@@ -232,7 +256,7 @@ class LenswakeDatabaseMigrationTest {
         }
 
         val migrated = migrationHelper.runMigrationsAndValidate(
-            DATABASE_NAME,
+            databaseName,
             6,
             true,
             LenswakeDatabase.MIGRATION_5_6,
@@ -255,7 +279,7 @@ class LenswakeDatabaseMigrationTest {
     fun migratesVersionSixWithReadableEmptyDialogProfiles() {
         createVersionOneDatabase()
         migrationHelper.runMigrationsAndValidate(
-            DATABASE_NAME,
+            databaseName,
             6,
             true,
             LenswakeDatabase.MIGRATION_1_2,
@@ -266,7 +290,7 @@ class LenswakeDatabaseMigrationTest {
         ).close()
 
         val migrated = migrationHelper.runMigrationsAndValidate(
-            DATABASE_NAME,
+            databaseName,
             7,
             true,
             LenswakeDatabase.MIGRATION_6_7,
@@ -280,8 +304,13 @@ class LenswakeDatabaseMigrationTest {
         migrated.close()
 
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val database = Room.databaseBuilder(context, LenswakeDatabase::class.java, DATABASE_NAME)
-            .addMigrations(LenswakeDatabase.MIGRATION_6_7)
+        val database = Room.databaseBuilder(context, LenswakeDatabase::class.java, databaseName)
+            .addMigrations(
+                LenswakeDatabase.MIGRATION_6_7,
+                LenswakeDatabase.MIGRATION_7_8,
+                LenswakeDatabase.MIGRATION_8_9,
+                LenswakeDatabase.MIGRATION_9_10,
+            )
             .build()
         val profile = runBlocking {
             RoomAutomationProfileRepository(database).get(ProfileId("profile-migration"))
@@ -291,8 +320,205 @@ class LenswakeDatabaseMigrationTest {
         assertEquals(emptyMap<Any, Any>(), checkNotNull(profile).dialogProfiles)
     }
 
+    @Test
+    fun migratesVersionSevenToEightAndInvalidatesLegacySchedules() {
+        createVersionOneDatabase()
+        migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            7,
+            true,
+            LenswakeDatabase.MIGRATION_1_2,
+            LenswakeDatabase.MIGRATION_2_3,
+            LenswakeDatabase.MIGRATION_3_4,
+            LenswakeDatabase.MIGRATION_4_5,
+            LenswakeDatabase.MIGRATION_5_6,
+            LenswakeDatabase.MIGRATION_6_7,
+        ).close()
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            8,
+            true,
+            LenswakeDatabase.MIGRATION_7_8,
+        )
+        migrated.query(
+            "SELECT compatibility, support_tier, selector_template_id FROM automation_profiles " +
+                "WHERE id = 'profile-migration'",
+        ).use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals("INCOMPATIBLE", cursor.getString(0))
+            assertEquals("EXPERIMENTAL", cursor.getString(1))
+            assertEquals("legacy", cursor.getString(2))
+        }
+        migrated.query(
+            "SELECT enabled, experimental_risk_accepted, video_resolution, video_frame_rate " +
+                "FROM schedules WHERE id = 'schedule-migration'",
+        ).use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+            assertEquals(0, cursor.getInt(1))
+            assertEquals("LEGACY_UNKNOWN", cursor.getString(2))
+            assertEquals("LEGACY_UNKNOWN", cursor.getString(3))
+        }
+        migrated.close()
+    }
+
+    @Test
+    fun migratesVersionEightToNineWithoutInventingCertification() {
+        createVersionOneDatabase()
+        val versionEight = migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            8,
+            true,
+            LenswakeDatabase.MIGRATION_1_2,
+            LenswakeDatabase.MIGRATION_2_3,
+            LenswakeDatabase.MIGRATION_3_4,
+            LenswakeDatabase.MIGRATION_4_5,
+            LenswakeDatabase.MIGRATION_5_6,
+            LenswakeDatabase.MIGRATION_6_7,
+            LenswakeDatabase.MIGRATION_7_8,
+        )
+        versionEight.execSQL(
+            "UPDATE automation_profiles SET support_tier = 'CERTIFIED' " +
+                "WHERE id = 'profile-migration'",
+        )
+        versionEight.execSQL(
+            "UPDATE schedules SET enabled = 1 WHERE id = 'schedule-migration'",
+        )
+        versionEight.close()
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            9,
+            true,
+            LenswakeDatabase.MIGRATION_8_9,
+        )
+        migrated.query(
+            "SELECT support_tier, certification_json, compatibility, verified_at_epoch_ms " +
+                "FROM automation_profiles " +
+                "WHERE id = 'profile-migration'",
+        ).use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals("EXPERIMENTAL", cursor.getString(0))
+            assertNull(cursor.getString(1))
+            assertEquals("NEEDS_REHEARSAL", cursor.getString(2))
+            assertNull(cursor.getString(3))
+        }
+        migrated.query(
+            "SELECT enabled FROM schedules WHERE id = 'schedule-migration'",
+        ).use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+        migrated.close()
+    }
+
+    @Test
+    fun migratesVersionNineToTenWithExactVideoSettingsWithoutInventingLegacyValues() {
+        createVersionOneDatabase()
+        val versionNine = migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            9,
+            true,
+            LenswakeDatabase.MIGRATION_1_2,
+            LenswakeDatabase.MIGRATION_2_3,
+            LenswakeDatabase.MIGRATION_3_4,
+            LenswakeDatabase.MIGRATION_4_5,
+            LenswakeDatabase.MIGRATION_5_6,
+            LenswakeDatabase.MIGRATION_6_7,
+            LenswakeDatabase.MIGRATION_7_8,
+            LenswakeDatabase.MIGRATION_8_9,
+        )
+        versionNine.execSQL(
+            "UPDATE automation_profiles SET selector_schema_version = 5, " +
+                "support_tier = 'CERTIFIED', compatibility = 'VERIFIED', " +
+                "verified_at_epoch_ms = 800 " +
+                "WHERE id = 'profile-migration'",
+        )
+        versionNine.execSQL(
+            "UPDATE schedules SET enabled = 1 WHERE id = 'schedule-migration'",
+        )
+        versionNine.execSQL(
+            """
+            INSERT INTO execution_sessions (
+                id, execution_key, kind, profile_id, capture_type,
+                time_lapse_speed, lens_selection, video_resolution, video_frame_rate,
+                expected_start_at_epoch_ms, expected_stop_at_epoch_ms,
+                status, revision, created_at_epoch_ms, updated_at_epoch_ms
+            ) VALUES (
+                'execution-video-v9', 'schedule/video/1000', 'SCHEDULED',
+                'profile-migration', 'VIDEO', 'AUTO', 'REAR_MAIN', 'UHD_4K', 'FPS_60',
+                1000, 2000, 'COMPLETED', 1, 500, 2000
+            )
+            """.trimIndent(),
+        )
+        versionNine.execSQL(
+            """
+            INSERT INTO environment_snapshots (
+                id, session_id, captured_at_epoch_ms, lenswake_version,
+                device_manufacturer, device_model, android_sdk,
+                camera_package, camera_version_code, locale_tag,
+                display_width_px, display_height_px, density_dpi,
+                accessibility_status, privileged_bridge_status,
+                screen_interactive, keyguard_locked
+            ) VALUES (
+                'snapshot-video-v9', 'execution-video-v9', 900, '0.1.0',
+                'Google', 'Pixel 8 Pro', 37,
+                'com.google.android.GoogleCamera', 1, 'en-US',
+                1344, 2992, 480, 'AVAILABLE', 'UNAVAILABLE', 0, 1
+            )
+            """.trimIndent(),
+        )
+        versionNine.close()
+
+        val migrated = migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            10,
+            true,
+            LenswakeDatabase.MIGRATION_9_10,
+        )
+        migrated.query(
+            "SELECT video_resolution, video_frame_rate, support_tier, compatibility, " +
+                "verified_at_epoch_ms FROM automation_profiles " +
+                "WHERE id = 'profile-migration'",
+        ).use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals("UHD_4K", cursor.getString(0))
+            assertEquals("FPS_60", cursor.getString(1))
+            assertEquals("EXPERIMENTAL", cursor.getString(2))
+            assertEquals("NEEDS_REHEARSAL", cursor.getString(3))
+            assertNull(cursor.getString(4))
+        }
+        migrated.query(
+            "SELECT video_resolution, video_frame_rate FROM environment_snapshots " +
+                "WHERE id = 'snapshot-video-v9'",
+        ).use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals("UHD_4K", cursor.getString(0))
+            assertEquals("FPS_60", cursor.getString(1))
+        }
+        migrated.query(
+            "SELECT video_resolution, video_frame_rate FROM execution_sessions " +
+                "WHERE id = 'execution-video-v9'",
+        ).use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals("UHD_4K", cursor.getString(0))
+            assertEquals("FPS_60", cursor.getString(1))
+        }
+        migrated.query(
+            "SELECT video_resolution, video_frame_rate, enabled FROM schedules " +
+                "WHERE id = 'schedule-migration'",
+        ).use { cursor ->
+            assertEquals(true, cursor.moveToFirst())
+            assertEquals("LEGACY_UNKNOWN", cursor.getString(0))
+            assertEquals("LEGACY_UNKNOWN", cursor.getString(1))
+            assertEquals(0, cursor.getInt(2))
+        }
+        migrated.close()
+    }
+
     private fun createVersionOneDatabase() {
-        migrationHelper.createDatabase(DATABASE_NAME, 1).apply {
+        migrationHelper.createDatabase(databaseName, 1).apply {
             insertVersionOneProfile()
             insertVersionOneSchedule()
             close()
@@ -338,7 +564,7 @@ class LenswakeDatabaseMigrationTest {
     }
 
     private fun createVersionThreeDatabase() {
-        migrationHelper.createDatabase(DATABASE_NAME, 3).apply {
+        migrationHelper.createDatabase(databaseName, 3).apply {
             insertCurrentProfileJson()
             insertSchemaOneProfileJson()
             close()
@@ -394,7 +620,7 @@ class LenswakeDatabaseMigrationTest {
     }
 
     private fun createVersionFourDatabase() {
-        migrationHelper.createDatabase(DATABASE_NAME, 4).apply {
+        migrationHelper.createDatabase(databaseName, 4).apply {
             insertCompletedExecution()
             insertActiveExecution()
             close()
@@ -437,6 +663,6 @@ class LenswakeDatabaseMigrationTest {
     }
 
     private companion object {
-        const val DATABASE_NAME = "lenswake-migration-test"
+        const val DATABASE_FILE_NAME = "lenswake-migration-test"
     }
 }

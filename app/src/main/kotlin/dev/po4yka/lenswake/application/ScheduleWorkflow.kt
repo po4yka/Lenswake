@@ -11,6 +11,7 @@ import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.ScheduleRepository
 import dev.po4yka.lenswake.core.ScheduleValidationError
 import dev.po4yka.lenswake.core.ScheduleValidator
+import dev.po4yka.lenswake.core.provenance
 import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.NonCancellable
@@ -25,6 +26,7 @@ data class ScheduleCommand(
     val zoneId: ZoneId,
     val capture: CaptureConfiguration,
     val profileId: ProfileId,
+    val experimentalRiskAccepted: Boolean = false,
     val enabled: Boolean,
 )
 
@@ -40,6 +42,7 @@ enum class ScheduleWorkflowFailureCode {
     PROFILE_NOT_FOUND,
     PROFILE_NOT_VERIFIED,
     CAPTURE_NOT_SUPPORTED,
+    EXPERIMENTAL_CONSENT_REQUIRED,
     RUNTIME_NOT_READY,
     PREFLIGHT_FAILED,
     INVALID_SCHEDULE,
@@ -85,7 +88,7 @@ sealed interface ScheduleWorkflowResult {
 class ScheduleWorkflow(
     scheduleRepository: ScheduleRepository,
     executionRepository: ExecutionRepository,
-    profileRepository: AutomationProfileRepository,
+    private val profileRepository: AutomationProfileRepository,
     scheduler: RecordingScheduler,
     private val clock: LenswakeClock,
     preflightProbe: RuntimePreflightProbe,
@@ -114,6 +117,8 @@ class ScheduleWorkflow(
 
     private suspend fun createLocked(command: ScheduleCommand): ScheduleWorkflowResult {
         val now = clock.now()
+        val provenance = profileRepository.get(command.profileId)?.provenance
+            ?: dev.po4yka.lenswake.core.LEGACY_PROFILE_PROVENANCE
         val schedule = RecordingSchedule(
             id = ScheduleId.new(),
             name = command.name.trim(),
@@ -122,6 +127,8 @@ class ScheduleWorkflow(
             zoneId = command.zoneId,
             capture = command.capture,
             profileId = command.profileId,
+            profileProvenance = provenance,
+            experimentalRiskAccepted = command.experimentalRiskAccepted,
             enabled = command.enabled,
             createdAt = now,
             updatedAt = now,
@@ -145,6 +152,9 @@ class ScheduleWorkflow(
                 zoneId = command.zoneId,
                 capture = command.capture,
                 profileId = command.profileId,
+                profileProvenance = profileRepository.get(command.profileId)?.provenance
+                    ?: dev.po4yka.lenswake.core.LEGACY_PROFILE_PROVENANCE,
+                experimentalRiskAccepted = command.experimentalRiskAccepted,
                 enabled = command.enabled,
                 updatedAt = nextScheduleRevision(now, lookup.schedule.updatedAt),
             )

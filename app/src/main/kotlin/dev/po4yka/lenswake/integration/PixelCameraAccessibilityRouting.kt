@@ -40,6 +40,9 @@ internal val stopOptionalSignals = speedSignals.keys + setOf(
 internal fun missingActionFailure(action: AutomationAction): AutomationFailure = AutomationFailure(
     code = when (action) {
         AutomationAction.SELECT_VIDEO -> AutomationFailureCode.VIDEO_MODE_NOT_FOUND
+        AutomationAction.SELECT_VIDEO_RESOLUTION_4K,
+        AutomationAction.SELECT_VIDEO_FRAME_RATE_60,
+        -> AutomationFailureCode.VIDEO_MODE_NOT_FOUND
         AutomationAction.SELECT_TIME_LAPSE -> AutomationFailureCode.TIME_LAPSE_MODE_NOT_FOUND
         AutomationAction.SELECT_NIGHT_SIGHT_TIME_LAPSE ->
             AutomationFailureCode.NIGHT_SIGHT_TIME_LAPSE_MODE_NOT_FOUND

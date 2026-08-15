@@ -5,14 +5,17 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isHeading
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.semantics.Role
@@ -126,7 +129,7 @@ class LenswakeAppTest {
 
         composeRule.onNodeWithText("Diagnostics").performClick()
 
-        composeRule.onNodeWithText("Needs attention").assertExists()
+        composeRule.onNode(hasText("Needs attention") and isHeading()).assertExists()
         composeRule.onNodeWithText("Hidden setup check").assertDoesNotExist()
         composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(5)
         composeRule.onNodeWithText("Sessions").assertExists()
@@ -262,9 +265,13 @@ class LenswakeAppTest {
         )
 
         composeRule.onNodeWithText("Profiles").performClick()
-        composeRule.onNodeWithText("Camera profile could not be installed").assertExists()
+        val installFailure = hasText("Camera profile could not be installed")
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToNode(installFailure)
+        composeRule.onNode(installFailure).assertExists()
         composeRule.onNodeWithText("The environment does not match.").assertExists()
-        composeRule.onNode(hasText("Test recording") and hasClickAction()).assertIsNotEnabled()
+        val rehearsal = hasText("Test recording") and hasClickAction()
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToNode(rehearsal)
+        composeRule.onNode(rehearsal).assertIsNotEnabled()
     }
 
     @Test
@@ -296,9 +303,9 @@ class LenswakeAppTest {
         )
 
         composeRule.onNodeWithText("Profiles").performClick()
-        composeRule.onNodeWithContentDescription("Test recording, Pixel 9 Pro")
-            .performScrollTo()
-            .performClick()
+        val pixel9ProRehearsal = hasContentDescription("Test recording, Pixel 9 Pro")
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToNode(pixel9ProRehearsal)
+        composeRule.onNode(pixel9ProRehearsal).performClick()
         composeRule.runOnIdle { assertEquals("profile-2", rehearsedProfileId) }
     }
 
@@ -323,9 +330,13 @@ class LenswakeAppTest {
         )
 
         composeRule.onNodeWithText("Profiles").performClick()
-        composeRule.onNodeWithText("Active test recording").assertExists()
+        val activeRehearsal = hasText("Active test recording")
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToNode(activeRehearsal)
+        composeRule.onNode(activeRehearsal).assertExists()
         composeRule.onNodeWithText(detail).assertExists()
-        composeRule.onNode(hasText("Test recording") and hasClickAction()).assertIsNotEnabled()
+        val rehearsal = hasText("Test recording") and hasClickAction()
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToNode(rehearsal)
+        composeRule.onNode(rehearsal).assertIsNotEnabled()
     }
 
     @Test
@@ -472,7 +483,7 @@ class LenswakeAppTest {
         }
 
         composeRule.onNodeWithText("Diagnostics").performClick()
-        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(9)
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(2)
         composeRule.onNodeWithText("No activity yet").assertExists()
         composeRule.onNodeWithText("persisted", substring = true, ignoreCase = true).assertDoesNotExist()
     }
@@ -598,7 +609,7 @@ class LenswakeAppTest {
             .performScrollTo()
             .assertIsSelected()
         composeRule.onNodeWithText("Pixel Camera version 710000", substring = true).assertExists()
-        composeRule.onNode(hasText("Pixel 9 Pro") and radioButtonRole).performClick()
+        composeRule.onNode(hasText("Pixel 9 Pro") and radioButtonRole).performScrollTo().performClick()
 
         composeRule.runOnIdle { assertEquals("profile-9", updatedForm?.profileId) }
     }

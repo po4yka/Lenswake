@@ -6,6 +6,9 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.po4yka.lenswake.application.AlarmTransportIncidentAction
 import dev.po4yka.lenswake.application.SharedPreferencesAlarmTransportIncidentSource
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -39,7 +42,7 @@ class AlarmTransportPersistenceTest {
     }
 
     @Test
-    fun diagnosticsIncidentSurvivesRecreationAndDisappearsOnlyAfterPersistenceResolution() {
+    fun diagnosticsIncidentSurvivesRecreationAndDisappearsOnlyAfterPersistenceResolution(): Unit = runBlocking {
         val preferenceName = "alarm-incident-test-${System.nanoTime()}"
         val persistence = SharedPreferencesAlarmTransportFailurePersistence(context, preferenceName)
         val marker = AlarmTransportFailureMarker(
@@ -59,7 +62,9 @@ class AlarmTransportPersistenceTest {
 
         // A UI action does not mutate this store; only the alarm recovery resolution does.
         assertTrue(persistence.remove(marker.id))
-        assertTrue(recreated.incidents.value.isEmpty())
+        withTimeout(1_000) {
+            recreated.incidents.first { it.isEmpty() }
+        }
     }
 
     @Test

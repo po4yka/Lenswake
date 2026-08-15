@@ -11,8 +11,9 @@ artifacts remain in their established language.
 - Current implemented behavior is established by source, manifests, Gradle configuration, committed
   Room schemas, and tests. `docs/STATUS.md` records evidence boundaries, not implementation truth.
 - For Pixel Camera or Android runtime behavior, use this precedence: current target Pixel 8 Pro
-  observation; current official Android/AOSP documentation; reproducible serial-pinned ADB evidence;
-  dated repository research; assumptions.
+  observation; an explicitly authorized target-device calibration observation; current official
+  Android/AOSP documentation; reproducible serial-pinned ADB evidence; dated repository research;
+  assumptions.
 - If sources disagree materially, surface and resolve the drift. Do not silently encode an assumption
   or transfer evidence from another commit, APK, device, package split, locale, or profile schema.
 
@@ -92,6 +93,10 @@ artifacts remain in their established language.
   migrations, services, permissions, and Android adapters.
 - Do not run opt-in physical-device fixtures or mutate device state without explicit authorization.
   Always select the exact device using `adb -s "$PIXEL_SERIAL"` or `ANDROID_SERIAL="$PIXEL_SERIAL"`.
+- Explicit authorization may allow a named beta Pixel solely for bounded selector-template
+  calibration. Label that evidence as beta, keep the beta environment rejected by profile
+  installation/preflight/action dispatch, and never reuse it as rehearsal, certification, release,
+  or stable-build acceptance evidence.
 - Follow `docs/testing/PHYSICAL_PIXEL.md`. Physical claims must name the device, Android build, Pixel
   Camera version, Lenswake commit, APK hash/installed-artifact evidence, initial state, scenario, and
   observed postconditions; clean up alarms, schedules, idle/battery overrides, and permissions changed.

@@ -8,6 +8,7 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
 import androidx.room.Upsert
+import dev.po4yka.lenswake.core.CaptureMode
 import dev.po4yka.lenswake.data.internal.entity.AutomationProfileEntity
 import dev.po4yka.lenswake.data.internal.entity.EnvironmentSnapshotEntity
 import dev.po4yka.lenswake.data.internal.entity.ExecutionEventEntity
@@ -343,6 +344,9 @@ internal interface EnvironmentSnapshotDao {
         val session = checkNotNull(getSession(snapshot.sessionId)) {
             "Environment snapshot session does not exist"
         }
+        check(snapshot.matchesCapture(session)) {
+            "Environment snapshot video settings do not match its execution capture"
+        }
         val existingForSession = getForSession(snapshot.sessionId)
         if (existingForSession != null) {
             check(session.environmentSnapshotId == existingForSession.id) {
@@ -389,3 +393,10 @@ internal interface EnvironmentSnapshotDao {
         )
     }
 }
+
+private fun EnvironmentSnapshotEntity.matchesCapture(session: ExecutionSessionEntity): Boolean =
+    if (session.captureType == CaptureMode.VIDEO.name) {
+        videoResolution == session.videoResolution && videoFrameRate == session.videoFrameRate
+    } else {
+        videoResolution == null && videoFrameRate == null
+    }

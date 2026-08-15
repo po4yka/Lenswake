@@ -8,6 +8,7 @@ import dev.po4yka.lenswake.core.AutomationProfileRepository
 import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileId
+import dev.po4yka.lenswake.core.SupportTier
 import java.time.Instant
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -111,6 +112,52 @@ class InstallKnownPixelCameraProfileTest {
     }
 
     @Test
+    fun `authorized beta calibration environment cannot install`() = runBlocking {
+        val repository = FakeProfileRepository()
+        val beta = KnownPixelCameraProfileCatalog.pixel7SemanticTemplate.environment
+        val installer = InstallKnownPixelCameraProfile(
+            environmentProbe = { PortResult.Observed(beta) },
+            profileRepository = repository,
+        )
+
+        assertInstanceOf(
+            InstallKnownPixelCameraProfileResult.UnsupportedEnvironment::class.java,
+            installer(experimentalRiskAccepted = true),
+        )
+        assertEquals(0, repository.getCount)
+        assertEquals(0, repository.saveCount)
+    }
+
+    @Test
+    fun `experimental environment requires explicit consent before persistence`() = runBlocking {
+        val repository = FakeProfileRepository()
+        val environment = candidate.environment.copy(
+            deviceModel = "Pixel 9 Pro",
+            deviceCodename = "caiman",
+            androidBuildFingerprint =
+                "google/caiman/caiman:17/CP2A.260705.006/15641320:user/release-keys",
+        )
+        val installer = InstallKnownPixelCameraProfile(
+            environmentProbe = { PortResult.Observed(environment) },
+            profileRepository = repository,
+        )
+
+        val consent = assertInstanceOf(
+            InstallKnownPixelCameraProfileResult.ExperimentalConsentRequired::class.java,
+            installer(),
+        )
+        assertEquals(SupportTier.EXPERIMENTAL, consent.profile.supportTier)
+        assertEquals(0, repository.saveCount)
+
+        val installed = assertInstanceOf(
+            InstallKnownPixelCameraProfileResult.Installed::class.java,
+            installer(experimentalRiskAccepted = true),
+        )
+        assertEquals(SupportTier.EXPERIMENTAL, installed.profile.supportTier)
+        assertEquals(1, repository.saveCount)
+    }
+
+    @Test
     fun `environment probe failure is returned unchanged`() = runBlocking {
         val repository = FakeProfileRepository()
         val failure = AutomationFailure(
@@ -163,10 +210,12 @@ class InstallKnownPixelCameraProfileTest {
         assertPersistenceStage(ProfilePersistenceStage.READ_BACK, result)
     }
 
-    private fun installer(repository: FakeProfileRepository) = InstallKnownPixelCameraProfile(
-        environmentProbe = { PortResult.Observed(candidate.environment) },
-        profileRepository = repository,
-    )
+    private fun installer(repository: FakeProfileRepository): suspend () -> InstallKnownPixelCameraProfileResult = {
+        InstallKnownPixelCameraProfile(
+            environmentProbe = { PortResult.Observed(candidate.environment) },
+            profileRepository = repository,
+        )(experimentalRiskAccepted = true)
+    }
 
     private fun assertPersistenceStage(
         expected: ProfilePersistenceStage,

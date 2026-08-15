@@ -3,7 +3,10 @@ package dev.po4yka.lenswake.ui
 import android.util.Log
 import dev.po4yka.lenswake.R
 import dev.po4yka.lenswake.application.InstallKnownPixelCameraProfile
+import dev.po4yka.lenswake.application.InstallReleaseCertification
+import dev.po4yka.lenswake.application.InstallReleaseCertificationResult
 import dev.po4yka.lenswake.application.RehearsalCoordinator
+import dev.po4yka.lenswake.application.RehearsalResult
 import dev.po4yka.lenswake.application.ScheduleOperation
 import dev.po4yka.lenswake.application.ScheduleWorkflow
 import dev.po4yka.lenswake.application.ScheduleWorkflowFailureCode
@@ -31,6 +34,10 @@ import kotlinx.coroutines.launch
 
 interface LenswakeProfileActions {
     fun installCandidateProfile()
+
+    fun confirmExperimentalProfileInstallation()
+
+    fun importReleaseCertification(uri: String)
 
     fun runProfileRehearsal(profileId: String)
 
@@ -94,41 +101,115 @@ internal class LenswakeProfileActionsImpl(
     private val installKnownPixelCameraProfile: InstallKnownPixelCameraProfile,
     private val rehearsalCoordinator: RehearsalCoordinator,
     private val strings: UiStringProvider,
+    private val installReleaseCertification: InstallReleaseCertification? = null,
 ) : LenswakeProfileActions {
     override fun installCandidateProfile() {
+        installCandidateProfile(experimentalRiskAccepted = false)
+    }
+
+    override fun confirmExperimentalProfileInstallation() {
+        installCandidateProfile(experimentalRiskAccepted = true)
+    }
+
+    private fun installCandidateProfile(experimentalRiskAccepted: Boolean) {
         if (actionState.profileInstall.value == ProfileInstallUiState.Installing) return
 
         actionState.profileInstall.value = ProfileInstallUiState.Installing
         actionState.scope.launch {
-            actionState.profileInstall.value = installKnownPixelCameraProfile().toUiState(strings)
+            actionState.profileInstall.value = installKnownPixelCameraProfile(
+                experimentalRiskAccepted,
+            ).toUiState(strings)
+        }
+    }
+
+    override fun importReleaseCertification(uri: String) {
+        if (actionState.profileInstall.value == ProfileInstallUiState.Installing) return
+        actionState.profileInstall.value = ProfileInstallUiState.Installing
+        actionState.scope.launch {
+            actionState.profileInstall.value = installReleaseCertification
+                ?.invoke(uri)
+                ?.toUiState(strings)
+                ?: ProfileInstallUiState.Failed(strings.get(R.string.profile_certification_invalid_bundle))
+            actionState.refreshPreflight()
         }
     }
 
     override fun runProfileRehearsal(profileId: String) {
-        launchRehearsal(RehearsalTargetUiState.Profile(profileId)) {
-            val profile = profileRepository.get(ProfileId(profileId))
-                ?: return@launchRehearsal RehearsalPreparation.Failed(
-                    strings.get(R.string.rehearsal_profile_required),
+        if (
+            !actionState.state.value.actions.canRunRehearsal ||
+            actionState.rehearsal.value.action == RehearsalActionUiState.Running
+        ) return
+        actionState.rehearsal.value = RehearsalActionSnapshot(
+            action = RehearsalActionUiState.Running,
+            target = RehearsalTargetUiState.Profile(profileId),
+        )
+        actionState.scope.launch {
+            val attempt = runCatching { runProfileCaptureMatrix(ProfileId(profileId)) }
+            val failure = attempt.exceptionOrNull()
+            when (failure) {
+                is CancellationException -> throw failure
+                null -> actionState.rehearsal.value = actionState.rehearsal.value.copy(
+                    action = checkNotNull(attempt.getOrNull()),
                 )
-            val supportedCaptures = profile.supportedCaptureConfigurations()
-                .sortedWith(capturePreferenceComparator)
-            val completedRehearsals = executions.observeExecutions().first()
-            val capture = supportedCaptures.firstOrNull { candidate ->
-                completedRehearsals.none { session ->
-                    RehearsalVerificationPolicy.qualifies(session, profile, candidate)
+                !is Exception -> throw failure
+                else -> {
+                    Log.e(TAG, "Unexpected profile-matrix rehearsal failure", failure)
+                    actionState.rehearsal.value = actionState.rehearsal.value.copy(
+                        action = RehearsalActionUiState.Failed(
+                            strings.get(R.string.rehearsal_unexpected_failure),
+                        ),
+                    )
                 }
-            } ?: supportedCaptures.firstOrNull()
-                ?: return@launchRehearsal RehearsalPreparation.Failed(
-                    strings.get(R.string.schedule_error_capture_not_supported),
-                )
-            RehearsalPreparation.Ready(
-                RehearsalRequest(
-                    profileId = profile.id,
-                    capture = capture,
-                    recordingDuration = Duration.ofSeconds(REHEARSAL_DURATION_SECONDS),
-                ),
+            }
+            actionState.refreshPreflight()
+        }
+    }
+
+    private suspend fun runProfileCaptureMatrix(profileId: ProfileId): RehearsalActionUiState {
+        val initialProfile = profileRepository.get(profileId)
+        if (initialProfile == null) {
+            return RehearsalActionUiState.Failed(strings.get(R.string.rehearsal_profile_required))
+        }
+        var profile: dev.po4yka.lenswake.core.PixelCameraProfile = initialProfile
+        val completed = executions.observeExecutions().first()
+        val pending = profile.supportedCaptureConfigurations()
+            .sortedWith(capturePreferenceComparator)
+            .filter { capture ->
+                completed.none { session -> RehearsalVerificationPolicy.qualifies(session, profile, capture) }
+            }
+        var outcome: RehearsalActionUiState? = pending.takeIf(List<*>::isEmpty)?.let {
+            RehearsalActionUiState.Passed(
+                strings.get(R.string.rehearsal_matrix_already_verified),
             )
         }
+        for (capture in pending) {
+            if (outcome !is RehearsalActionUiState.SafetyStopPending) {
+                val result = rehearsalCoordinator.run(
+                    RehearsalRequest(
+                        profileId = profile.id,
+                        capture = capture,
+                        recordingDuration = Duration.ofSeconds(REHEARSAL_DURATION_SECONDS),
+                    ),
+                )
+                if (result is RehearsalResult.Completed) {
+                    val refreshed = profileRepository.get(profileId)
+                    if (refreshed == null) {
+                        outcome = RehearsalActionUiState.Failed(
+                            strings.get(R.string.rehearsal_profile_required),
+                        )
+                    } else {
+                        profile = refreshed
+                    }
+                } else if (result is RehearsalResult.Rejected) {
+                    outcome = result.toUiState(strings)
+                } else {
+                    outcome = result.toUiState(strings)
+                }
+            }
+        }
+        return outcome ?: RehearsalActionUiState.Passed(
+            strings.get(R.string.rehearsal_matrix_passed),
+        )
     }
 
     override fun runScheduleRehearsal(scheduleId: String) {
@@ -265,6 +346,7 @@ internal class LenswakeScheduleActionsImpl(
                 timeLapseSpeed = schedule.capture.timeLapseSpeed ?: TimeLapseSpeed.X120,
                 lens = schedule.capture.lens,
                 profileId = schedule.profileId,
+                experimentalRiskAccepted = schedule.experimentalRiskAccepted,
                 enabled = schedule.enabled,
             ),
         )
@@ -367,6 +449,31 @@ private sealed interface RehearsalPreparation {
     data class Failed(val message: String) : RehearsalPreparation
 }
 
+private fun InstallReleaseCertificationResult.toUiState(strings: UiStringProvider): ProfileInstallUiState =
+    when (this) {
+        is InstallReleaseCertificationResult.Certified -> ProfileInstallUiState.Succeeded(
+            strings.get(R.string.profile_certification_installed),
+        )
+        is InstallReleaseCertificationResult.AlreadyCertified -> ProfileInstallUiState.Succeeded(
+            strings.get(R.string.profile_certification_already_installed),
+        )
+        InstallReleaseCertificationResult.ProfileRequired -> ProfileInstallUiState.Failed(
+            strings.get(R.string.profile_certification_profile_required),
+        )
+        InstallReleaseCertificationResult.UnsupportedTarget -> ProfileInstallUiState.Failed(
+            strings.get(R.string.profile_certification_unsupported_target),
+        )
+        InstallReleaseCertificationResult.ProfileEvidenceMismatch -> ProfileInstallUiState.Failed(
+            strings.get(R.string.profile_certification_profile_mismatch),
+        )
+        InstallReleaseCertificationResult.InvalidBundle -> ProfileInstallUiState.Failed(
+            strings.get(R.string.profile_certification_invalid_bundle),
+        )
+        is InstallReleaseCertificationResult.PersistenceFailure -> ProfileInstallUiState.Failed(
+            strings.get(R.string.profile_certification_persistence_failed),
+        )
+    }
+
 private fun ScheduleFormUiState.toCommandOrNull() = runCatching {
     val start = requireNotNull(startLocal)
     val stop = requireNotNull(stopLocal)
@@ -379,6 +486,7 @@ private fun ScheduleFormUiState.toCommandOrNull() = runCatching {
         zoneId = zoneId,
         capture = captureConfiguration(),
         profileId = ProfileId(profileId.trim()),
+        experimentalRiskAccepted = experimentalRiskAccepted,
         enabled = enabled,
     )
 }.getOrNull()
@@ -430,6 +538,8 @@ private val scheduleWorkflowFailureMessages = mapOf(
     ScheduleWorkflowFailureCode.PROFILE_NOT_FOUND to R.string.schedule_error_profile_not_found,
     ScheduleWorkflowFailureCode.PROFILE_NOT_VERIFIED to R.string.schedule_error_profile_not_verified,
     ScheduleWorkflowFailureCode.CAPTURE_NOT_SUPPORTED to R.string.schedule_error_capture_not_supported,
+    ScheduleWorkflowFailureCode.EXPERIMENTAL_CONSENT_REQUIRED to
+        R.string.schedule_error_experimental_consent_required,
     ScheduleWorkflowFailureCode.RUNTIME_NOT_READY to R.string.schedule_error_runtime_not_ready,
     ScheduleWorkflowFailureCode.PREFLIGHT_FAILED to R.string.schedule_error_preflight_failed,
     ScheduleWorkflowFailureCode.INVALID_SCHEDULE to R.string.schedule_error_invalid,

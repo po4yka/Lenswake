@@ -29,6 +29,7 @@ import dev.po4yka.lenswake.core.ScheduleRepository
 import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
+import dev.po4yka.lenswake.core.attributedTo
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 import java.util.concurrent.CancellationException
@@ -43,7 +44,7 @@ class DefaultAlarmTriggerCoordinator(
     private val environmentSnapshotRepository: EnvironmentSnapshotRepository,
     private val environmentSnapshotCollector: EnvironmentSnapshotCollector,
     private val automationEngine: AutomationEngine,
-    private val startReadiness: suspend (ProfileId) -> Result<Unit>,
+    private val startReadiness: suspend (ExecutionSession) -> Result<Unit>,
     private val clock: LenswakeClock,
     private val snapshotCollectionTimeoutMillis: Long = SNAPSHOT_COLLECTION_TIMEOUT_MILLIS,
     private val scheduleMutationMutex: Mutex = Mutex(),
@@ -108,7 +109,8 @@ private class AlarmExecutionContext(
             AlarmKind.STOP -> schedule.stopAt
         }
         val structuralReason = when {
-            !schedule.enabled -> "The alarm schedule is disabled"
+            !schedule.enabled && trigger.kind == AlarmKind.START ->
+                "The alarm schedule is disabled"
             schedule.updatedAt != trigger.scheduleUpdatedAt ->
                 "The alarm belongs to an obsolete schedule revision"
             expected != trigger.expectedAt ->
@@ -152,7 +154,7 @@ private class StartAlarmHandler(
     private val context: AlarmExecutionContext,
     private val snapshotResolver: EnvironmentSnapshotResolver,
     private val engineRunner: AlarmEngineRunner,
-    private val startReadiness: suspend (ProfileId) -> Result<Unit>,
+    private val startReadiness: suspend (ExecutionSession) -> Result<Unit>,
     private val mutex: Mutex,
 ) {
     suspend fun handle(trigger: AlarmTrigger): AlarmHandlingResult {
@@ -195,6 +197,7 @@ private class StartAlarmHandler(
             scheduleId = schedule.id,
             scheduleName = schedule.name,
             profileId = schedule.profileId,
+            profileProvenance = schedule.profileProvenance,
             capture = schedule.capture,
             expectedStartAt = schedule.startAt,
             expectedStopAt = schedule.stopAt,
@@ -259,7 +262,7 @@ private class StartAlarmHandler(
         if (session.recordActionAt != null) {
             null
         } else {
-            captureNonCancellationException { startReadiness(session.profileId) }.fold(
+            captureNonCancellationException { startReadiness(session) }.fold(
                 onSuccess = Result<Unit>::exceptionOrNull,
                 onFailure = { it },
             )
@@ -413,7 +416,10 @@ private class EnvironmentSnapshotResolver(
                 SnapshotCheckpoint.Failed(
                     terminal("Environment collector returned a mismatched snapshot"),
                 )
-            else -> persist(snapshot, expectedId)
+            else -> persist(
+                snapshot.attributedTo(session),
+                expectedId,
+            )
         }
     }
 
@@ -506,19 +512,25 @@ private class StopAlarmHandler(
         context.executionRepository.findPixelCameraOwnerForSchedule(schedule.id)
     }.fold(
         onSuccess = { active ->
-            active?.let(ExecutionLookup::Found) ?: context.loadExecution(deterministicId).fold(
-                onSuccess = { session ->
-                    session?.let(ExecutionLookup::Found)
-                        ?: ExecutionLookup.Failed(
-                            retryable("No persisted execution exists for this STOP alarm"),
+            when {
+                active != null -> ExecutionLookup.Found(active)
+                !schedule.enabled -> ExecutionLookup.Failed(
+                    terminal("The disabled alarm schedule has no active Pixel Camera owner"),
+                )
+                else -> context.loadExecution(deterministicId).fold(
+                    onSuccess = { session ->
+                        session?.let(ExecutionLookup::Found)
+                            ?: ExecutionLookup.Failed(
+                                retryable("No persisted execution exists for this STOP alarm"),
+                            )
+                    },
+                    onFailure = { error ->
+                        ExecutionLookup.Failed(
+                            retryable("Could not load the execution for this STOP alarm", error),
                         )
-                },
-                onFailure = { error ->
-                    ExecutionLookup.Failed(
-                        retryable("Could not load the execution for this STOP alarm", error),
-                    )
-                },
-            )
+                    },
+                )
+            }
         },
         onFailure = { error ->
             ExecutionLookup.Failed(

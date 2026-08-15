@@ -32,6 +32,7 @@ fun LenswakeApp(
     onRemediate: (SetupRemediationAction) -> Unit,
     onOpenPixelCamera: () -> Unit,
     onExportDiagnostics: () -> Unit,
+    onImportReleaseCertification: () -> Unit,
 ) {
     LifecycleResumeEffect(viewModel) {
         viewModel.refreshPreflight()
@@ -41,6 +42,7 @@ fun LenswakeApp(
     LenswakeApp(
         state = state,
         onInstallCandidateProfile = viewModel::installCandidateProfile,
+        onConfirmExperimentalProfileInstallation = viewModel::confirmExperimentalProfileInstallation,
         onRunRehearsal = viewModel::runProfileRehearsal,
         onRunScheduleRehearsal = viewModel::runScheduleRehearsal,
         onBeginCreateSchedule = viewModel::beginCreateSchedule,
@@ -56,6 +58,7 @@ fun LenswakeApp(
         onRemediate = onRemediate,
         onOpenPixelCamera = onOpenPixelCamera,
         onExportDiagnostics = onExportDiagnostics,
+        onImportReleaseCertification = onImportReleaseCertification,
         onClearRemediationMessage = viewModel::clearSetupRemediationMessage,
     )
 }
@@ -64,6 +67,7 @@ fun LenswakeApp(
 fun LenswakeApp(
     state: LenswakeUiState,
     onInstallCandidateProfile: () -> Unit = {},
+    onConfirmExperimentalProfileInstallation: () -> Unit = {},
     onRunRehearsal: (String) -> Unit = {},
     onRunScheduleRehearsal: (String) -> Unit = {},
     onBeginCreateSchedule: () -> Unit = {},
@@ -79,10 +83,16 @@ fun LenswakeApp(
     onRemediate: (SetupRemediationAction) -> Unit = {},
     onOpenPixelCamera: () -> Unit = {},
     onExportDiagnostics: () -> Unit = {},
+    onImportReleaseCertification: () -> Unit = {},
     onClearRemediationMessage: () -> Unit = {},
 ) {
     val actions = LenswakeAppActions(
-        profiles = ProfileActions(onInstallCandidateProfile, onRunRehearsal),
+        profiles = ProfileActions(
+            onInstallCandidateProfile,
+            onConfirmExperimentalProfileInstallation,
+            onImportReleaseCertification,
+            onRunRehearsal,
+        ),
         schedules = ScheduleActions(
             onRunRehearsal = onRunScheduleRehearsal,
             editor = ScheduleEditorActions(
@@ -124,6 +134,8 @@ internal data class LenswakeAppActions(
 
 internal data class ProfileActions(
     val onInstallCandidateProfile: () -> Unit,
+    val onConfirmExperimentalProfileInstallation: () -> Unit,
+    val onImportReleaseCertification: () -> Unit,
     val onRunRehearsal: (String) -> Unit,
 )
 

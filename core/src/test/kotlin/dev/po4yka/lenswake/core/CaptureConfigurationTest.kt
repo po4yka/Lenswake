@@ -2,6 +2,7 @@ package dev.po4yka.lenswake.core
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 
 class CaptureConfigurationTest {
@@ -23,7 +24,42 @@ class CaptureConfigurationTest {
 
         assertEquals(CaptureMode.VIDEO, capture.mode)
         assertEquals(LensSelection.FRONT, capture.lens)
+        assertEquals(VideoResolution.UHD_4K, capture.resolution)
+        assertEquals(VideoFrameRate.FPS_60, capture.frameRate)
         assertNull(capture.timeLapseSpeed)
+    }
+
+    @Test
+    fun `legacy video settings are never supported by a current profile`() {
+        val profile = PixelCameraProfile(
+            id = ProfileId("capture-test"),
+            environment = PixelCameraEnvironment(
+                deviceManufacturer = "Google",
+                deviceModel = "Pixel 8 Pro",
+                androidSdk = 37,
+                androidBuildFingerprint = "fingerprint",
+                cameraPackage = "com.google.android.GoogleCamera",
+                cameraVersionCode = 1,
+                localeTag = "en-US",
+                displayWidthPx = 1000,
+                displayHeightPx = 2000,
+                densityDpi = 400,
+            ),
+            selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
+            compatibility = ProfileCompatibility.NEEDS_REHEARSAL,
+            verifiedAt = null,
+        )
+
+        assertFalse(
+            profile.supports(
+                CaptureConfiguration.Video(frameRate = VideoFrameRate.LEGACY_UNKNOWN),
+            ),
+        )
+        assertFalse(
+            profile.supports(
+                CaptureConfiguration.Video(resolution = VideoResolution.LEGACY_UNKNOWN),
+            ),
+        )
     }
 
     @Test

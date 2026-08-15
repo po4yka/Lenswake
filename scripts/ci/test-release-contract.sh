@@ -79,4 +79,117 @@ git -C "$outside_main_repo" tag v0.2.0
 expect_failure "is not reachable from origin/main" \
   bash -c "cd '$outside_main_repo' && scripts/ci/validate-release-tag.sh v0.2.0 origin/main"
 
+gate_root="$test_root/physical-gate"
+mkdir -p "$gate_root"
+gate_apk="$gate_root/Lenswake-1.2.3.apk"
+gate_checksums="$gate_root/SHA256SUMS.txt"
+gate_candidate="$gate_root/RELEASE-CANDIDATE.txt"
+gate_acceptance="$gate_root/PHYSICAL-ACCEPTANCE.txt"
+gate_commit="0123456789abcdef0123456789abcdef01234567"
+printf 'signed release bytes' >"$gate_apk"
+gate_apk_sha256="$(sha256sum "$gate_apk" | awk '{print $1}')"
+printf '%s  %s\n' "$gate_apk_sha256" "$(basename "$gate_apk")" >"$gate_checksums"
+{
+  printf 'schemaVersion=1\n'
+  printf 'tag=v1.2.3\n'
+  printf 'commit=%s\n' "$gate_commit"
+  printf 'versionName=1.2.3\n'
+  printf 'versionCode=1\n'
+  printf 'apkFilename=%s\n' "$(basename "$gate_apk")"
+  printf 'apkSha256=%s\n' "$gate_apk_sha256"
+} >"$gate_candidate"
+pixel_7_evidence_sha256="$(printf 'pixel 7 acceptance' | sha256sum | awk '{print $1}')"
+pixel_8_pro_evidence_sha256="$(printf 'pixel 8 pro acceptance' | sha256sum | awk '{print $1}')"
+pixel_7_profile_fingerprint="$(printf 'pixel 7 profile' | sha256sum | awk '{print $1}')"
+pixel_8_pro_profile_fingerprint="$(printf 'pixel 8 pro profile' | sha256sum | awk '{print $1}')"
+
+scripts/ci/verify-physical-release-gate.sh \
+  "$gate_candidate" \
+  "$gate_apk" \
+  "$gate_checksums" \
+  v1.2.3 \
+  "$gate_commit" \
+  123456 \
+  "$gate_apk_sha256" \
+  https://example.invalid/pixel-7-evidence \
+  "$pixel_7_evidence_sha256" \
+  "$pixel_7_profile_fingerprint" \
+  https://example.invalid/pixel-8-pro-evidence \
+  "$pixel_8_pro_evidence_sha256" \
+  "$pixel_8_pro_profile_fingerprint" \
+  "$gate_acceptance" >/dev/null
+
+grep -Fq "apkSha256=$gate_apk_sha256" "$gate_acceptance"
+grep -Fq "pixel7EvidenceSha256=$pixel_7_evidence_sha256" "$gate_acceptance"
+grep -Fq "pixel8ProEvidenceSha256=$pixel_8_pro_evidence_sha256" "$gate_acceptance"
+grep -Fq "pixel7ProfileFingerprint=$pixel_7_profile_fingerprint" "$gate_acceptance"
+grep -Fq "pixel8ProProfileFingerprint=$pixel_8_pro_profile_fingerprint" "$gate_acceptance"
+
+gate_keystore="$gate_root/release-test.jks"
+gate_bundle="$gate_root/Lenswake-1.2.3-certification.jar"
+gate_certificate="$gate_root/release-test-certificate.sha256"
+keytool -genkeypair -noprompt \
+  -alias lenswake-release \
+  -keystore "$gate_keystore" \
+  -storepass test-password \
+  -keypass test-password \
+  -dname "CN=Lenswake release contract" \
+  -keyalg RSA \
+  -validity 1 >/dev/null 2>&1
+LC_ALL=C keytool -list -v -keystore "$gate_keystore" -storepass test-password \
+  -alias lenswake-release |
+  sed -n 's/^[[:space:]]*SHA256: //p' |
+  head -n 1 |
+  tr -d ':' |
+  tr '[:upper:]' '[:lower:]' >"$gate_certificate"
+RELEASE_STORE_PASSWORD=test-password RELEASE_KEY_PASSWORD=test-password \
+  scripts/ci/create-release-certification-bundle.sh \
+  "$gate_acceptance" "$gate_bundle" "$gate_keystore" lenswake-release "$gate_certificate" >/dev/null
+jar --list --file "$gate_bundle" | grep -Fxq PHYSICAL-ACCEPTANCE.txt
+scripts/ci/verify-release-certification-bundle.sh \
+  "$gate_bundle" "$gate_acceptance" "$gate_certificate" >/dev/null
+wrong_certificate="$gate_root/wrong-certificate.sha256"
+printf '%064d\n' 0 >"$wrong_certificate"
+expect_failure "unexpected signing certificate" \
+  scripts/ci/verify-release-certification-bundle.sh \
+  "$gate_bundle" "$gate_acceptance" "$wrong_certificate"
+
+mkdir -p "$gate_root/tampered"
+tampered_apk="$gate_root/tampered/$(basename "$gate_apk")"
+cp "$gate_apk" "$tampered_apk"
+printf 'tampered' >>"$tampered_apk"
+expect_failure "Downloaded APK SHA-256 does not match physical acceptance" \
+  scripts/ci/verify-physical-release-gate.sh \
+  "$gate_candidate" \
+  "$tampered_apk" \
+  "$gate_checksums" \
+  v1.2.3 \
+  "$gate_commit" \
+  123456 \
+  "$gate_apk_sha256" \
+  https://example.invalid/pixel-7-evidence \
+  "$pixel_7_evidence_sha256" \
+  "$pixel_7_profile_fingerprint" \
+  https://example.invalid/pixel-8-pro-evidence \
+  "$pixel_8_pro_evidence_sha256" \
+  "$pixel_8_pro_profile_fingerprint" \
+  "$gate_acceptance"
+
+expect_failure "Pixel 7 evidence URL must be a durable HTTPS URL" \
+  scripts/ci/verify-physical-release-gate.sh \
+  "$gate_candidate" \
+  "$gate_apk" \
+  "$gate_checksums" \
+  v1.2.3 \
+  "$gate_commit" \
+  123456 \
+  "$gate_apk_sha256" \
+  file:///tmp/pixel-7-evidence \
+  "$pixel_7_evidence_sha256" \
+  "$pixel_7_profile_fingerprint" \
+  https://example.invalid/pixel-8-pro-evidence \
+  "$pixel_8_pro_evidence_sha256" \
+  "$pixel_8_pro_profile_fingerprint" \
+  "$gate_acceptance"
+
 echo "Release identity contract tests passed"

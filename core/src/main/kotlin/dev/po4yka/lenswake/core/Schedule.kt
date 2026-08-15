@@ -11,6 +11,8 @@ data class RecordingSchedule(
     val zoneId: ZoneId,
     val capture: CaptureConfiguration,
     val profileId: ProfileId,
+    val profileProvenance: ProfileProvenance = LEGACY_PROFILE_PROVENANCE,
+    val experimentalRiskAccepted: Boolean = false,
     val enabled: Boolean,
     val createdAt: Instant,
     val updatedAt: Instant,

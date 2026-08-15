@@ -2,6 +2,8 @@ package dev.po4yka.lenswake.integration
 
 import dev.po4yka.lenswake.automation.PortResult
 import dev.po4yka.lenswake.automation.ProfileUse
+import dev.po4yka.lenswake.application.isSupportedPixelCameraRuntime
+import dev.po4yka.lenswake.application.KnownPixelCameraProfileCatalog
 import dev.po4yka.lenswake.core.AutomationFailure
 import dev.po4yka.lenswake.core.AutomationFailureCode
 import dev.po4yka.lenswake.core.PixelCameraEnvironment
@@ -11,6 +13,7 @@ import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.platform.PIXEL_CAMERA_PACKAGE
 
 internal class PixelCameraProfileValidator(
+    private val definitionPolicy: PixelCameraProfileDefinitionPolicy = CurrentPixelCameraProfileDefinitionPolicy,
     private val environmentProbe: () -> PortResult<PixelCameraEnvironment>,
 ) {
     fun validate(profileUse: ProfileUse): AutomationFailure? =
@@ -30,17 +33,28 @@ internal class PixelCameraProfileValidator(
                     "supportedSchema" to PixelCameraSelectorSchema.CURRENT_VERSION.toString(),
                 ),
             )
+        !definitionPolicy.isCurrent(profile) -> AutomationFailure(
+            code = AutomationFailureCode.PROFILE_INCOMPATIBLE,
+            message = "The profile selector template is not current for this Lenswake build",
+        )
         else -> null
     }
 
     private fun validateEnvironment(profileUse: ProfileUse): AutomationFailure? =
         when (val result = environmentProbe()) {
             is PortResult.Unavailable -> result.failure
-            is PortResult.Observed -> validateCompatibility(
-                profileUse,
-                profileUse.profile.compatibilityFor(result.value),
-            )
+            is PortResult.Observed -> if (!supportsRuntime(result.value)) {
+                AutomationFailure(
+                    code = AutomationFailureCode.PROFILE_INCOMPATIBLE,
+                    message = "The current environment is outside the fixed supported Pixel contract",
+                )
+            } else {
+                validateCompatibility(profileUse, profileUse.profile.compatibilityFor(result.value))
+            }
         }
+
+    private fun supportsRuntime(environment: PixelCameraEnvironment): Boolean =
+        isSupportedPixelCameraRuntime(environment)
 
     private fun validateCompatibility(
         profileUse: ProfileUse,
@@ -57,4 +71,13 @@ internal class PixelCameraProfileValidator(
             message = "Unattended automation requires a profile verified for the exact current environment",
         )
     }
+}
+
+internal fun interface PixelCameraProfileDefinitionPolicy {
+    fun isCurrent(profile: PixelCameraProfile): Boolean
+}
+
+internal object CurrentPixelCameraProfileDefinitionPolicy : PixelCameraProfileDefinitionPolicy {
+    override fun isCurrent(profile: PixelCameraProfile): Boolean =
+        KnownPixelCameraProfileCatalog.containsDefinition(profile)
 }

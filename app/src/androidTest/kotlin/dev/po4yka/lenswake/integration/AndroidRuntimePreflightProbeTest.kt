@@ -8,12 +8,15 @@ import android.os.StatFs
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.po4yka.lenswake.LenswakeApplication
+import dev.po4yka.lenswake.automation.PortResult
 import dev.po4yka.lenswake.core.PreflightCheck
 import dev.po4yka.lenswake.core.PreflightCheckType
 import dev.po4yka.lenswake.core.PreflightStatus
+import dev.po4yka.lenswake.platform.AndroidDeviceWakeController
 import dev.po4yka.lenswake.platform.DeviceWakeController
 import dev.po4yka.lenswake.platform.PlatformCapability
 import dev.po4yka.lenswake.platform.PlatformCapabilityCode
+import dev.po4yka.lenswake.platform.SecurePixelCameraResolver
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -96,11 +99,17 @@ class AndroidRuntimePreflightProbeTest {
             checks.getValue(PreflightCheckType.MEDIA_VIDEO_ACCESS).status,
         )
         assertEquals(
-            PreflightStatus.PASSED,
+            when (AndroidPixelCameraEnvironmentProbe(application).inspect()) {
+                is PortResult.Observed -> PreflightStatus.PASSED
+                is PortResult.Unavailable -> PreflightStatus.FAILED
+            },
             checks.getValue(PreflightCheckType.PIXEL_CAMERA_INSTALLED).status,
         )
         assertEquals(
-            PreflightStatus.PASSED,
+            when (SecurePixelCameraResolver(application).resolve()) {
+                is PlatformCapability.Available -> PreflightStatus.PASSED
+                is PlatformCapability.Unavailable -> PreflightStatus.FAILED
+            },
             checks.getValue(PreflightCheckType.SECURE_CAMERA_RESOLVES).status,
         )
         assertEquals(
@@ -109,7 +118,11 @@ class AndroidRuntimePreflightProbeTest {
         )
         assertTrue(checks.containsKey(PreflightCheckType.ACCESSIBILITY_ENABLED))
         assertTrue(checks.containsKey(PreflightCheckType.ACCESSIBILITY_CONNECTED))
-        assertEquals(PreflightStatus.PASSED, checks.getValue(PreflightCheckType.DEVICE_WAKE).status)
+        val expectedWakeStatus = when (AndroidDeviceWakeController(application).availability()) {
+            is PlatformCapability.Available<*> -> PreflightStatus.PASSED
+            is PlatformCapability.Unavailable -> PreflightStatus.FAILED
+        }
+        assertEquals(expectedWakeStatus, checks.getValue(PreflightCheckType.DEVICE_WAKE).status)
     }
 
     private fun assertBatteryCapabilities(
@@ -190,7 +203,7 @@ class AndroidRuntimePreflightProbeTest {
 
         val wake = report.checks.single { it.type == PreflightCheckType.DEVICE_WAKE }
         assertEquals(PreflightStatus.FAILED, wake.status)
-        assertEquals("Wake gateway is disabled for this test.", wake.message)
+        assertEquals("The display-wake path is unavailable.", wake.message)
         assertEquals(0, wakeDispatches)
     }
 }

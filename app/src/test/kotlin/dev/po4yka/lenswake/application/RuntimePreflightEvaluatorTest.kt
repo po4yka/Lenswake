@@ -18,6 +18,8 @@ import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.core.definitionFingerprint
+import dev.po4yka.lenswake.core.SelectorTemplateReference
+import dev.po4yka.lenswake.platform.SUPPORTED_PIXEL_CAMERA_IDENTITY
 import dev.po4yka.lenswake.ui.TestUiStringProvider
 import java.time.Instant
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -270,24 +272,27 @@ class RuntimePreflightEvaluatorTest {
     }
 
     @Test
-    fun environmentDriftRequiresRehearsalAndSchemaDriftIsIncompatible() {
+    fun environmentDriftAndSchemaDriftFailClosed() {
         val calibrated = environment()
-        val fingerprintDrift = calibrated.copy(androidBuildFingerprint = "google/husky/new-build")
+        val fingerprintDrift = calibrated.copy(
+            androidBuildFingerprint =
+                "google/husky/husky:17/CP2A.260805.005/1:user/release-keys",
+        )
         val versionDrift = calibrated.copy(cameraVersionCode = calibrated.cameraVersionCode + 1)
         val schemaDrift = profile(calibrated).copy(
             selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION + 1,
         )
 
         assertEquals(
-            "The closest profile requires a current-device rehearsal.",
+            "No compatible profile is available for the current environment.",
             compatibilityMessage(fingerprintDrift, profile(calibrated)),
         )
         assertEquals(
-            "The Pixel Camera environment changed; rehearsal is required.",
+            "No compatible profile is available for the current environment.",
             compatibilityMessage(versionDrift, profile(calibrated)),
         )
         assertEquals(
-            "Available profiles are incompatible with the current environment.",
+            "No compatible profile is available for the current environment.",
             compatibilityMessage(calibrated, schemaDrift),
         )
     }
@@ -301,6 +306,62 @@ class RuntimePreflightEvaluatorTest {
             "No compatible profile is available for the current environment.",
             compatibilityMessage(current, profile(otherDevice)),
         )
+    }
+
+    @Test
+    fun stableLookingBetaCarrierAndCustomEnvironmentsFailPreflightForPhysicalProfiles() {
+        val stable = environment()
+        val rejectedFingerprints = listOf(
+            "google/husky/husky:17/CP41.260701.005/15834971:user/release-keys",
+            "google/husky/husky:17/CP2A.260705.006.A1/15641321:user/release-keys",
+            "google/husky/husky:17/CUSTOM.260705.006/1:user/release-keys",
+            "google/husky/husky:17/CP2A.260705.006/1:user/release-keys",
+        )
+
+        rejectedFingerprints.forEach { fingerprint ->
+            val rejected = stable.copy(androidBuildFingerprint = fingerprint)
+            val check = evaluator.evaluate(
+                observation = observation(cameraEnvironment = rejected),
+                profiles = listOf(profile(stable)),
+            ).checks.single { it.type == PreflightCheckType.PROFILE_COMPATIBILITY }
+
+            assertEquals(PreflightStatus.FAILED, check.status, fingerprint)
+            assertEquals(
+                "No compatible profile is available for the current environment.",
+                check.message,
+            )
+        }
+    }
+
+    @Test
+    fun `beta calibration and stale standard template both fail preflight`() {
+        val beta = KnownPixelCameraProfileCatalog.pixel7SemanticTemplate
+        val stable = environment().copy(
+            deviceModel = "Pixel 7",
+            deviceCodename = "panther",
+            androidBuildFingerprint =
+                "google/panther/panther:17/CP2A.260705.006/15641320:user/release-keys",
+            displayWidthPx = 1_080,
+            displayHeightPx = 2_400,
+            densityDpi = 420,
+        )
+        val current = checkNotNull(KnownPixelCameraProfileCatalog.exactMatch(stable))
+        val stale = current.copy(
+            selectorTemplate = SelectorTemplateReference("pixel-7-semantic", 2),
+            compatibility = ProfileCompatibility.VERIFIED,
+            verifiedAt = Instant.parse("2026-08-12T12:00:00Z"),
+        )
+
+        listOf(beta.environment to beta, stable to stale).forEach { (currentEnvironment, stored) ->
+            val checks = evaluator.evaluate(
+                observation = observation(cameraEnvironment = currentEnvironment),
+                profiles = listOf(stored),
+            ).checks.associateBy { it.type }
+
+            assertEquals(PreflightStatus.FAILED, checks.getValue(PreflightCheckType.PROFILE_AVAILABLE).status)
+            assertEquals(PreflightStatus.FAILED, checks.getValue(PreflightCheckType.PROFILE_COMPATIBILITY).status)
+            assertEquals(PreflightStatus.FAILED, checks.getValue(PreflightCheckType.REHEARSAL_CURRENT).status)
+        }
     }
 
     private fun compatibilityMessage(
@@ -341,13 +402,17 @@ class RuntimePreflightEvaluatorTest {
         storage = storage,
     )
 
-    private fun profile(environment: PixelCameraEnvironment) = PixelCameraProfile(
-        id = ProfileId("profile-${environment.deviceModel}"),
-        environment = environment,
-        selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
-        compatibility = ProfileCompatibility.VERIFIED,
-        verifiedAt = Instant.parse("2026-08-09T12:00:00Z"),
-    )
+    private fun profile(environment: PixelCameraEnvironment): PixelCameraProfile =
+        (KnownPixelCameraProfileCatalog.exactMatch(environment) ?: PixelCameraProfile(
+            id = ProfileId("profile-${environment.deviceModel}"),
+            environment = environment,
+            selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
+            compatibility = ProfileCompatibility.NEEDS_REHEARSAL,
+            verifiedAt = null,
+        )).copy(
+            compatibility = ProfileCompatibility.VERIFIED,
+            verifiedAt = Instant.parse("2026-08-09T12:00:00Z"),
+        )
 
     private fun successfulRehearsal(profile: PixelCameraProfile): ExecutionSession {
         val stoppedAt = checkNotNull(profile.verifiedAt)
@@ -377,10 +442,14 @@ class RuntimePreflightEvaluatorTest {
     private fun environment() = PixelCameraEnvironment(
         deviceManufacturer = "Google",
         deviceModel = "Pixel 8 Pro",
+        deviceCodename = "husky",
         androidSdk = 37,
-        androidBuildFingerprint = "google/husky/build",
-        cameraPackage = "com.google.android.GoogleCamera",
-        cameraVersionCode = 69_481_630L,
+        androidBuildFingerprint =
+            "google/husky/husky:17/CP2A.260705.006/15641320:user/release-keys",
+        cameraPackage = SUPPORTED_PIXEL_CAMERA_IDENTITY.packageName,
+        cameraVersionCode = SUPPORTED_PIXEL_CAMERA_IDENTITY.versionCode,
+        cameraSigningCertificateSha256 =
+            SUPPORTED_PIXEL_CAMERA_IDENTITY.signingCertificate.hex,
         localeTag = "en-US",
         displayWidthPx = 1_008,
         displayHeightPx = 2_244,

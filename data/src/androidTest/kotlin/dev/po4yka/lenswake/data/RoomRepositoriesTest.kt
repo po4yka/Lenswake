@@ -10,6 +10,7 @@ import dev.po4yka.lenswake.core.AutomationFailureCode
 import dev.po4yka.lenswake.core.AutomationOutcome
 import dev.po4yka.lenswake.core.AutomationStateName
 import dev.po4yka.lenswake.core.CaptureConfiguration
+import dev.po4yka.lenswake.core.DisplayOrientation
 import dev.po4yka.lenswake.core.EventId
 import dev.po4yka.lenswake.core.EnvironmentCapabilityStatus
 import dev.po4yka.lenswake.core.EnvironmentSnapshot
@@ -30,16 +31,22 @@ import dev.po4yka.lenswake.core.PixelCameraProfile
 import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
 import dev.po4yka.lenswake.core.PixelCameraStateSignal
 import dev.po4yka.lenswake.core.ProfileCompatibility
+import dev.po4yka.lenswake.core.ProfileCertification
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.ProfilePersistenceIssueCode
+import dev.po4yka.lenswake.core.ProfileSource
 import dev.po4yka.lenswake.core.RecordingSchedule
 import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
+import dev.po4yka.lenswake.core.SelectorTemplateReference
 import dev.po4yka.lenswake.core.TimeLapseSpeed
+import dev.po4yka.lenswake.core.SupportTier
 import dev.po4yka.lenswake.core.UiSelector
 import dev.po4yka.lenswake.core.UiSelectorSet
+import dev.po4yka.lenswake.core.PIXEL_CAMERA_VIDEO_SETTINGS
+import dev.po4yka.lenswake.core.provenance
 import dev.po4yka.lenswake.data.internal.mapping.JsonColumnCodec
 import dev.po4yka.lenswake.data.internal.mapping.toEntity
 import java.time.Instant
@@ -97,6 +104,7 @@ class RoomRepositoriesTest {
 
         val restoredProfile = profiles.get(profile.id)
         assertEquals(profile, restoredProfile)
+        assertEquals(PIXEL_CAMERA_VIDEO_SETTINGS, restoredProfile?.videoSettings)
         assertEquals(
             profile.targets[AutomationAction.SELECT_REAR_MAIN_LENS],
             restoredProfile?.targets?.get(AutomationAction.SELECT_REAR_MAIN_LENS),
@@ -133,6 +141,26 @@ class RoomRepositoriesTest {
         )
         assertEquals(schedule, schedules.get(schedule.id))
         assertEquals(listOf(schedule), schedules.observeSchedules().first())
+    }
+
+    @Test
+    fun roundTripsApkBoundProfileCertification() = runBlocking {
+        val certified = profile().copy(
+            supportTier = SupportTier.CERTIFIED,
+            certification = ProfileCertification(
+                releaseTag = "v1.2.3",
+                releaseCommit = "1".repeat(40),
+                candidateRunId = 123,
+                lenswakeApkSha256 = "2".repeat(64),
+                bundleSha256 = "3".repeat(64),
+                pixel7EvidenceSha256 = "4".repeat(64),
+                pixel8ProEvidenceSha256 = "5".repeat(64),
+            ),
+        )
+
+        profiles.save(certified)
+
+        assertEquals(certified, profiles.get(certified.id))
     }
 
     @Test
@@ -341,11 +369,11 @@ class RoomRepositoriesTest {
     @Test
     fun environmentSnapshotRoundTripsAndAppearsInExecutionReport() = runBlocking {
         val profile = profile()
-        val schedule = schedule(profile.id)
-        val session = session(schedule, profile.id)
-        val snapshot = environmentSnapshot(session.id)
+        val videoSchedule = schedule(profile.id).copy(capture = CaptureConfiguration.Video())
+        val session = session(videoSchedule, profile.id)
+        val snapshot = environmentSnapshot(session.id).copy(videoSettings = PIXEL_CAMERA_VIDEO_SETTINGS)
         profiles.save(profile)
-        schedules.save(schedule)
+        schedules.save(videoSchedule)
         executions.reservePixelCamera(session)
 
         val linkedSession = session.copy(
@@ -360,6 +388,21 @@ class RoomRepositoriesTest {
         )
         assertEquals(snapshot, executions.getEnvironmentSnapshot(snapshot.id))
         assertEquals(snapshot, executions.getEnvironmentSnapshotForSession(session.id))
+        with(requireNotNull(executions.getEnvironmentSnapshot(snapshot.id)).cameraEnvironment) {
+            assertEquals("husky", deviceCodename)
+            assertEquals("a".repeat(64), cameraSigningCertificateSha256)
+            assertEquals(1.15f, fontScale)
+            assertEquals(DisplayOrientation.LANDSCAPE, orientation)
+            assertEquals(false, defaultDisplayConfiguration)
+        }
+        assertEquals(
+            profile.provenance,
+            requireNotNull(executions.getEnvironmentSnapshot(snapshot.id)).profileProvenance,
+        )
+        assertEquals(
+            PIXEL_CAMERA_VIDEO_SETTINGS,
+            requireNotNull(executions.getEnvironmentSnapshot(snapshot.id)).videoSettings,
+        )
         assertEquals(linkedSession, executions.get(session.id))
         assertEquals(
             linkedSession to snapshot,
@@ -408,6 +451,42 @@ class RoomRepositoriesTest {
         )
         assertEquals(original, executions.getEnvironmentSnapshotForSession(session.id))
         assertNull(executions.getEnvironmentSnapshot(replacement.id))
+    }
+
+    @Test
+    fun environmentSnapshotRejectsVideoSettingsThatDoNotMatchItsSession() = runBlocking {
+        val profile = profile()
+        val videoSchedule = schedule(profile.id).copy(capture = CaptureConfiguration.Video())
+        val session = session(videoSchedule, profile.id)
+        profiles.save(profile)
+        schedules.save(videoSchedule)
+        executions.reservePixelCamera(session)
+
+        val rejected = runCatching {
+            executions.capture(environmentSnapshot(session.id))
+        }
+
+        assertTrue(rejected.isFailure)
+        assertNull(executions.getEnvironmentSnapshotForSession(session.id))
+    }
+
+    @Test
+    fun environmentSnapshotRejectsVideoSettingsForNonVideoSession() = runBlocking {
+        val profile = profile()
+        val schedule = schedule(profile.id)
+        val session = session(schedule, profile.id)
+        profiles.save(profile)
+        schedules.save(schedule)
+        executions.reservePixelCamera(session)
+
+        val rejected = runCatching {
+            executions.capture(
+                environmentSnapshot(session.id).copy(videoSettings = PIXEL_CAMERA_VIDEO_SETTINGS),
+            )
+        }
+
+        assertTrue(rejected.isFailure)
+        assertNull(executions.getEnvironmentSnapshotForSession(session.id))
     }
 
     @Test
@@ -709,16 +788,24 @@ class RoomRepositoriesTest {
         environment = PixelCameraEnvironment(
             deviceManufacturer = "Google",
             deviceModel = "Pixel 8 Pro",
+            deviceCodename = "husky",
             androidSdk = 37,
             androidBuildFingerprint = "google/husky/test",
             cameraPackage = "com.google.android.GoogleCamera",
             cameraVersionCode = 700_000_000,
+            cameraSigningCertificateSha256 = "a".repeat(64),
             localeTag = "en-US",
             displayWidthPx = 1_344,
             displayHeightPx = 2_992,
             densityDpi = 480,
+            fontScale = 1.15f,
+            orientation = DisplayOrientation.LANDSCAPE,
+            defaultDisplayConfiguration = false,
         ),
         selectorSchemaVersion = PixelCameraSelectorSchema.CURRENT_VERSION,
+        supportTier = SupportTier.EXPERIMENTAL,
+        source = ProfileSource.EXACT_ENVIRONMENT_DERIVATION,
+        selectorTemplate = SelectorTemplateReference("pixel-8-pro-telephoto", 2),
         targets = mapOf(
             AutomationAction.START_RECORDING to UiSelectorSet(
                 selectors = listOf(
@@ -870,6 +957,7 @@ class RoomRepositoriesTest {
         capturedAt = Instant.ofEpochMilli(3_500),
         lenswakeVersion = "1.0-debug",
         cameraEnvironment = profile().environment,
+        profileProvenance = profile().provenance,
         accessibilityStatus = EnvironmentCapabilityStatus.AVAILABLE,
         privilegedBridgeStatus = EnvironmentCapabilityStatus.UNAVAILABLE,
         screenInteractive = false,
