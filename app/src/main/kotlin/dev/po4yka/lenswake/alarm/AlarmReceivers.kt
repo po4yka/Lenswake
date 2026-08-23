@@ -10,6 +10,9 @@ import android.os.PersistableBundle
 import android.os.UserManager
 import android.util.Log
 import dev.po4yka.lenswake.ui.AndroidUiStringProvider
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 internal fun interface AlarmRecoveryJobScheduler {
     fun schedule(action: String): Result<Unit>
@@ -163,9 +166,27 @@ internal const val ALARM_RECOVERY_RETRY_JOB_ID = 1_003
 internal const val EXTRA_RECOVERY_ACTION = "alarm_recovery_action"
 
 class AlarmRecoveryReceiver : BroadcastReceiver() {
+    // The bootstrap boundary touches several Android APIs whose unrelated runtime failures all
+    // mean the same thing: recovery did not start and must be logged instead of crashing boot.
+    @Suppress("TooGenericExceptionCaught")
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action ?: return
         if (action !in AlarmRecoveryBootstrapCoordinator.SUPPORTED_ACTIONS) return
+        // Checkpoint and journal persistence are synchronous disk writes; they run off the main
+        // thread while the broadcast stays alive through goAsync.
+        val pendingResult = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                handleRecoveryAction(context.applicationContext, action)
+            } catch (error: RuntimeException) {
+                Log.e(TAG, "Alarm recovery bootstrap failed for $action", error)
+            } finally {
+                pendingResult.finish()
+            }
+        }
+    }
+
+    private fun handleRecoveryAction(context: Context, action: String) {
         val deviceProtectedContext = context.createDeviceProtectedStorageContext()
         val persistence = SharedPreferencesAlarmRecoveryCheckpointPersistence(deviceProtectedContext)
         val escalator = AlarmTransportEscalator(

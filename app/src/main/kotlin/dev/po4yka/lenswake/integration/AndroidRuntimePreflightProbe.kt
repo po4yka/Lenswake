@@ -31,8 +31,11 @@ import dev.po4yka.lenswake.platform.AndroidDeviceWakeController
 import dev.po4yka.lenswake.platform.DeviceWakeController
 import dev.po4yka.lenswake.platform.SecurePixelCameraResolver
 import dev.po4yka.lenswake.ui.AndroidUiStringProvider
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import java.util.concurrent.CancellationException
 
 /** Android-backed readiness inspection. It is observational and never grants special access. */
@@ -45,6 +48,7 @@ class AndroidRuntimePreflightProbe(
     private val evaluator: RuntimePreflightEvaluator = RuntimePreflightEvaluator(
         AndroidUiStringProvider(context),
     ),
+    private val inspectionDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : RuntimePreflightProbe {
     private val applicationContext = context.applicationContext
     private val alarmManager = applicationContext.getSystemService(AlarmManager::class.java)
@@ -66,10 +70,10 @@ class AndroidRuntimePreflightProbe(
     private suspend fun inspect(
         profiles: List<PixelCameraProfile>,
         requiredCapture: CaptureConfiguration?,
-    ): PreflightReport {
+    ): PreflightReport = withContext(inspectionDispatcher) {
         val camera = observeCamera(profiles, requiredCapture)
 
-        return evaluator.evaluate(
+        evaluator.evaluate(
             observation = RuntimePreflightObservation(
                 exactAlarms = exactAlarmObservation(),
                 notifications = notificationObservation(),

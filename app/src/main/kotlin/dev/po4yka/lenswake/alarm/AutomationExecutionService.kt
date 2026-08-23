@@ -16,6 +16,7 @@ import dev.po4yka.lenswake.ui.AndroidUiStringProvider
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
@@ -38,8 +39,10 @@ internal const val AUTOMATION_SERVICE_RESTART_MODE: Int = Service.START_REDELIVE
  */
 class AutomationExecutionService : Service() {
     private val serviceJob = SupervisorJob()
+    // Journal removals, retry scheduling, and escalation marker writes perform synchronous
+    // SharedPreferences I/O; they must not execute on the main thread.
     private val serviceScope = CoroutineScope(
-        serviceJob + CoroutineName("lenswake-alarm-execution"),
+        serviceJob + Dispatchers.IO + CoroutineName("lenswake-alarm-execution"),
     )
     private val queuedKeys = ConcurrentHashMap.newKeySet<String>()
     private val lifecycleGate = AlarmServiceLifecycleGate()
