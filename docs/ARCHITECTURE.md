@@ -89,8 +89,10 @@ disabled. The v9→v10 migration stores the profile video contract and the execu
 settings in its immutable environment snapshot; it backfills only values already established by
 the selector schema or execution row. Because video settings become part of the profile definition
 fingerprint, it also demotes current profiles to `NEEDS_REHEARSAL` and disables their schedules while
-preserving historical certification evidence. Repository mappings isolate corrupt profile rows so
-one bad entry is surfaced without terminating the whole profiles Flow.
+preserving historical certification evidence. Repository mappings isolate corrupt rows in every
+observable domain (profiles, schedules, execution sessions, and events), so one bad entry is
+surfaced as a typed persistence issue and logged without terminating the whole Flow. Direct
+single-row reads still fail closed so callers never mistake a corrupt entry for absent data.
 
 Execution updates use a monotonically increasing revision and compare-and-set application. This
 prevents concurrent START, STOP, recovery, and UI work from silently overwriting a later transition.

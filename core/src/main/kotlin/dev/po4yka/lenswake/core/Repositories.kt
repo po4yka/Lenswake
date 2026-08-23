@@ -2,10 +2,14 @@ package dev.po4yka.lenswake.core
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import java.time.Instant
 
 interface ScheduleRepository {
     fun observeSchedules(): Flow<List<RecordingSchedule>>
+
+    /** Reports unreadable persisted schedule rows without terminating [observeSchedules]. */
+    fun observePersistenceIssues(): Flow<List<PersistenceIssue>> = flowOf(emptyList())
 
     suspend fun get(id: ScheduleId): RecordingSchedule?
 
@@ -50,6 +54,9 @@ interface ExecutionRepository {
     fun observeExecution(id: SessionId): Flow<ExecutionSession?>
 
     fun observeEvents(sessionId: SessionId): Flow<List<AutomationEvent>>
+
+    /** Reports unreadable persisted execution rows without terminating the observation Flows. */
+    fun observePersistenceIssues(): Flow<List<PersistenceIssue>> = flowOf(emptyList())
 
     suspend fun get(id: SessionId): ExecutionSession?
 

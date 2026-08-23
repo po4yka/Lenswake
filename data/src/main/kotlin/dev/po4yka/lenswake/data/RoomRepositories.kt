@@ -16,6 +16,9 @@ import dev.po4yka.lenswake.core.ExecutionReservationResult
 import dev.po4yka.lenswake.core.ExecutionReport
 import dev.po4yka.lenswake.core.ExecutionSession
 import dev.po4yka.lenswake.core.PixelCameraProfile
+import dev.po4yka.lenswake.core.PersistenceDomain
+import dev.po4yka.lenswake.core.PersistenceIssue
+import dev.po4yka.lenswake.core.PersistenceIssueCode
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.ProfilePersistenceIssue
 import dev.po4yka.lenswake.core.ProfilePersistenceIssueCode
@@ -28,8 +31,12 @@ import dev.po4yka.lenswake.data.internal.dao.ExecutionDao
 import dev.po4yka.lenswake.data.internal.dao.ExecutionReservationEntityResult
 import dev.po4yka.lenswake.data.internal.dao.EnvironmentSnapshotInsertResult
 import dev.po4yka.lenswake.data.internal.entity.AutomationProfileEntity
+import dev.po4yka.lenswake.data.internal.entity.ExecutionEventEntity
+import dev.po4yka.lenswake.data.internal.entity.ExecutionSessionEntity
+import dev.po4yka.lenswake.data.internal.entity.ScheduleEntity
 import dev.po4yka.lenswake.data.internal.mapping.toDomain
 import dev.po4yka.lenswake.data.internal.mapping.toEntity
+import java.time.DateTimeException
 import java.time.Instant
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -40,7 +47,16 @@ class RoomScheduleRepository(
     private val dao = database.scheduleDao()
 
     override fun observeSchedules(): Flow<List<RecordingSchedule>> =
-        dao.observeAll().map { schedules -> schedules.map { it.toDomain() } }
+        dao.observeAll().map { schedules -> schedules.decodedSchedules().values }
+
+    override fun observePersistenceIssues(): Flow<List<PersistenceIssue>> =
+        dao.observeAll().map { schedules -> schedules.decodedSchedules().issues }
+
+    private fun List<ScheduleEntity>.decodedSchedules() = decodeRows(
+        domain = PersistenceDomain.SCHEDULE,
+        entryKey = { it.id },
+        decode = { it.toDomain() },
+    )
 
     override suspend fun get(id: ScheduleId): RecordingSchedule? = dao.get(id.value)?.toDomain()
 
@@ -133,13 +149,40 @@ class RoomExecutionRepository private constructor(
     )
 
     override fun observeExecutions(): Flow<List<ExecutionSession>> =
-        dao.observeAll().map { executions -> executions.map { it.toDomain() } }
+        dao.observeAll().map { executions -> executions.decodedSessions().values }
 
     override fun observeExecution(id: SessionId): Flow<ExecutionSession?> =
-        dao.observe(id.value).map { it?.toDomain() }
+        dao.observe(id.value).map { it.decodedOrNull() }
 
     override fun observeEvents(sessionId: SessionId): Flow<List<AutomationEvent>> =
-        dao.observeEvents(sessionId.value).map { events -> events.map { it.toDomain() } }
+        dao.observeEvents(sessionId.value).map { events -> events.decodedEvents().values }
+
+    override fun observePersistenceIssues(): Flow<List<PersistenceIssue>> =
+        dao.observeAll().map { executions -> executions.decodedSessions().issues }
+
+    private fun List<ExecutionSessionEntity>.decodedSessions() = decodeRows(
+        domain = PersistenceDomain.EXECUTION_SESSION,
+        entryKey = { it.id },
+        decode = { it.toDomain() },
+    )
+
+    private fun ExecutionSessionEntity?.decodedOrNull(): ExecutionSession? = this?.let { entity ->
+        try {
+            entity.toDomain()
+        } catch (error: IllegalArgumentException) {
+            reportCorruptEntry(PersistenceDomain.EXECUTION_SESSION, entity.id, error)
+            null
+        } catch (error: DateTimeException) {
+            reportCorruptEntry(PersistenceDomain.EXECUTION_SESSION, entity.id, error)
+            null
+        }
+    }
+
+    private fun List<ExecutionEventEntity>.decodedEvents() = decodeRows(
+        domain = PersistenceDomain.EXECUTION_EVENT,
+        entryKey = { it.id },
+        decode = { it.toDomain() },
+    )
 
     override suspend fun get(id: SessionId): ExecutionSession? = dao.get(id.value)?.toDomain()
 
@@ -235,3 +278,43 @@ private class RoomEnvironmentSnapshotRepository(
             )
         }
 }
+
+private data class DecodedRows<T>(
+    val values: List<T>,
+    val issues: List<PersistenceIssue>,
+)
+
+/**
+ * Decodes every row in isolation so one corrupt entry is surfaced as a [PersistenceIssue] and
+ * logged without terminating the whole observable stream.
+ */
+private inline fun <E, T> List<E>.decodeRows(
+    domain: PersistenceDomain,
+    entryKey: (E) -> String,
+    decode: (E) -> T,
+): DecodedRows<T> {
+    val values = ArrayList<T>(size)
+    val issues = mutableListOf<PersistenceIssue>()
+    for (entity in this) {
+        val key = entryKey(entity)
+        try {
+            values += decode(entity)
+        } catch (error: IllegalArgumentException) {
+            issues += PersistenceIssue(domain, key, PersistenceIssueCode.CORRUPT_ENTRY)
+            reportCorruptEntry(domain, key, error)
+        } catch (error: DateTimeException) {
+            issues += PersistenceIssue(domain, key, PersistenceIssueCode.CORRUPT_ENTRY)
+            reportCorruptEntry(domain, key, error)
+        }
+    }
+    return DecodedRows(values, issues)
+}
+
+private fun reportCorruptEntry(domain: PersistenceDomain, entryKey: String, error: Exception) {
+    Log.e(
+        PERSISTENCE_TAG,
+        "persistence.corrupt_entry domain=$domain key=$entryKey cause=${error.javaClass.name}",
+    )
+}
+
+private const val PERSISTENCE_TAG = "LenswakePersistence"

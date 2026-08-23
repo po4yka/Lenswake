@@ -34,6 +34,9 @@ import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileCertification
 import dev.po4yka.lenswake.core.ProfileId
 import dev.po4yka.lenswake.core.ProfilePersistenceIssueCode
+import dev.po4yka.lenswake.core.PersistenceDomain
+import dev.po4yka.lenswake.core.PersistenceIssue
+import dev.po4yka.lenswake.core.PersistenceIssueCode
 import dev.po4yka.lenswake.core.ProfileSource
 import dev.po4yka.lenswake.core.RecordingSchedule
 import dev.po4yka.lenswake.core.ScheduleId
@@ -260,6 +263,59 @@ class RoomRepositoriesTest {
         assertEquals(
             listOf("corrupt-profile"),
             issueEmissions.last().map(dev.po4yka.lenswake.core.ProfilePersistenceIssue::entryKey),
+        )
+    }
+
+    @Test
+    fun corruptScheduleRowIsReportedWithoutTerminatingScheduleFlow() = runBlocking {
+        val profile = profile()
+        val validSchedule = schedule(profile.id)
+        schedules.save(validSchedule)
+        database.scheduleDao().upsert(
+            validSchedule.toEntity().copy(id = "corrupt-schedule", zoneId = "Not/AZone"),
+        )
+
+        assertEquals(listOf(validSchedule), schedules.observeSchedules().first())
+        assertEquals(
+            listOf(
+                PersistenceIssue(
+                    domain = PersistenceDomain.SCHEDULE,
+                    entryKey = "corrupt-schedule",
+                    code = PersistenceIssueCode.CORRUPT_ENTRY,
+                ),
+            ),
+            schedules.observePersistenceIssues().first(),
+        )
+    }
+
+    @Test
+    fun corruptSessionAndEventRowsAreReportedWithoutTerminatingExecutionFlows() = runBlocking {
+        val profile = profile()
+        val scheduleRow = schedule(profile.id)
+        val session = session(scheduleRow, profile.id)
+        val event = event(session.id, "automation.start.triggered")
+        profiles.save(profile)
+        schedules.save(scheduleRow)
+        insertExecutionFixture(session)
+        database.executionDao().insertEvent(event.toEntity())
+        insertExecutionFixture(session.toEntity().copy(id = "corrupt-session", status = "NOT_A_STATUS"))
+        database.executionDao().insertEvent(
+            event.toEntity().copy(id = "corrupt-event", sequence = 1, state = "NOT_A_STATE"),
+        )
+
+        assertEquals(listOf(session), executions.observeExecutions().first())
+        assertEquals(session, executions.observeExecution(session.id).first())
+        assertNull(executions.observeExecution(SessionId("corrupt-session")).first())
+        assertEquals(listOf(event.copy(sequence = 0)), executions.observeEvents(session.id).first())
+        assertEquals(
+            listOf(
+                PersistenceIssue(
+                    domain = PersistenceDomain.EXECUTION_SESSION,
+                    entryKey = "corrupt-session",
+                    code = PersistenceIssueCode.CORRUPT_ENTRY,
+                ),
+            ),
+            executions.observePersistenceIssues().first(),
         )
     }
 
