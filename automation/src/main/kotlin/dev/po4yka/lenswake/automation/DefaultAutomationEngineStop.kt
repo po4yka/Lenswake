@@ -41,9 +41,18 @@ private data class StopDisposition(
 )
 
 private fun EngineEnvironment.stopDisposition(session: ExecutionSession): StopDisposition {
+    // Classified by the observed postcondition (stop and recording verified, media still
+    // unconfirmed) rather than by failure-code spelling: a media query classified as
+    // AUTOMATION_TIMEOUT describes the same recoverable state as MEDIA_SAVE_NOT_CONFIRMED.
+    val transientMediaFailure = session.failure?.code.let { code ->
+        code == AutomationFailureCode.MEDIA_SAVE_NOT_CONFIRMED ||
+            code == AutomationFailureCode.AUTOMATION_TIMEOUT
+    }
     val retryingOnlyMediaVerification = session.status == SessionStatus.FAILED &&
-        session.failure?.code == AutomationFailureCode.MEDIA_SAVE_NOT_CONFIRMED &&
-        session.stoppedVerifiedAt != null && session.recordingVerifiedAt != null
+        transientMediaFailure &&
+        session.stoppedVerifiedAt != null &&
+        session.recordingVerifiedAt != null &&
+        session.mediaSavedVerifiedAt == null
     val preserveFailure =
         (session.status == SessionStatus.FAILED && !retryingOnlyMediaVerification) ||
             session.recordingVerifiedAt == null

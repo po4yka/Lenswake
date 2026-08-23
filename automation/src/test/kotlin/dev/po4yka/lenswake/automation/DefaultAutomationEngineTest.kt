@@ -1298,6 +1298,50 @@ class DefaultAutomationEngineMediaTest {
     }
 
     @Test
+    fun `timeout-classified media verification still promotes on durable retry`() = runTest {
+        val stoppedAt = NOW.minusSeconds(30)
+        val session = session(status = SessionStatus.FAILED).copy(
+            currentAutomationState = AutomationStateName.FAILED,
+            recordActionAt = NOW.minusSeconds(60),
+            recordingVerifiedAt = NOW.minusSeconds(59),
+            stopActionAt = NOW.minusSeconds(40),
+            stoppedVerifiedAt = stoppedAt,
+            revision = 3,
+            failure = AutomationFailure(
+                AutomationFailureCode.AUTOMATION_TIMEOUT,
+                "Saved-recording verification timed out",
+            ),
+        )
+        val repository = FakeExecutionRepository(session)
+        val device = FakeDeviceControl(interactive = false)
+        val camera = FakePixelCamera(PixelCameraState.NotRunning)
+
+        val result = engine(
+            repository = repository,
+            device = device,
+            camera = camera,
+            media = FakeRecordingMedia(
+                savedResults = listOf(
+                    PortResult.Observed(
+                        SavedRecordingEvidence(
+                            generationAdded = 8,
+                            sizeBytes = 2_048,
+                            durationMillis = 1_000,
+                        ),
+                    ),
+                ),
+            ),
+            attempts = 1,
+        ).stop(session.id)
+
+        val succeeded = assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        assertEquals(SessionStatus.COMPLETED, succeeded.session.status)
+        assertNull(succeeded.session.failure)
+        assertNotNull(succeeded.session.mediaSavedVerifiedAt)
+        assertEquals(emptyList<String>(), device.calls + camera.calls)
+    }
+
+    @Test
     fun `stop accepts a verified owned recording when Pixel Camera hides mode controls`() = runTest {
         val session = session(status = SessionStatus.RECORDING).copy(
             currentAutomationState = AutomationStateName.RECORDING,
