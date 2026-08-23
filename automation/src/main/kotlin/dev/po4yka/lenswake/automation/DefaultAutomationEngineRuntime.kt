@@ -220,6 +220,13 @@ internal suspend fun EngineEnvironment.profileFailure(
         failure: AutomationFailure,
     ): Nothing {
         if (context.current.status == SessionStatus.FAILED) {
+            // A failed session cannot change its outcome anymore, but the reconciliation
+            // decision must leave a typed event instead of vanishing into the return value.
+            context.transition(
+                state = AutomationStateName.FAILED,
+                outcome = AutomationOutcome.FAILED,
+                failure = failure,
+            )
             throw EngineAbort(AutomationRunResult.Rejected(context.current, failure))
         }
         fail(context, failure)

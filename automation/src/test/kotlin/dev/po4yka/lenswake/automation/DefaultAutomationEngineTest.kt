@@ -1692,6 +1692,43 @@ class DefaultAutomationEngineMediaTest {
     }
 
     @Test
+    fun `profile unavailability during stop reconciliation leaves a typed event`() = runTest {
+        val session = session(status = SessionStatus.FAILED).copy(
+            currentAutomationState = AutomationStateName.FAILED,
+            recordActionAt = NOW.minusSeconds(60),
+            recordingVerifiedAt = NOW.minusSeconds(59),
+            failure = AutomationFailure(
+                AutomationFailureCode.RECORDING_NOT_CONFIRMED,
+                "Recording was never verified",
+            ),
+        )
+        val repository = FakeExecutionRepository(session)
+        val device = FakeDeviceControl(interactive = false)
+
+        val result = engine(
+            repository = repository,
+            device = device,
+            camera = FakePixelCamera(PixelCameraState.NotRunning),
+            profile = null,
+        ).stop(session.id)
+
+        val rejected = assertInstanceOf(AutomationRunResult.Rejected::class.java, result)
+        assertEquals(AutomationFailureCode.PROFILE_NOT_FOUND, rejected.failure.code)
+        assertEquals(emptyList<String>(), device.calls)
+        assertEquals(SessionStatus.FAILED, rejected.session.status)
+        assertEquals(
+            AutomationFailureCode.RECORDING_NOT_CONFIRMED,
+            requireNotNull(repository.get(session.id)).failure?.code,
+        )
+        assertEquals(1, repository.events.size)
+        assertEquals(AutomationOutcome.FAILED, repository.events.single().outcome)
+        assertEquals(
+            AutomationFailureCode.PROFILE_NOT_FOUND,
+            requireNotNull(repository.events.single().failure).code,
+        )
+    }
+
+    @Test
     fun `stop does not dispatch against a recording with different session semantics`() = runTest {
         val session = session(status = SessionStatus.RECORDING).copy(
             currentAutomationState = AutomationStateName.RECORDING,
