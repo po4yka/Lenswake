@@ -60,11 +60,16 @@ data class ExecutionSession(
         require(!updatedAt.isBefore(createdAt)) { "Execution update cannot precede creation" }
     }
 
+    // A CANCELLED session with dispatched-but-unverified recording evidence still owns Pixel
+    // Camera until the stop is verified or ownership is released; recovery must see it.
     val ownsPixelCamera: Boolean
         get() = stoppedVerifiedAt == null &&
             cameraOwnershipReleasedAt == null &&
             (status in ACTIVE_CAMERA_OWNERSHIP_STATUSES ||
-                (status == SessionStatus.FAILED && recordActionAt != null))
+                (
+                    (status == SessionStatus.FAILED || status == SessionStatus.CANCELLED) &&
+                        recordActionAt != null
+                    ))
 
     val awaitsMediaSaveVerification: Boolean
         get() = stoppedVerifiedAt != null &&
@@ -72,7 +77,11 @@ data class ExecutionSession(
             mediaBaselineGeneration != null &&
             mediaStoreVersion != null &&
             mediaVerificationRequired &&
-            status in setOf(SessionStatus.STOPPING, SessionStatus.FAILED)
+            status in setOf(
+                SessionStatus.STOPPING,
+                SessionStatus.FAILED,
+                SessionStatus.CANCELLED,
+            )
 
     private companion object {
         val ACTIVE_CAMERA_OWNERSHIP_STATUSES = setOf(

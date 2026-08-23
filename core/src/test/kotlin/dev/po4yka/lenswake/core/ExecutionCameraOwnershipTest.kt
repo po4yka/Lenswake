@@ -41,6 +41,44 @@ class ExecutionCameraOwnershipTest {
         assertFalse(inconsistentActive.ownsPixelCamera)
     }
 
+    @Test
+    fun cancelledSessionWithOutstandingDispatchStillOwnsCameraUntilStopIsVerified() {
+        val cancelledMidRecording = session(
+            status = SessionStatus.CANCELLED,
+            recordActionAt = now.minusSeconds(30),
+        )
+        assertTrue(cancelledMidRecording.ownsPixelCamera)
+
+        val cancelledWithoutDispatch = session(status = SessionStatus.CANCELLED)
+        assertFalse(cancelledWithoutDispatch.ownsPixelCamera)
+
+        val released = cancelledMidRecording.copy(cameraOwnershipReleasedAt = now)
+        assertFalse(released.ownsPixelCamera)
+
+        val stopVerified = cancelledMidRecording.copy(stoppedVerifiedAt = now)
+        assertFalse(stopVerified.ownsPixelCamera)
+    }
+
+    @Test
+    fun cancelledSessionWithVerifiedStopAwaitsMediaSaveVerification() {
+        val awaitingMedia = session(
+            status = SessionStatus.CANCELLED,
+            recordActionAt = now.minusSeconds(60),
+            stoppedVerifiedAt = now.minusSeconds(30),
+        ).copy(
+            mediaBaselineGeneration = 41,
+            mediaStoreVersion = "version-1",
+        )
+
+        assertTrue(awaitingMedia.awaitsMediaSaveVerification)
+
+        val mediaNotRequired = awaitingMedia.copy(mediaVerificationRequired = false)
+        assertFalse(mediaNotRequired.awaitsMediaSaveVerification)
+
+        val mediaVerified = awaitingMedia.copy(mediaSavedVerifiedAt = now)
+        assertFalse(mediaVerified.awaitsMediaSaveVerification)
+    }
+
     private fun session(
         status: SessionStatus,
         recordActionAt: Instant? = null,
