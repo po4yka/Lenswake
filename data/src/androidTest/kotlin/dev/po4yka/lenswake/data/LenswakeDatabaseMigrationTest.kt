@@ -8,16 +8,20 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.po4yka.lenswake.core.AutomationAction
+import dev.po4yka.lenswake.core.CorruptProfileEntryException
 import dev.po4yka.lenswake.core.PixelCameraStateSignal
 import dev.po4yka.lenswake.core.ProfileId
+import dev.po4yka.lenswake.core.ProfilePersistenceIssueCode
 import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.core.LEGACY_UNKNOWN_VIDEO_SETTINGS
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -195,6 +199,74 @@ class LenswakeDatabaseMigrationTest {
         assertEquals(82, stateSignal.minimumScore)
         assertEquals(false, stateSignal.selectors.single().requiresClickable)
         assertNull(stateSignal.selectors.single().expectedChecked)
+    }
+
+    @Test
+    fun migratesVersionThreeWithCorruptProfileJsonRowWithoutAborting() {
+        createVersionThreeDatabase()
+        val versionThree = migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            3,
+            true,
+        )
+        versionThree.execSQL(
+            """
+            INSERT INTO automation_profiles (
+                id, device_manufacturer, device_model, android_sdk,
+                android_build_fingerprint, camera_package, camera_version_code,
+                locale_tag, display_width_px, display_height_px, density_dpi,
+                selector_schema_version, targets_json, speed_targets_json,
+                state_signals_json, fallback_gestures_json, compatibility,
+                verified_at_epoch_ms
+            ) VALUES (
+                'profile-corrupt-json', 'Google', 'Pixel 8 Pro', 37,
+                'google/husky/test', 'com.google.android.GoogleCamera', 1,
+                'en-US', 1344, 2992, 480,
+                3,
+                'not-json', '{"schemaVersion":9,"targets":[]}',
+                '{"schemaVersion":2,"signals":[]}',
+                '[]', 'NEEDS_REHEARSAL', NULL
+            )
+            """.trimIndent(),
+        )
+        versionThree.close()
+
+        migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            4,
+            true,
+            LenswakeDatabase.MIGRATION_3_4,
+        ).close()
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.databaseBuilder(context, LenswakeDatabase::class.java, databaseName)
+            .addMigrations(
+                LenswakeDatabase.MIGRATION_3_4,
+                LenswakeDatabase.MIGRATION_4_5,
+                LenswakeDatabase.MIGRATION_5_6,
+                LenswakeDatabase.MIGRATION_6_7,
+                LenswakeDatabase.MIGRATION_7_8,
+                LenswakeDatabase.MIGRATION_8_9,
+                LenswakeDatabase.MIGRATION_9_10,
+            )
+            .build()
+        val (issues, corruptRead) = runBlocking {
+            val repository = RoomAutomationProfileRepository(database)
+            repository.observePersistenceIssues().first() to
+                runCatching { repository.get(ProfileId("profile-corrupt-json")) }
+        }
+        database.close()
+
+        assertEquals(
+            listOf(
+                dev.po4yka.lenswake.core.ProfilePersistenceIssue(
+                    entryKey = "profile-corrupt-json",
+                    code = ProfilePersistenceIssueCode.CORRUPT_ENTRY,
+                ),
+            ),
+            issues,
+        )
+        assertTrue(corruptRead.exceptionOrNull() is CorruptProfileEntryException)
     }
 
     @Test

@@ -1,6 +1,7 @@
 package dev.po4yka.lenswake.data
 
 import android.content.Context
+import android.util.Log
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -38,6 +39,8 @@ abstract class LenswakeDatabase : RoomDatabase() {
 
     companion object {
         const val DATABASE_NAME: String = "lenswake.db"
+
+        private const val MIGRATION_TAG: String = "LenswakeMigration"
 
         val MIGRATION_1_2: Migration = Migration(1, 2) { database ->
             val profileColumns = buildSet {
@@ -103,27 +106,50 @@ abstract class LenswakeDatabase : RoomDatabase() {
         }
 
         val MIGRATION_3_4: Migration = Migration(3, 4) { database ->
-            database.query(
-                """
-                SELECT id, targets_json, speed_targets_json, state_signals_json
-                FROM automation_profiles
-                """.trimIndent(),
-            ).use { cursor ->
-                while (cursor.moveToNext()) {
-                    database.execSQL(
-                        """
-                        UPDATE automation_profiles
-                        SET targets_json = ?, speed_targets_json = ?, state_signals_json = ?
-                        WHERE id = ?
-                        """.trimIndent(),
-                        arrayOf(
-                            ProfileJsonMigration.targets(cursor.getString(1)),
-                            ProfileJsonMigration.speedTargets(cursor.getString(2)),
-                            ProfileJsonMigration.stateSignals(cursor.getString(3)),
-                            cursor.getString(0),
-                        ),
-                    )
+            val rows = buildList {
+                database.query(
+                    """
+                    SELECT id, targets_json, speed_targets_json, state_signals_json
+                    FROM automation_profiles
+                    """.trimIndent(),
+                ).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        add(
+                            LegacyProfileJsonRow(
+                                id = cursor.getString(0),
+                                targets = cursor.getString(1),
+                                speedTargets = cursor.getString(2),
+                                stateSignals = cursor.getString(3),
+                            ),
+                        )
+                    }
                 }
+            }
+            rows.forEach { row ->
+                val targets = migrateOrRetain(row.id, "targets", row.targets) {
+                    ProfileJsonMigration.targets(it)
+                }
+                val speedTargets = migrateOrRetain(row.id, "speed_targets", row.speedTargets) {
+                    ProfileJsonMigration.speedTargets(it)
+                }
+                val stateSignals = migrateOrRetain(row.id, "state_signals", row.stateSignals) {
+                    ProfileJsonMigration.stateSignals(it)
+                }
+                if (
+                    targets == row.targets &&
+                    speedTargets == row.speedTargets &&
+                    stateSignals == row.stateSignals
+                ) {
+                    return@forEach
+                }
+                database.execSQL(
+                    """
+                    UPDATE automation_profiles
+                    SET targets_json = ?, speed_targets_json = ?, state_signals_json = ?
+                    WHERE id = ?
+                    """.trimIndent(),
+                    arrayOf(targets, speedTargets, stateSignals, row.id),
+                )
             }
         }
 
@@ -331,6 +357,46 @@ abstract class LenswakeDatabase : RoomDatabase() {
                 "ALTER TABLE `$table` ADD COLUMN `profile_template_version` " +
                     "INTEGER NOT NULL DEFAULT 1",
             )
+        }
+
+        private data class LegacyProfileJsonRow(
+            val id: String,
+            val targets: String,
+            val speedTargets: String,
+            val stateSignals: String,
+        )
+
+        /**
+         * Migrates one legacy JSON column in isolation. A payload that cannot be migrated keeps
+         * its original value so the strict read-side codec surfaces the row as a corrupt entry
+         * instead of aborting the whole migration and crashing every subsequent launch.
+         */
+        private fun migrateOrRetain(
+            profileId: String,
+            column: String,
+            encoded: String,
+            migrate: (String) -> String,
+        ): String =
+            try {
+                migrate(encoded)
+            } catch (error: IllegalArgumentException) {
+                retainCorruptPayload(profileId, column, encoded, error)
+            } catch (error: IllegalStateException) {
+                retainCorruptPayload(profileId, column, encoded, error)
+            }
+
+        private fun retainCorruptPayload(
+            profileId: String,
+            column: String,
+            encoded: String,
+            error: Exception,
+        ): String {
+            Log.e(
+                MIGRATION_TAG,
+                "profile.migration.corrupt_entry id=$profileId column=$column " +
+                    "cause=${error.javaClass.name}",
+            )
+            return encoded
         }
 
         fun create(context: Context): LenswakeDatabase =
