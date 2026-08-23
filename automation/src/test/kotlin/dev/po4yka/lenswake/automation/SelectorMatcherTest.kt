@@ -57,6 +57,32 @@ class SelectorMatcherTest {
     }
 
     @Test
+    fun `non-visible node matches only when the selector does not require visibility`() {
+        val visibilityOptionalProfile = profile(minimumScore = 100).copy(
+            targets = mapOf(
+                AutomationAction.START_RECORDING to UiSelectorSet(
+                    selectors = listOf(selector.copy(requiresVisible = false)),
+                    minimumScore = 100,
+                ),
+            ),
+        )
+        val optionalResult = SelectorMatcher().match(
+            action = AutomationAction.START_RECORDING,
+            profile = visibilityOptionalProfile,
+            nodes = listOf(node(id = "hidden", visible = false)),
+        )
+        val requiredResult = SelectorMatcher().match(
+            action = AutomationAction.START_RECORDING,
+            profile = profile(minimumScore = 100),
+            nodes = listOf(node(id = "hidden", visible = false)),
+        )
+
+        val match = assertInstanceOf(SelectorMatchResult.Match::class.java, optionalResult)
+        assertEquals("hidden", match.node.id)
+        assertInstanceOf(SelectorMatchResult.NoEligibleNodes::class.java, requiredResult)
+    }
+
+    @Test
     fun `best candidate below the profile threshold is rejected`() {
         val result = SelectorMatcher().match(
             action = AutomationAction.START_RECORDING,

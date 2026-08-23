@@ -161,7 +161,7 @@ class SelectorMatcher {
         selector: UiSelector,
         cameraPackage: String,
     ): Boolean =
-        visible &&
+        (!selector.requiresVisible || visible) &&
             enabled &&
             packageName == selector.packageName &&
             packageName == cameraPackage &&
