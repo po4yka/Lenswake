@@ -122,9 +122,17 @@ class AutomationExecutionService : Service() {
                 Log.e(TAG, "No redelivered intent or durable journal entry is available")
                 return@onStart stopIfIdleOrPreserveActiveWork()
             }
-            val accepted = pendingEntries.map(::enqueue).all { it }
-            if (!accepted) {
-                Log.e(TAG, "Could not enqueue durable alarm journal entries")
+            val enqueueOutcomes = pendingEntries.map { entry -> entry to enqueue(entry) }
+            val rejectedEntries = enqueueOutcomes
+                .filter { (_, enqueued) -> !enqueued }
+                .map { (entry, _) -> entry }
+            if (rejectedEntries.isNotEmpty()) {
+                // A rejected entry keeps its journal record, but sticky restarts can be dropped
+                // under memory pressure; an independent exact retry bounds the delivery instead.
+                Log.e(TAG, "Could not enqueue ${rejectedEntries.size} durable alarm journal entries")
+                rejectedEntries.forEach(::scheduleEnqueueFallback)
+            }
+            if (rejectedEntries.size == pendingEntries.size) {
                 return@onStart stopIfIdleOrPreserveActiveWork()
             }
             AUTOMATION_SERVICE_RESTART_MODE
@@ -184,6 +192,26 @@ class AutomationExecutionService : Service() {
                 "${queued.entry.work.displayKind} transport escalation ${result.code}; " +
                     "markerPersisted=${result.result.markerPersisted}, " +
                     "notification=${result.result.notification}; journal entry retained",
+            )
+        }
+    }
+
+    private fun scheduleEnqueueFallback(entry: AlarmDeliveryJournal.Entry) {
+        when (
+            val result = retryCoordinator.scheduleUnjournaledRetry(
+                entry.work,
+                "Foreground service could not enqueue the durable journal entry.",
+            )
+        ) {
+            AlarmDeliveryRetryResult.Scheduled -> Log.e(
+                TAG,
+                "${entry.work.displayKind} enqueue failed; independent exact retry scheduled",
+            )
+            is AlarmDeliveryRetryResult.Escalated -> Log.e(
+                TAG,
+                "${entry.work.displayKind} enqueue failure escalation ${result.code}; " +
+                    "markerPersisted=${result.result.markerPersisted}, " +
+                    "notification=${result.result.notification}",
             )
         }
     }
