@@ -48,6 +48,9 @@ sealed interface ExecutionReservationResult {
  * [apply] must compare [ExecutionChange.expectedRevision] with the stored revision and persist the
  * updated session and its event in one transaction. A conflict must not persist either value.
  */
+// The START/STOP workflow, camera ownership, and corruption surfacing are one cohesive port;
+// splitting it would scatter a single persistence contract across interfaces.
+@Suppress("TooManyFunctions")
 interface ExecutionRepository {
     fun observeExecutions(): Flow<List<ExecutionSession>>
 

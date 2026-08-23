@@ -138,6 +138,9 @@ class RoomAutomationProfileRepository(
     }
 }
 
+// Implements the full ExecutionRepository port plus its environment-snapshot delegation;
+// per-domain decode helpers keep corruption isolation local instead of adding a second class.
+@Suppress("TooManyFunctions")
 class RoomExecutionRepository private constructor(
     private val dao: ExecutionDao,
     environmentSnapshotRepository: EnvironmentSnapshotRepository,
