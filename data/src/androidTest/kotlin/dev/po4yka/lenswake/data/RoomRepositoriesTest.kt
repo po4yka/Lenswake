@@ -298,7 +298,12 @@ class RoomRepositoriesTest {
         schedules.save(scheduleRow)
         insertExecutionFixture(session)
         database.executionDao().insertEvent(event.toEntity())
-        insertExecutionFixture(session.toEntity().copy(id = "corrupt-session", status = "NOT_A_STATUS"))
+        check(
+            database.executionDao()
+                .insertIgnoringConflict(
+                    session.toEntity().copy(id = "corrupt-session", status = "NOT_A_STATUS"),
+                ) != -1L,
+        )
         database.executionDao().insertEvent(
             event.toEntity().copy(id = "corrupt-event", sequence = 1, state = "NOT_A_STATE"),
         )
