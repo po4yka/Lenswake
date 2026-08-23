@@ -353,11 +353,14 @@ internal sealed interface AlarmDeliveryRetryResult {
     ) : AlarmDeliveryRetryResult
 }
 
+/** Deliveries at or beyond this attempt count are escalated instead of retried or re-armed. */
+internal const val MAX_ALARM_DELIVERY_ATTEMPTS: Int = 2
+
 internal class AlarmDeliveryRetryCoordinator(
     private val backend: AlarmDeliveryRetryBackend,
     private val escalator: AlarmTransportEscalator,
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
-    private val maxAttempts: Int = 2,
+    private val maxAttempts: Int = MAX_ALARM_DELIVERY_ATTEMPTS,
 ) {
     fun scheduleRetry(
         entry: AlarmDeliveryJournal.Entry,

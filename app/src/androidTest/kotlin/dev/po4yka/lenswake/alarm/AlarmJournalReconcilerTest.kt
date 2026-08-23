@@ -56,6 +56,43 @@ class AlarmJournalReconcilerTest {
         }
     }
 
+    @Test
+    fun exhaustedDeliveriesAreNotRearmedDuringRecovery() {
+        withJournal { journal, _ ->
+            val schedule = testSchedule()
+            requireNotNull(
+                journal.persist(
+                    AlarmContract.triggerIntent(
+                        context,
+                        AlarmTrigger(
+                            kind = AlarmKind.STOP,
+                            scheduleId = schedule.id,
+                            scheduleUpdatedAt = schedule.updatedAt,
+                            expectedAt = schedule.stopAt,
+                            deliveryAttempt = MAX_ALARM_DELIVERY_ATTEMPTS,
+                        ),
+                    ),
+                ),
+            )
+            val backend = FakeRearmBackend(canSchedule = true)
+
+            val result = AlarmJournalReconciler(
+                journal = journal,
+                backend = backend,
+                nowEpochMillis = { 1_000L },
+            ).rearmAll()
+
+            assertEquals(JournalRearmResult.Rearmed(3), result)
+            assertTrue(
+                backend.rearmed.none { (work, _) ->
+                    work is AlarmDeliveryWork.Schedule &&
+                        work.trigger.deliveryAttempt >= MAX_ALARM_DELIVERY_ATTEMPTS
+                },
+            )
+            assertEquals(4, journal.read().entries.size)
+        }
+    }
+
     private fun withJournal(test: (AlarmDeliveryJournal, String) -> Unit) {
         val preferenceName = "rearm-test-${System.nanoTime()}"
         val journal = AlarmDeliveryJournal(context, preferenceName)

@@ -69,7 +69,11 @@ internal class AlarmJournalReconciler(
     @Suppress("TooGenericExceptionCaught")
     fun rearmAll(): JournalRearmResult {
         val snapshot = journal.read()
-        val entries = snapshot.entries
+        // Exhausted deliveries were already escalated and retained for manual confirmation;
+        // re-arming them would resurrect a delivery the user was told requires attention.
+        val entries = snapshot.entries.filter { work ->
+            work.deliveryAttempt < MAX_ALARM_DELIVERY_ATTEMPTS
+        }
         return when {
             entries.isEmpty() -> JournalRearmResult.Rearmed(0, snapshot.corruptEntries)
             !backend.canScheduleExactAlarms() ->
