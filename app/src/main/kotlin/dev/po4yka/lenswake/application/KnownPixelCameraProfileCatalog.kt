@@ -30,6 +30,9 @@ import dev.po4yka.lenswake.platform.SUPPORTED_PIXEL_CAMERA_IDENTITY
 object KnownPixelCameraProfileCatalog {
     private val ACTIVE_MODE_REGION = NormalizedBounds(0.35f, 0.80f, 0.65f, 0.90f)
 
+    /** Resource ID (100) plus role (20); a text-less dialog message can score no more. */
+    private const val TEXTLESS_DIALOG_PRESENCE_SCORE = 120
+
     val pixel8ProAndroid17Camera69481630: PixelCameraProfile = PixelCameraProfile(
         id = ProfileId(
             "google-pixel-8-pro-sdk37-cp2a-260705-006-camera-69481630-1008x2244-en-us-v5",
@@ -419,6 +422,12 @@ object KnownPixelCameraProfileCatalog {
         requiresClickable = requiresClickable,
     )
 
+    /**
+     * The text-less UNKNOWN variant can never earn the text score, so it needs its own reachable
+     * threshold: resource ID (100) plus role (20) is the most it can ever score. Sharing the
+     * 150 threshold made `PixelCameraState.Dialog(UNKNOWN)` unreachable, which hid an unrecognized
+     * blocking dialog behind a less specific failure.
+     */
     private fun dialogPresence(text: String?): UiSelectorSet = UiSelectorSet(
         selectors = listOf(
             cameraSelector(
@@ -428,7 +437,7 @@ object KnownPixelCameraProfileCatalog {
                 requiresClickable = false,
             ),
         ),
-        minimumScore = 150,
+        minimumScore = if (text == null) TEXTLESS_DIALOG_PRESENCE_SCORE else 150,
     )
 
     private fun dialogAction(text: String): UiSelectorSet = UiSelectorSet(

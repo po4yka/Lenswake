@@ -84,6 +84,42 @@ class KnownPixelCameraProfileCatalogTest {
     }
 
     @Test
+    fun `every dialog presence signal can reach its own minimum score`() {
+        listOf(
+            KnownPixelCameraProfileCatalog.pixel8ProAndroid17Camera69481630,
+            KnownPixelCameraProfileCatalog.pixel7SemanticTemplate,
+        ).forEach { candidate ->
+            candidate.dialogProfiles.forEach { (kind, dialog) ->
+                val selector = dialog.presence.selectors.single()
+                val match = SelectorMatcher().match(
+                    dialog.presence,
+                    candidate,
+                    listOf(
+                        UiNodeSnapshot(
+                            id = "dialog-message",
+                            packageName = candidate.environment.cameraPackage,
+                            resourceId = selector.resourceId,
+                            role = selector.role,
+                            contentDescription = selector.contentDescription,
+                            text = selector.text,
+                            bounds = null,
+                            visible = true,
+                            clickable = false,
+                            selected = false,
+                            enabled = true,
+                        ),
+                    ),
+                )
+
+                assertTrue(
+                    match is SelectorMatchResult.Match,
+                    "$kind presence cannot reach minimumScore ${dialog.presence.minimumScore}",
+                )
+            }
+        }
+    }
+
+    @Test
     fun `returns candidate only for the exact calibrated environment`() {
         assertEquals(profile, KnownPixelCameraProfileCatalog.exactMatch(profile.environment))
         val mismatches = listOf(
