@@ -1,5 +1,6 @@
 package dev.po4yka.lenswake.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -18,6 +19,11 @@ internal fun LenswakeNavigationHost(
     navigation: LenswakeNavigationState,
     contentPadding: PaddingValues,
 ) {
+    // NavDisplay only enables its own back handling while the stack can pop, so the root of a
+    // non-start section would otherwise send the press to the system and background the task.
+    BackHandler(enabled = navigation.isAtNonStartRoot) {
+        navigation.returnToStartTopLevel()
+    }
     NavDisplay(
         modifier = Modifier.fillMaxSize(),
         backStack = navigation.activeBackStack,

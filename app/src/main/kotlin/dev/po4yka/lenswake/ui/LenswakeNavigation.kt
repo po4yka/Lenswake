@@ -62,11 +62,23 @@ internal class LenswakeNavigationState(
         }
     }
 
+    /**
+     * True at the root of a non-start section. `NavDisplay` only handles back while its stack has
+     * more than one entry, so this case needs its own handler or the press escapes to the system.
+     */
+    val isAtNonStartRoot: Boolean
+        get() = activeBackStack.size == 1 && activeTopLevel != startTopLevel
+
+    fun returnToStartTopLevel() {
+        selectedTopLevel.value = startTopLevel
+    }
+
     fun navigateBack() {
         when {
             activeBackStack.size > 1 -> activeBackStack.removeLastOrNull()
             activeTopLevel != startTopLevel -> selectedTopLevel.value = startTopLevel
-            else -> activeBackStack.removeLastOrNull()
+            // At the start root the system owns the gesture; never empty the back stack.
+            else -> Unit
         }
     }
 }
