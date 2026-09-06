@@ -13,11 +13,15 @@ import dev.po4yka.lenswake.automation.SavedRecordingEvidence
 import dev.po4yka.lenswake.core.AutomationFailure
 import dev.po4yka.lenswake.core.AutomationFailureCode
 import dev.po4yka.lenswake.platform.PIXEL_CAMERA_PACKAGE
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** Correlates a recording with published, Pixel Camera-owned video media without exposing paths. */
 class AndroidRecordingMediaPort internal constructor(
     context: Context,
     private val hasVideoReadPermission: () -> Boolean,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : RecordingMediaPort {
     private val applicationContext = context.applicationContext
 
@@ -125,14 +129,18 @@ class AndroidRecordingMediaPort internal constructor(
         }
     }
 
+    /**
+     * Both public operations funnel through here, so confining the boundary once keeps every
+     * ContentResolver/MediaStore binder call off the caller's thread. The rehearsal pipeline runs
+     * on viewModelScope's `Dispatchers.Main.immediate`, which would otherwise block the UI thread.
+     */
     private suspend fun <T> mediaBoundary(
         failureCode: AutomationFailureCode,
         failureMessage: String,
         operation: suspend () -> PortResult<T>,
-    ): PortResult<T> {
+    ): PortResult<T> = withContext(ioDispatcher) {
         val attempt = runSuspendCatchingPreservingCancellation(operation)
-        val failure = attempt.exceptionOrNull()
-        return when (failure) {
+        when (val failure = attempt.exceptionOrNull()) {
             null -> attempt.getOrThrow()
             is SecurityException -> missingReadPermission(failure)
             else -> PortResult.Unavailable(

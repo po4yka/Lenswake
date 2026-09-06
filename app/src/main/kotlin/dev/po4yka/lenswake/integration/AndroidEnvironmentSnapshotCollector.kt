@@ -17,6 +17,9 @@ import dev.po4yka.lenswake.core.LenswakeClock
 import dev.po4yka.lenswake.core.SessionId
 import dev.po4yka.lenswake.privileged.PrivilegedBridge
 import dev.po4yka.lenswake.privileged.PrivilegedResult
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** Android implementation that persists operational facts only, never Accessibility node data. */
 class AndroidEnvironmentSnapshotCollector(
@@ -24,6 +27,7 @@ class AndroidEnvironmentSnapshotCollector(
     private val cameraEnvironmentProbe: AndroidPixelCameraEnvironmentProbe,
     private val privilegedBridge: PrivilegedBridge,
     private val clock: LenswakeClock,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : EnvironmentSnapshotCollector {
     private val applicationContext = context.applicationContext
     private val powerManager = applicationContext.getSystemService(PowerManager::class.java)
@@ -31,32 +35,38 @@ class AndroidEnvironmentSnapshotCollector(
     private val batteryManager = applicationContext.getSystemService(BatteryManager::class.java)
     private val storageManager = applicationContext.getSystemService(StorageManager::class.java)
 
+    /**
+     * PackageManager, StorageManager and PowerManager calls here are blocking binder work, and the
+     * user-initiated rehearsal path reaches this on `Dispatchers.Main.immediate`.
+     */
     override suspend fun collect(
         snapshotId: EnvironmentSnapshotId,
         sessionId: SessionId,
-    ): Result<EnvironmentSnapshot> = runSuspendCatchingPreservingCancellation {
-        val cameraEnvironment = when (val result = cameraEnvironmentProbe.inspect()) {
-            is PortResult.Observed -> result.value
-            is PortResult.Unavailable -> error(result.failure.message)
-        }
-        EnvironmentSnapshot(
-            id = snapshotId,
-            sessionId = sessionId,
-            capturedAt = clock.now(),
-            lenswakeVersion = BuildConfig.VERSION_NAME,
-            cameraEnvironment = cameraEnvironment,
-            accessibilityStatus = accessibilityStatus(),
-            privilegedBridgeStatus = privilegedStatus(),
-            screenInteractive = powerManager.isInteractive,
-            keyguardLocked = keyguardManager.isKeyguardLocked,
-            batteryPercent = batteryPercent(),
-            charging = runCatching { batteryManager.isCharging }.getOrNull(),
-            availableStorageBytes = runCatching {
-                storageManager.getAllocatableBytes(StorageManager.UUID_DEFAULT)
+    ): Result<EnvironmentSnapshot> = withContext(ioDispatcher) {
+        runSuspendCatchingPreservingCancellation {
+            val cameraEnvironment = when (val result = cameraEnvironmentProbe.inspect()) {
+                is PortResult.Observed -> result.value
+                is PortResult.Unavailable -> error(result.failure.message)
             }
-                .getOrNull()
-                ?.takeIf { it >= 0 },
-        )
+            EnvironmentSnapshot(
+                id = snapshotId,
+                sessionId = sessionId,
+                capturedAt = clock.now(),
+                lenswakeVersion = BuildConfig.VERSION_NAME,
+                cameraEnvironment = cameraEnvironment,
+                accessibilityStatus = accessibilityStatus(),
+                privilegedBridgeStatus = privilegedStatus(),
+                screenInteractive = powerManager.isInteractive,
+                keyguardLocked = keyguardManager.isKeyguardLocked,
+                batteryPercent = batteryPercent(),
+                charging = runCatching { batteryManager.isCharging }.getOrNull(),
+                availableStorageBytes = runCatching {
+                    storageManager.getAllocatableBytes(StorageManager.UUID_DEFAULT)
+                }
+                    .getOrNull()
+                    ?.takeIf { it >= 0 },
+            )
+        }
     }
 
     private suspend fun accessibilityStatus(): EnvironmentCapabilityStatus =
