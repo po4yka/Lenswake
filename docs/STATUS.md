@@ -168,6 +168,21 @@ without suppressions or policy changes. After that remediation:
 
 Connected and opt-in physical automation suites were not run for this documentation update.
 
+## Open blocker: Accessibility runtime connection
+
+On 2026-09-06, on the connected Pixel 8 Pro running `CP2A.260805.005/15828068`, the Lenswake
+Accessibility Service could not be brought to a connected state in the application process. Android
+reported it enabled, bound into the app's own process, uncrashed and registered; the app's
+`Accessibility runtime connection` check stayed Blocked because
+`AccessibilityService.onServiceConnected()` never reached `PixelCameraAccessibilityRuntime.attach()`.
+Enabling through the Settings UI consent dialog, enabling over ADB, off/on toggling, and foregrounding
+Pixel Camera all failed to change it, and it reproduces with the accessibility threading change
+reverted.
+
+Until this is root-caused, no rehearsal can run on that device, so no capture configuration can be
+verified and no schedule can be created. Evidence and the exact attempts are recorded in
+[pixel-8-pro-august-2026-build-admission.md](research/pixel-8-pro-august-2026-build-admission.md).
+
 ## Current acceptance work
 
 1. Build one signed release APK, record its SHA-256, install that exact artifact on Pixel 7 and
