@@ -1,6 +1,7 @@
 package dev.po4yka.lenswake.accessibility
 
 import android.accessibilityservice.AccessibilityService
+import android.util.Log
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.graphics.Rect
@@ -108,6 +109,9 @@ class PixelCameraAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         PixelCameraAccessibilityRuntime.attach(this)
+        // This connection gates every readiness check and every automation run, and Android drops
+        // it silently after a force-stop without rebinding, so the transition is worth a trace.
+        Log.i(TAG, "Accessibility service connected")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -120,6 +124,7 @@ class PixelCameraAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         PixelCameraAccessibilityRuntime.detach(this)
+        Log.i(TAG, "Accessibility service disconnected")
         super.onDestroy()
     }
 
@@ -377,6 +382,8 @@ private object AccessibilityTreeInspector {
     private const val MAX_NODE_COUNT = 512
     private const val MAX_DEPTH = 32
 }
+
+private const val TAG = "LenswakeA11y"
 
 private fun AccessibilityNodeInfo.toSnapshot(
     path: String,

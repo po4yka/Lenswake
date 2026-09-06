@@ -183,12 +183,10 @@ Device state changed by this step: one installed Pixel Camera profile row. No pe
 or revoked, no Accessibility service was enabled, no schedule or alarm was created, and no capture
 was started.
 
-## Open blocker: the Accessibility service never connects to the process
+## Accessibility service connection: resolved, and what actually caused it
 
-A production rehearsal was then attempted on the same device and could not be started. With
-`POST_NOTIFICATIONS`, `READ_MEDIA_VIDEO`, `SCHEDULE_EXACT_ALARM` and `USE_FULL_SCREEN_INTENT`
-granted, Setup reported every other required check as Available, including
-`Lenswake Accessibility Service is enabled in system settings`. One check stayed Blocked:
+A first rehearsal attempt on this device appeared to be blocked: Setup reported every other required
+check Available, including `Lenswake Accessibility Service is enabled in system settings`, while
 
 ```text
 Accessibility runtime connection
@@ -196,44 +194,39 @@ Blocked · Required
 Lenswake Accessibility Service is not connected to this process.
 ```
 
-`RuntimePreflightEvaluator` reads that from `PixelCameraAccessibilityRuntime.isConnected`, which is
-set only by `attach()` from `AccessibilityService.onServiceConnected()`. The state never became
-true, so `onServiceConnected` never ran.
+stayed Blocked through ADB enabling, enabling through the Settings UI consent dialog, off/on
+toggling, repeated preflight refreshes, and foregrounding Pixel Camera.
 
-Android disagreed with the app. At the same moment `dumpsys accessibility` reported the service in
-`Enabled services`, in `Bound services` with its resolved
-`AccessibilityServiceInfo` (`capabilities=33`, the five declared event types, `notificationTimeout=50`),
-in `Registered clients`, and `Crashed services:{}` empty. `dumpsys activity services` showed one
-`ServiceRecord` for `.accessibility.PixelCameraAccessibilityService` bound into
-`app=ProcessRecord{…:dev.po4yka.lenswake}`, and `ps -A` showed exactly one process for the package —
-the same pid hosting `MainActivity`. So the service was bound, uncrashed, and in the same process as
-the reader of the singleton.
+That was a defect in the test procedure, not in the application. Temporary lifecycle logging on both
+sides settled it:
 
-Attempts that did not change the result:
+```text
+onCreate            pid=30824 inst=129889031
+onServiceConnected  pid=30824 inst=129889031
+attached  isConnected=true  runtime=133049687  cl=…PathClassLoader[…base.apk]
+probe read isConnected=true  pid=30824  runtime=133049687  cl=…PathClassLoader[…base.apk]
+```
 
-- enabling by writing `enabled_accessibility_services` over ADB, with the fully qualified and the
-  relative component name, and toggling `accessibility_enabled`;
-- enabling through the Android Settings UI, including the
-  "Allow Lenswake Pixel Camera automation to have full control of your device?" consent dialog;
-- disabling and re-enabling while the application process stayed alive;
-- repeated preflight refreshes (the same screen did correctly flip the *enabled* check between
-  Blocked and Available as the setting changed, so the report was live, not cached);
-- bringing Pixel Camera to the foreground, in case the `android:packageNames` scope deferred the
-  connection until a matching window existed.
+`onServiceConnected()` does run, `attach()` does set the state, the probe observes it 42 ms later,
+and both sides see the same `PixelCameraAccessibilityRuntime` instance (`runtime=133049687`) under
+the same classloader. There is no missed callback and no duplicated singleton.
 
-The observation is not caused by the accessibility threading change in this branch. It reproduces
-with `PixelCameraAccessibilityService.kt` reverted to its pre-change state, rebuilt and reinstalled:
-the service binds and the app still reports it as not connected.
+The cause is ordering. `adb shell am force-stop` kills the process **and** Android does not rebind an
+accessibility service afterwards — measured directly: bound count went from 1 to 0 across a
+force-stop and stayed 0. Every earlier attempt had a force-stop between enabling the service and
+reading the Setup screen, so the service really was disconnected and the app was reporting the truth.
 
-Consequence: on this device and OS build, no rehearsal can run, so no capture configuration can be
-verified and no schedule can be created. Profile installation is the furthest the application gets.
-Root-causing this is open work; it is a runtime/OS-interaction question, not a source contract that
-this record can settle.
+Procedure for a rehearsal on this device:
 
-Device state after the rehearsal attempt was restored: `enabled_accessibility_services` returned to
-its original Bitwarden-only value, `POST_NOTIFICATIONS` and `READ_MEDIA_VIDEO` revoked, the two
-AppOps returned to `default`, and `svc power stayon` turned off. The installed profile row and the
-installed debug APK were left in place.
+1. install, grant `POST_NOTIFICATIONS`, `READ_MEDIA_VIDEO`, `SCHEDULE_EXACT_ALARM`,
+   `USE_FULL_SCREEN_INTENT`;
+2. launch `MainActivity` and leave the process running;
+3. enable the Accessibility service **after** that, and never `force-stop` afterwards;
+4. if the process is killed for any reason, re-enable the Accessibility service before continuing.
+
+`PixelCameraAccessibilityService` now logs `Accessibility service connected` and
+`Accessibility service disconnected` under tag `LenswakeA11y`, so this state is observable without
+attaching a debugger.
 
 ## Evidence boundary
 
