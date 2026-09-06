@@ -12,12 +12,14 @@ import dev.po4yka.lenswake.automation.UiNodeSnapshot
 import dev.po4yka.lenswake.core.NormalizedBounds
 import dev.po4yka.lenswake.core.NormalizedPoint
 import dev.po4yka.lenswake.platform.PIXEL_CAMERA_PACKAGE
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import java.lang.ref.WeakReference
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicReference
 
 sealed interface AccessibilitySnapshotResult {
@@ -457,6 +459,17 @@ object PixelCameraAccessibilityRuntime {
     private val serviceReference = AtomicReference<WeakReference<PixelCameraAccessibilityService>?>()
     private val mutableConnectionState = MutableStateFlow(false)
 
+    /**
+     * Accessibility reads and dispatches stay confined to one thread so they remain serialized,
+     * exactly as the previous `Dispatchers.Main.immediate` confinement guaranteed — but off the main
+     * thread. A bounded snapshot walks up to 512 nodes at roughly two binder round-trips each, which
+     * on the main thread blocked the UI and starved the very timeouts meant to bound the operation.
+     */
+    private val accessibilityDispatcher: CoroutineDispatcher =
+        Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "lenswake-accessibility").apply { isDaemon = true }
+        }.asCoroutineDispatcher()
+
     val connectionState: StateFlow<Boolean> = mutableConnectionState.asStateFlow()
 
     @Volatile
@@ -483,25 +496,25 @@ object PixelCameraAccessibilityRuntime {
         lastCameraEventAtMillis = eventTime
     }
 
-    suspend fun snapshot(): AccessibilitySnapshotResult = withContext(Dispatchers.Main.immediate) {
+    suspend fun snapshot(): AccessibilitySnapshotResult = withContext(accessibilityDispatcher) {
         serviceReference.get()?.get()?.readSnapshot()
             ?: AccessibilitySnapshotResult.ServiceDisconnected
     }
 
     suspend fun dispatchClick(node: UiNodeSnapshot): AccessibilityDispatchResult =
-        withContext(Dispatchers.Main.immediate) {
+        withContext(accessibilityDispatcher) {
             serviceReference.get()?.get()?.dispatchClick(node)
                 ?: AccessibilityDispatchResult.ServiceDisconnected
         }
 
     suspend fun dispatchProfileGesture(point: NormalizedPoint): AccessibilityDispatchResult =
-        withContext(Dispatchers.Main.immediate) {
+        withContext(accessibilityDispatcher) {
             serviceReference.get()?.get()?.dispatchProfileGesture(point)
                 ?: AccessibilityDispatchResult.ServiceDisconnected
         }
 
     suspend fun dispatchGlobalBack(pickerNode: UiNodeSnapshot): AccessibilityDispatchResult =
-        withContext(Dispatchers.Main.immediate) {
+        withContext(accessibilityDispatcher) {
             serviceReference.get()?.get()?.dispatchGlobalBack(pickerNode)
                 ?: AccessibilityDispatchResult.ServiceDisconnected
         }
