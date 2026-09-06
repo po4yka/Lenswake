@@ -80,7 +80,10 @@ internal fun captureFromColumns(
             }
             CaptureConfiguration.NightSightTimeLapse(persistedLens, persistedZoom)
         }
-        else -> error("Unsupported persisted capture type: $type")
+        // IllegalArgumentException, not error(): corrupt-row isolation in RoomRepositories only
+        // catches IllegalArgumentException/DateTimeException, so an IllegalStateException here
+        // would abort the whole observable stream instead of isolating one row.
+        else -> throw IllegalArgumentException("Unsupported persisted capture type: $type")
     }
 }
 
@@ -93,5 +96,7 @@ internal fun videoSettingsFromNullableColumns(
         resolution = enumValueOf<VideoResolution>(resolution),
         frameRate = enumValueOf<VideoFrameRate>(frameRate),
     )
-    else -> error("Persisted video settings must contain both resolution and frame rate")
+    else -> throw IllegalArgumentException(
+        "Persisted video settings must contain both resolution and frame rate",
+    )
 }
