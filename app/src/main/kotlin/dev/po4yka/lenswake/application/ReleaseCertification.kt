@@ -37,7 +37,9 @@ data class VerifiedReleaseCertificationBundle(
 )
 
 fun interface ReleaseCertificationBundleReader {
-    fun read(uri: String): VerifiedReleaseCertificationBundle
+    /** Suspending because the Android implementation does SAF I/O, two SHA-256 passes and a JAR
+     *  signature check, none of which may run on the caller's thread. */
+    suspend fun read(uri: String): VerifiedReleaseCertificationBundle
 }
 
 sealed interface InstallReleaseCertificationResult {
@@ -67,7 +69,7 @@ class InstallReleaseCertification(
         is BundleRead.Verified -> resolveTarget(read.bundle)
     }
 
-    private fun readBundle(uri: String): BundleRead = try {
+    private suspend fun readBundle(uri: String): BundleRead = try {
         val bundle = bundleReader.read(uri)
         if (bundle.receipt.apkSha256 == bundle.installedApkSha256) {
             BundleRead.Verified(bundle)

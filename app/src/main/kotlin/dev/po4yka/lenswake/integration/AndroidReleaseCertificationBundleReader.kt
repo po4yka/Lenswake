@@ -7,6 +7,9 @@ import dev.po4yka.lenswake.application.CertifiedTargetReceipt
 import dev.po4yka.lenswake.application.ReleaseCertificationBundleReader
 import dev.po4yka.lenswake.application.ReleaseCertificationReceipt
 import dev.po4yka.lenswake.application.VerifiedReleaseCertificationBundle
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -16,33 +19,36 @@ import java.util.jar.JarFile
 class AndroidReleaseCertificationBundleReader(
     context: Context,
     expectedReleaseCertificateSha256: String,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ReleaseCertificationBundleReader {
     private val applicationContext = context.applicationContext
     private val expectedCertificate = expectedReleaseCertificateSha256.lowercase().also(::requireSha256)
 
-    override fun read(uri: String): VerifiedReleaseCertificationBundle {
-        require(releaseApkIsTrusted()) { "Installed Lenswake APK is not release-signed" }
-        val temporary = File.createTempFile("release-certification-", ".jar", applicationContext.cacheDir)
-        return try {
-            applicationContext.contentResolver.openInputStream(uri.toUri()).use { input ->
-                requireNotNull(input) { "Certification bundle could not be opened" }
-                temporary.outputStream().use { output ->
-                    input.copyBoundedTo(output, MAX_BUNDLE_BYTES)
+    override suspend fun read(uri: String): VerifiedReleaseCertificationBundle =
+        withContext(ioDispatcher) {
+            require(releaseApkIsTrusted()) { "Installed Lenswake APK is not release-signed" }
+            val temporary =
+                File.createTempFile("release-certification-", ".jar", applicationContext.cacheDir)
+            try {
+                applicationContext.contentResolver.openInputStream(uri.toUri()).use { input ->
+                    requireNotNull(input) { "Certification bundle could not be opened" }
+                    temporary.outputStream().use { output ->
+                        input.copyBoundedTo(output, MAX_BUNDLE_BYTES)
+                    }
                 }
+                require(temporary.length() <= MAX_BUNDLE_BYTES) { "Certification bundle is too large" }
+                val bundleSha256 = temporary.sha256()
+                val receiptText = verifiedReceiptText(temporary)
+                val receipt = ReleaseCertificationReceiptParser.parse(receiptText)
+                val installedApkSha256 = File(applicationContext.applicationInfo.sourceDir).sha256()
+                require(receipt.apkSha256 == installedApkSha256) {
+                    "Certification receipt targets a different APK"
+                }
+                VerifiedReleaseCertificationBundle(receipt, bundleSha256, installedApkSha256)
+            } finally {
+                temporary.delete()
             }
-            require(temporary.length() <= MAX_BUNDLE_BYTES) { "Certification bundle is too large" }
-            val bundleSha256 = temporary.sha256()
-            val receiptText = verifiedReceiptText(temporary)
-            val receipt = ReleaseCertificationReceiptParser.parse(receiptText)
-            val installedApkSha256 = File(applicationContext.applicationInfo.sourceDir).sha256()
-            require(receipt.apkSha256 == installedApkSha256) {
-                "Certification receipt targets a different APK"
-            }
-            VerifiedReleaseCertificationBundle(receipt, bundleSha256, installedApkSha256)
-        } finally {
-            temporary.delete()
         }
-    }
 
     private fun verifiedReceiptText(bundle: File): String = JarFile(bundle, true).use { jar ->
         val payloadEntries = jar.entries().asSequence()
