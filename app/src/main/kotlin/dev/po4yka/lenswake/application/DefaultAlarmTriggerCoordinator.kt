@@ -520,8 +520,15 @@ private class StopAlarmHandler(
                 else -> context.loadExecution(deterministicId).fold(
                     onSuccess = { session ->
                         session?.let(ExecutionLookup::Found)
+                            // Terminal, not retryable. The owner lookup above already covers an
+                            // execution recorded under a different execution key, so reaching here
+                            // means no Pixel Camera owner and no persisted session: there is
+                            // nothing to stop, and the STOP backstop is satisfied. Retrying only
+                            // exhausted the attempts and escalated a permanent, unresolvable
+                            // "Pixel Camera may still be recording" notice for work that does not
+                            // exist.
                             ?: ExecutionLookup.Failed(
-                                retryable("No persisted execution exists for this STOP alarm"),
+                                terminal("No persisted execution exists for this STOP alarm"),
                             )
                     },
                     onFailure = { error ->
