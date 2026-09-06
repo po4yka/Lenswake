@@ -172,42 +172,52 @@ internal suspend fun EngineEnvironment.verifySavedRecording(context: RunContext)
             )
             val result = querySavedRecording(baseline, operation)
             when (result) {
-                is PortResult.Observed -> result.value?.let { evidence ->
-                    if (evidence.generationAdded <= baseline.generation) {
-                        lastFailure = failure(
-                            AutomationFailureCode.MEDIA_SAVE_NOT_CONFIRMED,
-                            "MediaStore returned video evidence that does not follow the recording baseline",
-                            mapOf(
-                                "baselineGeneration" to baseline.generation.toString(),
-                                "candidateGeneration" to evidence.generationAdded.toString(),
-                            ),
-                        )
-                        context.transition(
-                            state = state,
-                            operation = operation,
-                            outcome = AutomationOutcome.FAILED,
-                            attempt = attempt,
-                            failure = lastFailure,
-                        )
-                        return@let
+                is PortResult.Observed -> {
+                    val evidence = result.value
+                    when {
+                        // The latest observation is authoritative. Leaving an earlier transport
+                        // failure in place here would report a stale cause and turn a retryable
+                        // STOP into a terminal one.
+                        evidence == null -> lastFailure = mediaNotConfirmed(baseline)
+
+                        evidence.generationAdded <= baseline.generation -> {
+                            lastFailure = failure(
+                                AutomationFailureCode.MEDIA_SAVE_NOT_CONFIRMED,
+                                "MediaStore returned video evidence that does not follow the recording baseline",
+                                mapOf(
+                                    "baselineGeneration" to baseline.generation.toString(),
+                                    "candidateGeneration" to evidence.generationAdded.toString(),
+                                ),
+                            )
+                            context.transition(
+                                state = state,
+                                operation = operation,
+                                outcome = AutomationOutcome.FAILED,
+                                attempt = attempt,
+                                failure = lastFailure,
+                            )
+                        }
+
+                        else -> {
+                            context.persistSavedEvidence(evidence, attempt)
+                            return
+                        }
                     }
-                    context.persistSavedEvidence(evidence, attempt)
-                    return
                 }
 
                 is PortResult.Unavailable -> lastFailure = result.failure
             }
         }
 
-        fail(
-            context,
-            lastFailure ?: failure(
-                AutomationFailureCode.MEDIA_SAVE_NOT_CONFIRMED,
-                "No published Pixel Camera video appeared after the recording baseline",
-                mapOf("baselineGeneration" to baseline.generation.toString()),
-            ),
-        )
+        fail(context, lastFailure ?: mediaNotConfirmed(baseline))
     }
+
+private fun EngineEnvironment.mediaNotConfirmed(baseline: RecordingMediaBaseline): AutomationFailure =
+    failure(
+        AutomationFailureCode.MEDIA_SAVE_NOT_CONFIRMED,
+        "No published Pixel Camera video appeared after the recording baseline",
+        mapOf("baselineGeneration" to baseline.generation.toString()),
+    )
 
 private suspend fun EngineEnvironment.requiredMediaBaseline(context: RunContext): RecordingMediaBaseline {
     val generation = context.current.mediaBaselineGeneration ?: fail(
