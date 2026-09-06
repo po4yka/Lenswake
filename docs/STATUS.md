@@ -36,10 +36,13 @@ Capture exposed:     receipt-gated matrix; no current signed-release physical re
 On 2026-08-12 a read-only probe observed Pixel 8 Pro on the stable fingerprint above. A separately
 authorized bounded calibration used Pixel 7 on the exact beta fingerprint
 `google/panther_beta/panther:DEV/CP41.260717.006/15938186:user/release-keys`, also with Pixel Camera
-versionCode 69481630. Profile installation, preflight, and action dispatch still accept only the
-complete dated Android 17 tuple
-`CP2A.260705.006/15641320`; the product and device must also exactly equal the registered codename.
-The listed August build ID is not admitted until its full fingerprint has reproducible provenance.
+versionCode 69481630. Profile installation, preflight, and action dispatch accept only complete dated
+Android 17 tuples; the product and device must also exactly equal the registered codename. Sixteen
+models admit `CP2A.260705.006/15641320` alone. Pixel 8 Pro additionally admits
+`CP2A.260805.005/15828068`, observed on 2026-09-06 on the connected certification target and recorded
+in [pixel-8-pro-august-2026-build-admission.md](research/pixel-8-pro-august-2026-build-admission.md);
+that incremental is not transferable to any other model. Admission only reaches the rehearsal gate:
+the August environment derives a distinct profile identity as `NEEDS_REHEARSAL` with no `verifiedAt`.
 The observed beta plus carrier-suffixed, custom, older, and substituted-incremental fingerprints are
 rejected. The beta session was selector-template calibration only: it cannot install a profile,
 qualify a rehearsal, certify a release, or satisfy stable-device acceptance. The local fingerprint

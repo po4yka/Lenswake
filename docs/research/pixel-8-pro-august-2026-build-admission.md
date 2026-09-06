@@ -146,6 +146,43 @@ PIXEL_8_PRO_JULY_AUGUST_2026_EXACT   CP2A.260705.006 / 15641320
 Pixel 8 Pro keeps the July tuple so the historical baseline environment and its recorded evidence
 stay admissible.
 
+## Observed result after the change
+
+The debug APK built from the admitting commit was installed on the same device and driven through
+the Profiles UI.
+
+```text
+Local APK SHA-256:      4911bc3beb2e8d066af88082275a4674bb1dfd8ac708ef791908141451a69d95
+Installed APK SHA-256:  4911bc3beb2e8d066af88082275a4674bb1dfd8ac708ef791908141451a69d95
+cmp result:             identical
+Lenswake version:       0.1.0 debug (versionCode 1)
+```
+
+Observed, in order:
+
+1. `MainActivity` started and rendered; no crash in logcat. Schedules reported nine blocking Setup
+   items, which is expected because no runtime permission was granted in this session.
+2. The Profiles screen offered **Install camera profile**, so `KnownPixelCameraProfileCatalog.exactMatch`
+   resolved a candidate for the running environment. Before this change the same screen would have
+   reported that no profile is available for this Pixel Camera version and language.
+3. Installation required the Experimental consent gate, which was accepted deliberately.
+4. The profile installed and the UI reported the fail-closed state, not a promoted one:
+
+```text
+Google Pixel 8 Pro
+Needs test
+EXPERIMENTAL · Android 37 · Pixel Camera version 69481630 · English (United States)
+Profile fingerprint: 766751cad953418b993675b7b5662ecd3e532026971ba3e36ca0a720be215d69
+Capture matrix:      Untested
+```
+
+5. After `am force-stop` the process was recreated with a new PID and the profile was still present,
+   so it was loaded from Room rather than retained in process memory.
+
+Device state changed by this session: one installed Pixel Camera profile row. No permission was
+granted or revoked, no Accessibility service was enabled, no schedule or alarm was created, and no
+capture was started.
+
 ## Evidence boundary
 
 Confirmed by this record:

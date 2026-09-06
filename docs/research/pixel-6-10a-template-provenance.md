@@ -272,10 +272,18 @@ listed these latest unsuffixed global Android 17 releases for the supported coho
   `CP2A.260805.005` (August 2026).
 
 The OTA matrix supplies build IDs, but a build ID alone does not identify the complete Android
-fingerprint. The source allowlist therefore admits only the observed full July tuple
-`CP2A.260705.006/15641320`, combined with an exact registered product/device codename pair. The
-August ID remains rejected until its incremental and complete fingerprint receive reproducible
-provenance. The connected Pixel 7 beta fingerprint is package-inspection evidence only and cannot
+fingerprint. The source allowlist therefore admitted only the observed full July tuple
+`CP2A.260705.006/15641320`, combined with an exact registered product/device codename pair, and the
+August ID remained rejected until its incremental and complete fingerprint received reproducible
+provenance.
+
+On 2026-09-06 that provenance was recorded for Pixel 8 Pro only, from a read-only serial-pinned
+observation of the connected certification target running
+`google/husky/husky:17/CP2A.260805.005/15828068:user/release-keys`. Pixel 8 Pro now admits both the
+July and that August tuple; see
+[pixel-8-pro-august-2026-build-admission.md](pixel-8-pro-august-2026-build-admission.md). The other
+sixteen models still admit only the July tuple, because no August incremental has been observed for
+them and an incremental is not transferable between models. The connected Pixel 7 beta fingerprint is package-inspection evidence only and cannot
 produce an installable exact profile under current source. A fingerprint with an approved build ID
 but a substituted incremental is also rejected.
 
