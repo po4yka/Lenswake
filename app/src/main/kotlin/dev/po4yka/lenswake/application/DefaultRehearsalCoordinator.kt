@@ -123,7 +123,7 @@ class DefaultRehearsalCoordinator(
             }
 
             is CancellationException -> {
-                boundedSafetyStop(stopWorkflow, started.sessionId)
+                boundedSafetyStop(started.sessionId, stopWorkflow::stopSafety)
                 throw waitFailure
             }
 
@@ -141,7 +141,7 @@ class DefaultRehearsalCoordinator(
         sessionId: SessionId,
         failure: Throwable,
     ): RehearsalResult =
-        when (val cleanup = boundedSafetyStop(stopWorkflow, sessionId)) {
+        when (val cleanup = boundedSafetyStop(sessionId, stopWorkflow::stopSafety)) {
             is RehearsalStopOutcome.Promoted -> {
                 RehearsalResult.Completed(cleanup.session, cleanup.profile)
             }
@@ -213,7 +213,7 @@ class DefaultRehearsalCoordinator(
             )
         }
 
-        val cleanup = boundedSafetyStop(stopWorkflow, sessionId)
+        val cleanup = boundedSafetyStop(sessionId, stopWorkflow::stopSafety)
         return when (cleanup) {
             is RehearsalStopOutcome.SafeFailure -> {
                 RehearsalSupport.rejected(
@@ -539,7 +539,9 @@ private class RehearsalPreparationPersistence(
                 }
 
                 current.recordActionAt != null && current.stoppedVerifiedAt == null -> {
-                    boundedSafetyStop(stopWorkflow, sessionId)
+                    // Every caller reaches this from inside run()'s mutex.withLock, so the safety
+                    // STOP must not take the non-reentrant rehearsal mutex again.
+                    boundedSafetyStop(sessionId, stopWorkflow::stopSafetyWhileLocked)
                 }
 
                 else -> {
@@ -648,15 +650,19 @@ private suspend inline fun <T> persistence(
             onFailure = { failure -> Result.failure(IllegalStateException("$stage failed", failure)) },
         )
 
+/**
+ * [stop] selects the locking discipline: callers that already own the rehearsal [Mutex] must pass
+ * [RehearsalStopWorkflow.stopSafetyWhileLocked], because the mutex is not reentrant.
+ */
 private suspend fun boundedSafetyStop(
-    stopWorkflow: RehearsalStopWorkflow,
     sessionId: SessionId,
+    stop: suspend (SessionId) -> RehearsalStopOutcome,
 ): RehearsalStopOutcome =
     withContext(NonCancellable) {
         val attempt =
             runCatching {
                 withTimeout(CLEANUP_TIMEOUT.toMillis()) {
-                    stopWorkflow.stopSafety(sessionId)
+                    stop(sessionId)
                 }
             }
         when (val failure = attempt.exceptionOrNull()) {
@@ -730,6 +736,13 @@ class RehearsalStopWorkflow(
         mutex.withLock {
             stopLocked(sessionId, alarmTrigger = null, promotionAllowed = false)
         }
+
+    /**
+     * Safety STOP for a caller that already owns [mutex]. [Mutex] is not reentrant, so taking it
+     * again here would suspend until the cleanup timeout and never dispatch the stop.
+     */
+    suspend fun stopSafetyWhileLocked(sessionId: SessionId): RehearsalStopOutcome =
+        stopLocked(sessionId, alarmTrigger = null, promotionAllowed = false)
 
     suspend fun stopAlarm(trigger: RehearsalStopTrigger): RehearsalStopOutcome =
         mutex.withLock {
