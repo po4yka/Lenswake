@@ -18,17 +18,28 @@ data class PixelSystemBuildIdentity(
     val incremental: String,
 )
 
+private val JULY_2026 = PixelSystemBuildIdentity(
+    buildId = "CP2A.260705.006",
+    incremental = "15641320",
+)
+
+/**
+ * Observed on the connected Pixel 8 Pro certification target; see
+ * `docs/research/pixel-8-pro-august-2026-build-admission.md`. No other model has reproducible
+ * provenance for its August incremental, so no other model may reuse this tuple.
+ */
+private val HUSKY_AUGUST_2026 = PixelSystemBuildIdentity(
+    buildId = "CP2A.260805.005",
+    incremental = "15828068",
+)
+
 enum class PixelGlobalStableBuildSet(
     private val approvedBuilds: Set<PixelSystemBuildIdentity>,
 ) {
-    JULY_2026_EXACT(
-        setOf(
-            PixelSystemBuildIdentity(
-                buildId = "CP2A.260705.006",
-                incremental = "15641320",
-            ),
-        ),
-    ),
+    JULY_2026_EXACT(setOf(JULY_2026)),
+
+    /** Pixel 8 Pro only: the July tuple plus its separately observed August tuple. */
+    PIXEL_8_PRO_JULY_AUGUST_2026_EXACT(setOf(JULY_2026, HUSKY_AUGUST_2026)),
     ;
 
     fun accepts(buildId: String, incremental: String): Boolean =
@@ -60,7 +71,7 @@ object SupportedPixelModelRegistry {
             "Pixel 8 Pro",
             "husky",
             PixelCameraTemplateKind.SEMANTIC_TELEPHOTO,
-            JULY,
+            PixelGlobalStableBuildSet.PIXEL_8_PRO_JULY_AUGUST_2026_EXACT,
         ),
         experimental("Pixel 8a", "akita", PixelCameraTemplateKind.SEMANTIC_STANDARD, JULY),
         experimental("Pixel 9", "tokay", PixelCameraTemplateKind.SEMANTIC_STANDARD, JULY),

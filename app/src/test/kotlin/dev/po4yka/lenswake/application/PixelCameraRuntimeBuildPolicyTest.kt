@@ -1,6 +1,9 @@
 package dev.po4yka.lenswake.application
 
+import dev.po4yka.lenswake.core.ProfileCompatibility
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -36,6 +39,45 @@ class PixelCameraRuntimeBuildPolicyTest {
             assertTrue(isSupportedPixelCameraRuntime(candidate), model.model)
             assertTrue(KnownPixelCameraProfileCatalog.exactMatch(candidate) != null, model.model)
         }
+    }
+
+    @Test
+    fun `the observed Pixel 8 Pro August global stable build is accepted`() {
+        val candidate = environment.copy(
+            androidBuildFingerprint =
+                "google/husky/husky:17/CP2A.260805.005/15828068:user/release-keys",
+        )
+
+        assertTrue(isSupportedPixelCameraRuntime(candidate))
+
+        val derived = checkNotNull(KnownPixelCameraProfileCatalog.exactMatch(candidate)) {
+            "The observed August environment must derive an installable candidate"
+        }
+        assertEquals(ProfileCompatibility.NEEDS_REHEARSAL, derived.compatibility)
+        assertNull(derived.verifiedAt)
+        assertNotEquals(
+            KnownPixelCameraProfileCatalog.pixel8ProAndroid17Camera69481630.id,
+            derived.id,
+            "A different OS build must derive a distinct profile identity",
+        )
+    }
+
+    @Test
+    fun `the Pixel 8 Pro August build never transfers to another model`() {
+        SupportedPixelModelRegistry.entries
+            .filterNot { it.codename == "husky" }
+            .forEach { model ->
+                val candidate = environment.copy(
+                    deviceModel = model.model,
+                    deviceCodename = model.codename,
+                    androidBuildFingerprint =
+                        "google/${model.codename}/${model.codename}:17/" +
+                            "CP2A.260805.005/15828068:user/release-keys",
+                )
+
+                assertFalse(isSupportedPixelCameraRuntime(candidate), model.model)
+                assertNull(KnownPixelCameraProfileCatalog.exactMatch(candidate), model.model)
+            }
     }
 
     @Test
