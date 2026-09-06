@@ -116,9 +116,9 @@ internal class LenswakeProfileActionsImpl(
 
         actionState.profileInstall.value = ProfileInstallUiState.Installing
         actionState.scope.launch {
-            actionState.profileInstall.value = installKnownPixelCameraProfile(
-                experimentalRiskAccepted,
-            ).toUiState(strings)
+            completeProfileInstall("Unexpected profile installation failure") {
+                installKnownPixelCameraProfile(experimentalRiskAccepted).toUiState(strings)
+            }
         }
     }
 
@@ -126,11 +126,35 @@ internal class LenswakeProfileActionsImpl(
         if (actionState.profileInstall.value == ProfileInstallUiState.Installing) return
         actionState.profileInstall.value = ProfileInstallUiState.Installing
         actionState.scope.launch {
-            actionState.profileInstall.value = installReleaseCertification
-                ?.invoke(uri)
-                ?.toUiState(strings)
-                ?: ProfileInstallUiState.Failed(strings.get(R.string.profile_certification_invalid_bundle))
+            completeProfileInstall("Unexpected release certification import failure") {
+                installReleaseCertification
+                    ?.invoke(uri)
+                    ?.toUiState(strings)
+                    ?: ProfileInstallUiState.Failed(
+                        strings.get(R.string.profile_certification_invalid_bundle),
+                    )
+            }
             actionState.refreshPreflight()
+        }
+    }
+
+    /**
+     * Reports an unexpected failure instead of letting it escape the scope: an uncaught throw here
+     * would crash the process and leave [ProfileInstallUiState.Installing] latched forever.
+     */
+    private suspend fun completeProfileInstall(
+        logMessage: String,
+        block: suspend () -> ProfileInstallUiState,
+    ) {
+        val attempt = runCatching { block() }
+        actionState.profileInstall.value = when (val failure = attempt.exceptionOrNull()) {
+            null -> checkNotNull(attempt.getOrNull())
+            is CancellationException -> throw failure
+            !is Exception -> throw failure
+            else -> {
+                Log.e(TAG, logMessage, failure)
+                ProfileInstallUiState.Failed(strings.get(R.string.profile_unexpected_failure))
+            }
         }
     }
 

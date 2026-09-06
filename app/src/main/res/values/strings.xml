@@ -386,6 +386,7 @@
     <string name="profile_unsupported_environment">No camera profile is available for %1$s with this Pixel Camera version and language.</string>
     <string name="profile_environment_unavailable">Lenswake could not check this Pixel Camera setup.</string>
     <string name="profile_persistence_failure">Lenswake could not save the camera profile.</string>
+    <string name="profile_unexpected_failure">The camera profile action stopped unexpectedly. Review Diagnostics, then try again.</string>
     <string name="profiles_experimental_title">Experimental device support</string>
     <string name="profiles_capture_matrix_detail">Exact mode · speed · lens · video quality receipt</string>
     <string name="status_untested">Untested</string>
