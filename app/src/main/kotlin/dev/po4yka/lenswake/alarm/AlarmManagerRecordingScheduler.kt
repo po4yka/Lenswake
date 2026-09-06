@@ -2,6 +2,7 @@ package dev.po4yka.lenswake.alarm
 
 import android.app.AlarmManager
 import android.content.Context
+import android.content.Intent
 import dev.po4yka.lenswake.core.ExecutionRepository
 import dev.po4yka.lenswake.core.LenswakeClock
 import dev.po4yka.lenswake.core.RecordingSchedule
@@ -256,10 +257,24 @@ internal class AndroidRecordingAlarmBackend(
     override fun cancel(scheduleId: ScheduleId, kind: AlarmKind) {
         cancelLegacyIdentity(scheduleId, kind, delivery = false)
         cancelLegacyIdentity(scheduleId, kind, delivery = true)
+        cancelServiceIdentity(
+            kind,
+            AlarmContract.identityIntent(applicationContext, scheduleId, kind),
+        )
+        // A retry armed by the delivery transport shares this request code but has its own identity
+        // URI, so it needs its own cancel. Otherwise it outlives the deleted or edited schedule and
+        // later escalates a STOP for work that no longer exists.
+        cancelServiceIdentity(
+            kind,
+            AlarmContract.deliveryIdentityIntent(applicationContext, scheduleId, kind),
+        )
+    }
+
+    private fun cancelServiceIdentity(kind: AlarmKind, identityIntent: Intent) {
         val pendingIntent = AutomationAlarmPendingIntentFactory.find(
             applicationContext,
             AlarmContract.requestCode(kind),
-            AlarmContract.identityIntent(applicationContext, scheduleId, kind),
+            identityIntent,
         )
         if (pendingIntent != null) {
             alarmManager.cancel(pendingIntent)
