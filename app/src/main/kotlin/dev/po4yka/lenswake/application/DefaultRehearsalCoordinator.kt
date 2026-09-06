@@ -541,7 +541,7 @@ private class RehearsalPreparationPersistence(
                 current.recordActionAt != null && current.stoppedVerifiedAt == null -> {
                     // Every caller reaches this from inside run()'s mutex.withLock, so the safety
                     // STOP must not take the non-reentrant rehearsal mutex again.
-                    boundedSafetyStop(sessionId, stopWorkflow::stopSafetyWhileLocked)
+                    boundedSafetyStop(sessionId) { stopWorkflow.stopSafety(it, holdsMutex = true) }
                 }
 
                 else -> {
@@ -651,8 +651,8 @@ private suspend inline fun <T> persistence(
         )
 
 /**
- * [stop] selects the locking discipline: callers that already own the rehearsal [Mutex] must pass
- * [RehearsalStopWorkflow.stopSafetyWhileLocked], because the mutex is not reentrant.
+ * [stop] carries the locking discipline: a caller that already owns the rehearsal [Mutex] must pass
+ * a lambda using `stopSafety(holdsMutex = true)`, because the mutex is not reentrant.
  */
 private suspend fun boundedSafetyStop(
     sessionId: SessionId,
@@ -732,17 +732,19 @@ class RehearsalStopWorkflow(
             stopLocked(sessionId, alarmTrigger = null, promotionAllowed = true)
         }
 
-    suspend fun stopSafety(sessionId: SessionId): RehearsalStopOutcome =
-        mutex.withLock {
-            stopLocked(sessionId, alarmTrigger = null, promotionAllowed = false)
-        }
-
     /**
-     * Safety STOP for a caller that already owns [mutex]. [Mutex] is not reentrant, so taking it
-     * again here would suspend until the cleanup timeout and never dispatch the stop.
+     * Pass [holdsMutex] when the caller already owns [mutex]. [Mutex] is not reentrant, so taking
+     * it again would suspend until the cleanup timeout and never dispatch the stop.
      */
-    suspend fun stopSafetyWhileLocked(sessionId: SessionId): RehearsalStopOutcome =
-        stopLocked(sessionId, alarmTrigger = null, promotionAllowed = false)
+    suspend fun stopSafety(
+        sessionId: SessionId,
+        holdsMutex: Boolean = false,
+    ): RehearsalStopOutcome =
+        if (holdsMutex) {
+            stopLocked(sessionId, alarmTrigger = null, promotionAllowed = false)
+        } else {
+            mutex.withLock { stopLocked(sessionId, alarmTrigger = null, promotionAllowed = false) }
+        }
 
     suspend fun stopAlarm(trigger: RehearsalStopTrigger): RehearsalStopOutcome =
         mutex.withLock {

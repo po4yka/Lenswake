@@ -20,8 +20,9 @@ import kotlinx.coroutines.withContext
 /** Correlates a recording with published, Pixel Camera-owned video media without exposing paths. */
 class AndroidRecordingMediaPort internal constructor(
     context: Context,
-    private val hasVideoReadPermission: () -> Boolean,
+    // Declared before the permission probe so callers keep the trailing-lambda form.
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val hasVideoReadPermission: () -> Boolean,
 ) : RecordingMediaPort {
     private val applicationContext = context.applicationContext
 

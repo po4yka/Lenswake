@@ -157,6 +157,11 @@ internal suspend fun EngineEnvironment.verifySavedRecording(context: RunContext)
         val operation = AutomationOperation.VERIFY_MEDIA_SAVED
         val state = AutomationStateName.VERIFYING_MEDIA_SAVED
         val policy = config.policyFor(operation)
+        val notConfirmed = failure(
+            AutomationFailureCode.MEDIA_SAVE_NOT_CONFIRMED,
+            "No published Pixel Camera video appeared after the recording baseline",
+            mapOf("baselineGeneration" to baseline.generation.toString()),
+        )
         var lastFailure: AutomationFailure? = null
 
         for (attempt in 1..policy.maxAttempts) {
@@ -178,7 +183,7 @@ internal suspend fun EngineEnvironment.verifySavedRecording(context: RunContext)
                         // The latest observation is authoritative. Leaving an earlier transport
                         // failure in place here would report a stale cause and turn a retryable
                         // STOP into a terminal one.
-                        evidence == null -> lastFailure = mediaNotConfirmed(baseline)
+                        evidence == null -> lastFailure = notConfirmed
 
                         evidence.generationAdded <= baseline.generation -> {
                             lastFailure = failure(
@@ -209,15 +214,8 @@ internal suspend fun EngineEnvironment.verifySavedRecording(context: RunContext)
             }
         }
 
-        fail(context, lastFailure ?: mediaNotConfirmed(baseline))
+        fail(context, lastFailure ?: notConfirmed)
     }
-
-private fun EngineEnvironment.mediaNotConfirmed(baseline: RecordingMediaBaseline): AutomationFailure =
-    failure(
-        AutomationFailureCode.MEDIA_SAVE_NOT_CONFIRMED,
-        "No published Pixel Camera video appeared after the recording baseline",
-        mapOf("baselineGeneration" to baseline.generation.toString()),
-    )
 
 private suspend fun EngineEnvironment.requiredMediaBaseline(context: RunContext): RecordingMediaBaseline {
     val generation = context.current.mediaBaselineGeneration ?: fail(
