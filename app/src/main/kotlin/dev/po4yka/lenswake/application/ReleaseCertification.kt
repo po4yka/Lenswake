@@ -247,7 +247,31 @@ class ArtifactBoundAutomationProfileRepository(
         require(profile == effective(profile)) {
             "Certified profile does not match the installed signed release APK"
         }
-        delegate.save(profile)
+        delegate.save(restoreMaskedCertification(profile))
+    }
+
+    /**
+     * The downgrade in [effective] is a read-time mask over an intact stored receipt, not a
+     * persisted state. A caller that reads a masked profile and saves it back would otherwise write
+     * the mask through and delete the receipt permanently.
+     *
+     * Only restored while the mask is actually active. When the stored receipt does match the
+     * installed APK, nothing was masked, so a cleared certification is a deliberate revocation.
+     */
+    private suspend fun restoreMaskedCertification(
+        profile: PixelCameraProfile,
+    ): PixelCameraProfile {
+        if (profile.certification != null) return profile
+        val stored = delegate.get(profile.id) ?: return profile
+        val storedCertification = stored.certification ?: return profile
+        if (stored.supportTier != SupportTier.CERTIFIED) return profile
+        if (storedCertification.lenswakeApkSha256 == installedReleaseApkSha256()) return profile
+        // Tier and receipt travel together, so the stored row stays maskable on the next read.
+        // compatibility and verifiedAt are runtime evidence the caller may legitimately be updating.
+        return profile.copy(
+            supportTier = stored.supportTier,
+            certification = storedCertification,
+        )
     }
 
     override suspend fun delete(id: ProfileId) = delegate.delete(id)
