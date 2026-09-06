@@ -145,13 +145,22 @@ internal interface ExecutionQueryDao {
         WHERE kind = 'REHEARSAL'
           AND profile_id = :profileId
           AND status = 'COMPLETED'
+          AND failure_code IS NULL
+          AND record_action_at_epoch_ms IS NOT NULL
           AND recording_verified_at_epoch_ms IS NOT NULL
+          AND stop_action_at_epoch_ms IS NOT NULL
           AND stopped_verified_at_epoch_ms IS NOT NULL
           AND media_saved_verified_at_epoch_ms IS NOT NULL
+          AND rehearsal_verified_at_epoch_ms IS NOT NULL
         ORDER BY stopped_verified_at_epoch_ms DESC, updated_at_epoch_ms DESC, id DESC
         LIMIT 1
         """,
     )
+    /**
+     * Must stay exactly `RehearsalVerificationPolicy.hasDurableReceipt`: this overrides the
+     * `ExecutionRepository.latestSuccessfulRehearsal` default, so a looser predicate here lets a
+     * receipt-less newer rehearsal permanently mask an older qualifying one.
+     */
     suspend fun findLatestSuccessfulRehearsal(profileId: String): ExecutionSessionEntity?
 
     @Query(
