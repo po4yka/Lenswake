@@ -17,8 +17,20 @@ apkanalyzer_bin="${android_sdk:+$android_sdk/cmdline-tools/latest/bin/apkanalyze
 if [[ -z "$apkanalyzer_bin" || ! -x "$apkanalyzer_bin" ]]; then
   apkanalyzer_bin="$(command -v apkanalyzer)"
 fi
+
+# apksigner ships in build-tools, which is not on PATH on a bare runner; take the newest.
+apksigner_bin=""
+if [[ -n "$android_sdk" ]]; then
+  for candidate in "$android_sdk"/build-tools/*/apksigner; do
+    [[ -x "$candidate" ]] && apksigner_bin="$candidate"
+  done
+fi
+if [[ -z "$apksigner_bin" ]]; then
+  apksigner_bin="$(command -v apksigner)"
+fi
+
 actual_fingerprint="$(
-  apksigner verify --print-certs "$apk" |
+  "$apksigner_bin" verify --print-certs "$apk" |
     sed -n 's/^Signer #1 certificate SHA-256 digest: //p' |
     head -n 1 |
     tr -d '[:space:]:' |
