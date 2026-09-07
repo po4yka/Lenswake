@@ -37,7 +37,6 @@ room {
 
 dependencies {
     api(project(":core"))
-    implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.room.runtime)
     implementation(libs.kotlinx.coroutines.core)
