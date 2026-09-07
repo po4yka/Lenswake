@@ -59,6 +59,7 @@
     <string name="screen_setup_title">Setup</string>
     <string name="screen_setup_summary">Finish the device settings Lenswake needs before it can run a schedule.</string>
     <string name="section_readiness_checks">Readiness checks</string>
+    <string name="section_readiness_satisfied">Already set up</string>
     <string name="section_activity">Activity</string>
 
     <string name="profiles_camera_profile_title">Camera profile</string>

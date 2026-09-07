@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -13,6 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.po4yka.lenswake.R
+import dev.po4yka.lenswake.ui.CapabilityStatus
+import dev.po4yka.lenswake.ui.CapabilityUiState
 import dev.po4yka.lenswake.ui.LenswakeUiState
 import dev.po4yka.lenswake.core.SetupRemediationAction
 import dev.po4yka.lenswake.ui.scaffoldContentViewport
@@ -28,6 +31,9 @@ fun SetupScreen(
     onRemediate: (SetupRemediationAction) -> Unit,
     onClearRemediationMessage: () -> Unit,
 ) {
+    val (satisfied, outstanding) = state.capabilities.partition {
+        it.status == CapabilityStatus.AVAILABLE
+    }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -60,14 +66,25 @@ fun SetupScreen(
                 }
             }
         }
-        items(state.capabilities.size, key = { state.capabilities[it].name }) { index ->
-            CapabilityRow(
-                capability = state.capabilities[index],
-                onRemediate = onRemediate,
-            )
-            if (index < state.capabilities.lastIndex) {
-                HorizontalDivider()
-            }
+        capabilityRows(outstanding, onRemediate)
+        if (outstanding.isNotEmpty() && satisfied.isNotEmpty()) {
+            item { SectionHeading(stringResource(R.string.section_readiness_satisfied)) }
+        }
+        capabilityRows(satisfied, onRemediate)
+    }
+}
+
+private fun LazyListScope.capabilityRows(
+    capabilities: List<CapabilityUiState>,
+    onRemediate: (SetupRemediationAction) -> Unit,
+) {
+    items(capabilities.size, key = { capabilities[it].name }) { index ->
+        CapabilityRow(
+            capability = capabilities[index],
+            onRemediate = onRemediate,
+        )
+        if (index < capabilities.lastIndex) {
+            HorizontalDivider()
         }
     }
 }

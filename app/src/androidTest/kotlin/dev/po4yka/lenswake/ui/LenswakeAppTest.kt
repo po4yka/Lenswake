@@ -96,6 +96,7 @@ class LenswakeAppTest {
         composeRule.onNodeWithContentDescription("Review setup").assertIsEnabled().performClick()
 
         composeRule.onNodeWithText("Readiness checks").assertExists()
+        composeRule.onNodeWithText("Already set up").assertDoesNotExist()
     }
 
     @Test
@@ -298,6 +299,35 @@ class LenswakeAppTest {
         composeRule.runOnIdle {
             assertEquals(SetupRemediationAction.OPEN_EXACT_ALARM_SETTINGS, dispatched)
         }
+    }
+
+    @Test
+    fun setupSeparatesOutstandingChecksFromSatisfiedOnes() {
+        setContent(
+            state = LenswakeUiState(
+                capabilities = listOf(
+                    CapabilityUiState(
+                        name = "Notifications",
+                        status = CapabilityStatus.BLOCKED,
+                        detail = "Notification permission is required.",
+                        required = true,
+                        remediation = SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION,
+                    ),
+                    CapabilityUiState(
+                        name = "Exact alarms",
+                        status = CapabilityStatus.AVAILABLE,
+                        detail = "Exact alarms are allowed.",
+                        required = true,
+                    ),
+                ),
+            ),
+        )
+
+        composeRule.onNodeWithText("Review setup").performClick()
+
+        val satisfiedHeading = hasText("Already set up") and isHeading()
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToNode(satisfiedHeading)
+        composeRule.onNode(satisfiedHeading).assertExists()
     }
 
     @Test
