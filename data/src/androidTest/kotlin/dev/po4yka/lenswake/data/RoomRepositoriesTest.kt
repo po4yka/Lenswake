@@ -270,6 +270,9 @@ class RoomRepositoriesTest {
     fun corruptScheduleRowIsReportedWithoutTerminatingScheduleFlow() = runBlocking {
         val profile = profile()
         val validSchedule = schedule(profile.id)
+        // The schedules table carries a foreign key to automation_profiles; the parent row
+        // must exist before any schedule row, including the corrupt one, can be inserted.
+        profiles.save(profile)
         schedules.save(validSchedule)
         database.scheduleDao().upsert(
             validSchedule.toEntity().copy(id = "corrupt-schedule", zoneId = "Not/AZone"),
