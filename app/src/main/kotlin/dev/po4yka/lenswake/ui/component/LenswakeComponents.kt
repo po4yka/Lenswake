@@ -293,7 +293,7 @@ fun SummaryCard(
             StatusIcon(status, visuals)
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
                     text = title,

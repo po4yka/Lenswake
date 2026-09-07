@@ -21,4 +21,12 @@ class InsetPaddingTest {
         assertEquals(24.dp, padding.calculateTopPadding())
         assertEquals(28.dp, padding.calculateBottomPadding())
     }
+
+    @Test
+    fun `the default screen margin is the Material 3 compact window margin`() {
+        val padding = screenContentPadding(topMargin = 0.dp, bottomMargin = 0.dp)
+
+        assertEquals(16.dp, padding.calculateLeftPadding(LayoutDirection.Ltr))
+        assertEquals(16.dp, padding.calculateRightPadding(LayoutDirection.Ltr))
+    }
 }

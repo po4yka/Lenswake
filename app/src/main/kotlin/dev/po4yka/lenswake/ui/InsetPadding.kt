@@ -10,8 +10,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
+/**
+ * Screen margins of a content pane, kept independent from the scaffold window insets.
+ *
+ * 16dp is the Material 3 compact-window margin. It is also where a top app bar with no navigation
+ * icon starts its title (material3 1.4.0: 4dp bar padding + 12dp title inset), so on the top-level
+ * screens the body text lines up with the route title above it.
+ */
 internal fun screenContentPadding(
-    horizontalMargin: Dp = 20.dp,
+    horizontalMargin: Dp = 16.dp,
     topMargin: Dp,
     bottomMargin: Dp,
 ): PaddingValues = PaddingValues(

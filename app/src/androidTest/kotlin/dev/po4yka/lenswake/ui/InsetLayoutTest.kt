@@ -36,7 +36,7 @@ class InsetLayoutTest {
     fun ltrContentPreservesPhysicalSystemInsets() {
         val (root, summary) = renderProfileScreen(LayoutDirection.Ltr)
 
-        assertDpEquals(root.left + 51.dp, summary.left)
+        assertDpEquals(root.left + 47.dp, summary.left)
         assertDpEquals(root.top + 61.dp, summary.top)
     }
 
@@ -44,7 +44,7 @@ class InsetLayoutTest {
     fun rtlContentPreservesPhysicalSystemInsets() {
         val (root, summary) = renderProfileScreen(LayoutDirection.Rtl)
 
-        assertDpEquals(root.right - 63.dp, summary.right)
+        assertDpEquals(root.right - 59.dp, summary.right)
         assertDpEquals(root.top + 61.dp, summary.top)
     }
 
