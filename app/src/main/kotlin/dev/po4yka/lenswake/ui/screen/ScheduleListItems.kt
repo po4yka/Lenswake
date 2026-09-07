@@ -1,18 +1,27 @@
 package dev.po4yka.lenswake.ui.screen
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -46,20 +55,15 @@ internal fun ScheduleCard(
             ScheduleCardHeader(schedule)
             Text(schedule.timing, style = MaterialTheme.typography.bodyMedium)
             Text(schedule.capture.label(), style = MaterialTheme.typography.bodyMedium)
-            ScheduleRehearsalAction(
-                scheduleTitle = schedule.title,
-                scheduleId = schedule.id,
+            ScheduleCardActions(
+                schedule = schedule,
                 busy = busy,
                 rehearsal = rehearsal,
                 rehearsalTarget = rehearsalTarget,
                 canRunRehearsal = canRunRehearsal,
-                unavailableReason = rehearsalUnavailableReason,
-                onRunRehearsal = onRunRehearsal,
-            )
-            ScheduleCardActions(
-                enabled = !busy,
-                scheduleEnabled = schedule.enabled,
+                rehearsalUnavailableReason = rehearsalUnavailableReason,
                 onEdit = onEdit,
+                onRunRehearsal = onRunRehearsal,
                 onSetEnabled = onSetEnabled,
                 onRequestDelete = onRequestDelete,
             )
@@ -86,39 +90,43 @@ private fun ScheduleCardHeader(schedule: ScheduleSummaryUiState) {
 }
 
 @Composable
-private fun ScheduleRehearsalAction(
-    scheduleTitle: String,
-    scheduleId: String,
+private fun ScheduleCardActions(
+    schedule: ScheduleSummaryUiState,
     busy: Boolean,
     rehearsal: RehearsalActionUiState,
     rehearsalTarget: RehearsalTargetUiState?,
     canRunRehearsal: Boolean,
-    unavailableReason: String,
+    rehearsalUnavailableReason: String,
+    onEdit: () -> Unit,
     onRunRehearsal: () -> Unit,
+    onSetEnabled: () -> Unit,
+    onRequestDelete: () -> Unit,
 ) {
-    val testNowDescription = stringResource(R.string.schedule_test_now_content_description, scheduleTitle)
     val testInProgress = rehearsal is RehearsalActionUiState.Running &&
-        rehearsalTarget == RehearsalTargetUiState.Schedule(scheduleId)
-    OutlinedButton(
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics { contentDescription = testNowDescription },
-        enabled = !busy && canRunRehearsal,
-        onClick = onRunRehearsal,
+        rehearsalTarget == RehearsalTargetUiState.Schedule(schedule.id)
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            stringResource(
-                if (testInProgress) {
-                    R.string.profiles_testing
-                } else {
-                    R.string.action_test_now
-                },
-            ),
+        ScheduleRehearsalAction(
+            scheduleTitle = schedule.title,
+            enabled = !busy && canRunRehearsal,
+            testInProgress = testInProgress,
+            onRunRehearsal = onRunRehearsal,
+            modifier = Modifier.weight(1f),
+        )
+        ScheduleCardMenu(
+            scheduleTitle = schedule.title,
+            enabled = !busy,
+            scheduleEnabled = schedule.enabled,
+            onEdit = onEdit,
+            onSetEnabled = onSetEnabled,
+            onRequestDelete = onRequestDelete,
         )
     }
-    if (showRehearsalUnavailableReason(busy, canRunRehearsal, testInProgress, unavailableReason)) {
+    if (showRehearsalUnavailableReason(busy, canRunRehearsal, testInProgress, rehearsalUnavailableReason)) {
         Text(
-            text = unavailableReason,
+            text = rehearsalUnavailableReason,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -126,21 +134,75 @@ private fun ScheduleRehearsalAction(
 }
 
 @Composable
-private fun ScheduleCardActions(
+private fun ScheduleRehearsalAction(
+    scheduleTitle: String,
+    enabled: Boolean,
+    testInProgress: Boolean,
+    onRunRehearsal: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val testNowDescription = stringResource(R.string.schedule_test_now_content_description, scheduleTitle)
+    OutlinedButton(
+        modifier = modifier.semantics { contentDescription = testNowDescription },
+        enabled = enabled,
+        onClick = onRunRehearsal,
+    ) {
+        Text(
+            stringResource(
+                if (testInProgress) R.string.profiles_testing else R.string.action_test_now,
+            ),
+        )
+    }
+}
+
+@Composable
+private fun ScheduleCardMenu(
+    scheduleTitle: String,
     enabled: Boolean,
     scheduleEnabled: Boolean,
     onEdit: () -> Unit,
     onSetEnabled: () -> Unit,
     onRequestDelete: () -> Unit,
 ) {
-    OutlinedButton(modifier = Modifier.fillMaxWidth(), enabled = enabled, onClick = onEdit) {
-        Text(stringResource(R.string.action_edit))
-    }
-    OutlinedButton(modifier = Modifier.fillMaxWidth(), enabled = enabled, onClick = onSetEnabled) {
-        Text(stringResource(if (scheduleEnabled) R.string.action_disable else R.string.action_enable))
-    }
-    TextButton(modifier = Modifier.fillMaxWidth(), enabled = enabled, onClick = onRequestDelete) {
-        Text(stringResource(R.string.action_delete_schedule))
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(enabled = enabled, onClick = { expanded = true }) {
+            Icon(
+                painter = painterResource(R.drawable.ic_more_vert_24),
+                contentDescription = stringResource(
+                    R.string.schedule_more_actions_content_description,
+                    scheduleTitle,
+                ),
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.action_edit)) },
+                enabled = enabled,
+                onClick = {
+                    expanded = false
+                    onEdit()
+                },
+            )
+            DropdownMenuItem(
+                text = {
+                    Text(stringResource(if (scheduleEnabled) R.string.action_disable else R.string.action_enable))
+                },
+                enabled = enabled,
+                onClick = {
+                    expanded = false
+                    onSetEnabled()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.action_delete_schedule)) },
+                enabled = enabled,
+                onClick = {
+                    expanded = false
+                    onRequestDelete()
+                },
+            )
+        }
     }
 }
 

@@ -198,6 +198,7 @@
     <string name="schedule_choose_time">Choose time</string>
     <string name="schedule_picker_content_description">%1$s, %2$s</string>
     <string name="schedule_test_now_content_description">Test now, %1$s</string>
+    <string name="schedule_more_actions_content_description">More actions, %1$s</string>
     <string name="schedule_rehearsal_title">Test recording: %1$s</string>
     <string name="schedule_delete_title">Delete %1$s?</string>
     <string name="schedule_delete_message">This schedule and its future recording times will be deleted. This can’t be undone.</string>

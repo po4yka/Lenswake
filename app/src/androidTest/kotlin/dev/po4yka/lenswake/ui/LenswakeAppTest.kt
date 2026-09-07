@@ -718,7 +718,15 @@ class LenswakeAppTest {
             }
         }
 
-        composeRule.onNodeWithText("Delete schedule").performScrollTo().performClick()
+        composeRule.onNodeWithText("Delete schedule").assertDoesNotExist()
+        composeRule.onNodeWithText("Edit").assertDoesNotExist()
+        composeRule.onNodeWithText("Disable").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("More actions, Dawn")
+            .performScrollTo()
+            .performClick()
+        composeRule.onNodeWithText("Edit").assertExists()
+        composeRule.onNodeWithText("Disable").assertExists()
+        composeRule.onNodeWithText("Delete schedule").performClick()
         composeRule.onNodeWithText("Delete Dawn?").assertExists()
         composeRule.onNodeWithText("This can’t be undone.", substring = true).assertExists()
 
@@ -726,7 +734,10 @@ class LenswakeAppTest {
         composeRule.runOnIdle { assertEquals(true, cancelled) }
         composeRule.onNodeWithText("Delete Dawn?").assertDoesNotExist()
 
-        composeRule.onNodeWithText("Delete schedule").performScrollTo().performClick()
+        composeRule.onNodeWithContentDescription("More actions, Dawn")
+            .performScrollTo()
+            .performClick()
+        composeRule.onNodeWithText("Delete schedule").performClick()
         composeRule.onNodeWithText("Delete").performClick()
         composeRule.runOnIdle { assertEquals("schedule-1", confirmedScheduleId) }
     }
