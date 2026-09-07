@@ -302,9 +302,15 @@ class RoomRepositoriesTest {
         insertExecutionFixture(session)
         database.executionDao().insertEvent(event.toEntity())
         check(
+            // The execution key is unique, so the corrupt row needs its own value or the
+            // IGNORE strategy silently drops the insert instead of storing it.
             database.executionDao()
                 .insertIgnoringConflict(
-                    session.toEntity().copy(id = "corrupt-session", status = "NOT_A_STATUS"),
+                    session.toEntity().copy(
+                        id = "corrupt-session",
+                        executionKey = "schedule-1:stop:99999",
+                        status = "NOT_A_STATUS",
+                    ),
                 ) != -1L,
         )
         database.executionDao().insertEvent(
