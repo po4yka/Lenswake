@@ -23,82 +23,135 @@ import dev.po4yka.lenswake.core.SessionKind
 import dev.po4yka.lenswake.core.SessionStatus
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.core.supports
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.Instant
 import java.util.concurrent.CancellationException
-import kotlinx.coroutines.withTimeoutOrNull
 
 internal fun EngineEnvironment.eventName(
     state: AutomationStateName,
     operation: AutomationOperation?,
     outcome: AutomationOutcome,
-): String = when (state) {
-    AutomationStateName.RECORDING -> "automation.record.start_verified"
-    AutomationStateName.RECOVERING_CAMERA_DIALOG ->
-        if (outcome == AutomationOutcome.DISPATCHED) {
-            "automation.camera_dialog.recovery_dispatched"
-        } else {
+): String =
+    when (state) {
+        AutomationStateName.RECORDING -> {
+            "automation.record.start_verified"
+        }
+
+        AutomationStateName.RECOVERING_CAMERA_DIALOG -> {
+            if (outcome == AutomationOutcome.DISPATCHED) {
+                "automation.camera_dialog.recovery_dispatched"
+            } else {
+                defaultEventName(state, operation, outcome)
+            }
+        }
+
+        AutomationStateName.VERIFYING_CAMERA_DIALOG_RECOVERY -> {
+            if (outcome == AutomationOutcome.SUCCEEDED) {
+                "automation.camera_dialog.recovery_verified"
+            } else {
+                defaultEventName(state, operation, outcome)
+            }
+        }
+
+        AutomationStateName.VERIFYING_MEDIA_SAVED -> {
+            if (operation == AutomationOperation.VERIFY_MEDIA_SAVED && outcome == AutomationOutcome.SUCCEEDED) {
+                "automation.media.save_verified"
+            } else {
+                defaultEventName(state, operation, outcome)
+            }
+        }
+
+        AutomationStateName.COMPLETED -> {
+            if (operation == AutomationOperation.VERIFY_STOPPED) {
+                "automation.record.stop_verified_media_unavailable_legacy"
+            } else {
+                "automation.record.stop_and_save_verified"
+            }
+        }
+
+        AutomationStateName.FAILED -> {
+            failureEventName(operation, outcome)
+        }
+
+        else -> {
             defaultEventName(state, operation, outcome)
         }
-    AutomationStateName.VERIFYING_CAMERA_DIALOG_RECOVERY ->
-        if (outcome == AutomationOutcome.SUCCEEDED) {
-            "automation.camera_dialog.recovery_verified"
-        } else {
-            defaultEventName(state, operation, outcome)
-        }
-    AutomationStateName.VERIFYING_MEDIA_SAVED ->
-        if (operation == AutomationOperation.VERIFY_MEDIA_SAVED && outcome == AutomationOutcome.SUCCEEDED) {
-            "automation.media.save_verified"
-        } else {
-            defaultEventName(state, operation, outcome)
-        }
-    AutomationStateName.COMPLETED -> if (operation == AutomationOperation.VERIFY_STOPPED) {
-        "automation.record.stop_verified_media_unavailable_legacy"
-    } else {
-        "automation.record.stop_and_save_verified"
     }
-    AutomationStateName.FAILED -> failureEventName(operation, outcome)
-    else -> defaultEventName(state, operation, outcome)
-}
 
 private fun failureEventName(
     operation: AutomationOperation?,
     outcome: AutomationOutcome,
-): String = when {
-    outcome != AutomationOutcome.SUCCEEDED -> "automation.failed"
-    operation == AutomationOperation.VERIFY_MEDIA_SAVED ->
-        "automation.record.stop_and_save_verified_after_failure"
-    operation == AutomationOperation.VERIFY_STOPPED -> "automation.record.stop_verified_after_failure"
-    else -> "automation.failed"
-}
+): String =
+    when {
+        outcome != AutomationOutcome.SUCCEEDED -> {
+            "automation.failed"
+        }
+
+        operation == AutomationOperation.VERIFY_MEDIA_SAVED -> {
+            "automation.record.stop_and_save_verified_after_failure"
+        }
+
+        operation == AutomationOperation.VERIFY_STOPPED -> {
+            "automation.record.stop_verified_after_failure"
+        }
+
+        else -> {
+            "automation.failed"
+        }
+    }
 
 private fun defaultEventName(
     state: AutomationStateName,
     operation: AutomationOperation?,
     outcome: AutomationOutcome,
-): String = if (outcome == AutomationOutcome.DISPATCHED && operation != null) {
-    "automation.${operation.name.lowercase()}.dispatched"
-} else {
-    "automation.state.${state.name.lowercase()}"
-}
+): String =
+    if (outcome == AutomationOutcome.DISPATCHED && operation != null) {
+        "automation.${operation.name.lowercase()}.dispatched"
+    } else {
+        "automation.state.${state.name.lowercase()}"
+    }
 
-internal fun PixelCameraState.isConfirmedRecording(capture: CaptureConfiguration): Boolean = when (capture) {
-        is CaptureConfiguration.Video ->
+internal fun PixelCameraState.isConfirmedRecording(capture: CaptureConfiguration): Boolean =
+    when (capture) {
+        is CaptureConfiguration.Video -> {
             this is PixelCameraState.Video && recording && lens == capture.lens
-        is CaptureConfiguration.TimeLapse ->
+        }
+
+        is CaptureConfiguration.TimeLapse -> {
             this is PixelCameraState.TimeLapse &&
                 recording &&
                 speed == capture.speed &&
                 lens == capture.lens
-        is CaptureConfiguration.NightSightTimeLapse ->
-            this is PixelCameraState.NightSightTimeLapse && recording && lens == capture.lens
+        }
+
+        is CaptureConfiguration.NightSightTimeLapse -> confirmsNightSightRecording(capture)
     }
 
-internal fun PixelCameraState.isConfirmedStopped(): Boolean = when (this) {
+private fun PixelCameraState.confirmsNightSightRecording(
+    capture: CaptureConfiguration.NightSightTimeLapse,
+): Boolean =
+    when (this) {
+        is PixelCameraState.NightSightTimeLapse -> recording && lens == capture.lens
+
+        is PixelCameraState.NightSightTimeLapseControl -> nightSightOn && recording && lens == capture.lens
+
+        else -> false
+    }
+
+internal fun PixelCameraState.isConfirmedStopped(): Boolean =
+    when (this) {
         PixelCameraState.Photo -> true
+
         is PixelCameraState.Video -> !recording
+
         is PixelCameraState.TimeLapse -> !recording
+
         is PixelCameraState.TimeLapseSpeedPicker -> !recording
+
         is PixelCameraState.NightSightTimeLapse -> !recording
+
+        is PixelCameraState.NightSightTimeLapseControl -> !recording
+
         PixelCameraState.NotRunning,
         PixelCameraState.Unknown,
         PixelCameraState.RecordingUnknownMode,
@@ -106,12 +159,20 @@ internal fun PixelCameraState.isConfirmedStopped(): Boolean = when (this) {
         -> false
     }
 
-internal fun PixelCameraState.isRecording(): Boolean = when (this) {
+internal fun PixelCameraState.isRecording(): Boolean =
+    when (this) {
         is PixelCameraState.Video -> recording
+
         is PixelCameraState.TimeLapse -> recording
+
         is PixelCameraState.TimeLapseSpeedPicker -> recording
+
         is PixelCameraState.NightSightTimeLapse -> recording
+
+        is PixelCameraState.NightSightTimeLapseControl -> recording
+
         PixelCameraState.RecordingUnknownMode -> true
+
         PixelCameraState.Photo,
         PixelCameraState.NotRunning,
         PixelCameraState.Unknown,
@@ -119,35 +180,43 @@ internal fun PixelCameraState.isRecording(): Boolean = when (this) {
         -> false
     }
 
-internal fun PixelCameraState.observedLens(): LensSelection? = when (this) {
+internal fun PixelCameraState.observedLens(): LensSelection? =
+    when (this) {
         is PixelCameraState.Video -> lens
         is PixelCameraState.TimeLapse -> lens
         is PixelCameraState.TimeLapseSpeedPicker -> lens
         is PixelCameraState.NightSightTimeLapse -> lens
+        is PixelCameraState.NightSightTimeLapseControl -> lens
         else -> null
     }
 
-internal fun PixelCameraState.observedMode(): CaptureMode? = when (this) {
+internal fun PixelCameraState.observedMode(): CaptureMode? =
+    when (this) {
         is PixelCameraState.Video -> CaptureMode.VIDEO
+
         is PixelCameraState.TimeLapse,
         is PixelCameraState.TimeLapseSpeedPicker,
         -> CaptureMode.TIME_LAPSE
-        is PixelCameraState.NightSightTimeLapse -> CaptureMode.NIGHT_SIGHT_TIME_LAPSE
+
+        is PixelCameraState.NightSightTimeLapse,
+        is PixelCameraState.NightSightTimeLapseControl,
+        -> CaptureMode.NIGHT_SIGHT_TIME_LAPSE
+
         else -> null
     }
 
 internal fun ExecutionSession.hasUncertainRecordDispatch(): Boolean =
-        recordActionAt != null && recordingVerifiedAt == null && stoppedVerifiedAt == null
+    recordActionAt != null && recordingVerifiedAt == null && stoppedVerifiedAt == null
 
 internal class EngineAbort(
-        val result: AutomationRunResult,
-    ) : RuntimeException(null, null, false, false)
+    val result: AutomationRunResult,
+) : RuntimeException(null, null, false, false)
 
 internal sealed interface TimedCall<out T> {
-        data class Completed<T>(
-            val value: T,
-            val durationMs: Long,
-        ) : TimedCall<T>
+    data class Completed<T>(
+        val value: T,
+        val durationMs: Long,
+    ) : TimedCall<T>
 
-        data object TimedOut : TimedCall<Nothing>
+    data object TimedOut : TimedCall<Nothing>
 }

@@ -1,24 +1,24 @@
 package dev.po4yka.lenswake.application
 
+import dev.po4yka.lenswake.automation.SelectorMatchResult
+import dev.po4yka.lenswake.automation.SelectorMatcher
+import dev.po4yka.lenswake.automation.UiNodeSnapshot
 import dev.po4yka.lenswake.core.AutomationAction
 import dev.po4yka.lenswake.core.PixelCameraDialogKind
 import dev.po4yka.lenswake.core.PixelCameraSelectorSchema
 import dev.po4yka.lenswake.core.PixelCameraStateSignal
-import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileCertification
+import dev.po4yka.lenswake.core.ProfileCompatibility
 import dev.po4yka.lenswake.core.ProfileSource
 import dev.po4yka.lenswake.core.SupportTier
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.core.definitionFingerprint
-import dev.po4yka.lenswake.automation.SelectorMatchResult
-import dev.po4yka.lenswake.automation.SelectorMatcher
-import dev.po4yka.lenswake.automation.UiNodeSnapshot
-import java.time.Instant
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.time.Instant
 
 class KnownPixelCameraProfileCatalogTest {
     private val profile = KnownPixelCameraProfileCatalog.pixel8ProAndroid17Camera69481630
@@ -29,13 +29,17 @@ class KnownPixelCameraProfileCatalogTest {
 
         assertEquals("Pixel 7", standard.environment.deviceModel)
         assertEquals("panther", standard.environment.deviceCodename)
-        assertTrue(standard.environment.androidBuildFingerprint.orEmpty().contains("panther_beta"))
+        assertTrue(
+            standard.environment.androidBuildFingerprint
+                .orEmpty()
+                .contains("panther_beta"),
+        )
         assertEquals(ProfileSource.PHYSICAL_TEMPLATE, standard.source)
         assertEquals(SupportTier.EXPERIMENTAL, standard.supportTier)
         assertEquals(PixelCameraTemplateKind.SEMANTIC_STANDARD.reference, standard.selectorTemplate)
         assertEquals(3, standard.selectorTemplate.version)
         assertEquals(
-            "dac75095dca416bf08e2bc713f41a689d90f7bccb5188e9b90eee8c51788e83c",
+            "9c01bafb25750d834a27f7d377cf626227c9ebc72f8dc0bb52af3feaeaad417c",
             standard.definitionFingerprint(),
         )
         assertFalse(AutomationAction.SELECT_REAR_TELEPHOTO_LENS in standard.targets)
@@ -44,15 +48,19 @@ class KnownPixelCameraProfileCatalogTest {
         assertFalse(PixelCameraStateSignal.NIGHT_SIGHT_TIME_LAPSE_MODE_ACTIVE in standard.stateSignals)
         assertTrue(standard.dialogProfiles.isEmpty())
 
-        val resolution = standard.targets
-            .getValue(AutomationAction.SELECT_VIDEO_RESOLUTION_4K)
-            .selectors.single()
+        val resolution =
+            standard.targets
+                .getValue(AutomationAction.SELECT_VIDEO_RESOLUTION_4K)
+                .selectors
+                .single()
         assertEquals("4K Ultra HD", resolution.contentDescription)
         assertNull(resolution.text)
 
-        val stop = standard.targets
-            .getValue(AutomationAction.STOP_RECORDING)
-            .selectors.single()
+        val stop =
+            standard.targets
+                .getValue(AutomationAction.STOP_RECORDING)
+                .selectors
+                .single()
         assertEquals("com.google.android.GoogleCamera:id/shutter_button", stop.resourceId)
         assertEquals("Stop time lapse", stop.contentDescription)
     }
@@ -60,25 +68,26 @@ class KnownPixelCameraProfileCatalogTest {
     @Test
     fun `physical rear main selector reaches its exact matcher threshold`() {
         val standard = KnownPixelCameraProfileCatalog.pixel7SemanticTemplate
-        val match = SelectorMatcher().match(
-            AutomationAction.SELECT_REAR_MAIN_LENS,
-            standard,
-            listOf(
-                UiNodeSnapshot(
-                    id = "rear-main",
-                    packageName = standard.environment.cameraPackage,
-                    resourceId = "zoom_toggle_1",
-                    role = "android.widget.TextView",
-                    contentDescription = null,
-                    text = "1",
-                    bounds = null,
-                    visible = true,
-                    clickable = false,
-                    selected = false,
-                    enabled = true,
+        val match =
+            SelectorMatcher().match(
+                AutomationAction.SELECT_REAR_MAIN_LENS,
+                standard,
+                listOf(
+                    UiNodeSnapshot(
+                        id = "rear-main",
+                        packageName = standard.environment.cameraPackage,
+                        resourceId = "zoom_toggle_1",
+                        role = "android.widget.TextView",
+                        contentDescription = null,
+                        text = "1",
+                        bounds = null,
+                        visible = true,
+                        clickable = false,
+                        selected = false,
+                        enabled = true,
+                    ),
                 ),
-            ),
-        )
+            )
 
         assertEquals(130, (match as SelectorMatchResult.Match).score)
     }
@@ -91,25 +100,26 @@ class KnownPixelCameraProfileCatalogTest {
         ).forEach { candidate ->
             candidate.dialogProfiles.forEach { (kind, dialog) ->
                 val selector = dialog.presence.selectors.single()
-                val match = SelectorMatcher().match(
-                    dialog.presence,
-                    candidate,
-                    listOf(
-                        UiNodeSnapshot(
-                            id = "dialog-message",
-                            packageName = candidate.environment.cameraPackage,
-                            resourceId = selector.resourceId,
-                            role = selector.role,
-                            contentDescription = selector.contentDescription,
-                            text = selector.text,
-                            bounds = null,
-                            visible = true,
-                            clickable = false,
-                            selected = false,
-                            enabled = true,
+                val match =
+                    SelectorMatcher().match(
+                        dialog.presence,
+                        candidate,
+                        listOf(
+                            UiNodeSnapshot(
+                                id = "dialog-message",
+                                packageName = candidate.environment.cameraPackage,
+                                resourceId = selector.resourceId,
+                                role = selector.role,
+                                contentDescription = selector.contentDescription,
+                                text = selector.text,
+                                bounds = null,
+                                visible = true,
+                                clickable = false,
+                                selected = false,
+                                enabled = true,
+                            ),
                         ),
-                    ),
-                )
+                    )
 
                 assertTrue(
                     match is SelectorMatchResult.Match,
@@ -122,15 +132,16 @@ class KnownPixelCameraProfileCatalogTest {
     @Test
     fun `returns candidate only for the exact calibrated environment`() {
         assertEquals(profile, KnownPixelCameraProfileCatalog.exactMatch(profile.environment))
-        val mismatches = listOf(
-            profile.environment.copy(deviceManufacturer = "Another"),
-            profile.environment.copy(deviceModel = "Pixel 9 Pro"),
-            profile.environment.copy(androidBuildFingerprint = "google/husky/another-build"),
-            profile.environment.copy(cameraPackage = "example.camera"),
-            profile.environment.copy(cameraVersionCode = 1),
-            profile.environment.copy(localeTag = "fr-FR"),
-            profile.environment.copy(fontScale = 1.1f),
-        )
+        val mismatches =
+            listOf(
+                profile.environment.copy(deviceManufacturer = "Another"),
+                profile.environment.copy(deviceModel = "Pixel 9 Pro"),
+                profile.environment.copy(androidBuildFingerprint = "google/husky/another-build"),
+                profile.environment.copy(cameraPackage = "example.camera"),
+                profile.environment.copy(cameraVersionCode = 1),
+                profile.environment.copy(localeTag = "fr-FR"),
+                profile.environment.copy(fontScale = 1.1f),
+            )
 
         mismatches.forEach { assertNull(KnownPixelCameraProfileCatalog.exactMatch(it)) }
     }
@@ -138,7 +149,7 @@ class KnownPixelCameraProfileCatalogTest {
     @Test
     fun `candidate identity and environment are stable and fail closed`() {
         assertEquals(
-            "google-pixel-8-pro-sdk37-cp2a-260705-006-camera-69481630-1008x2244-en-us-v5",
+            "google-pixel-8-pro-sdk37-cp2a-260705-006-camera-69481630-1008x2244-en-us-v6",
             profile.id.value,
         )
         assertEquals("Google", profile.environment.deviceManufacturer)
@@ -224,61 +235,76 @@ class KnownPixelCameraProfileCatalogTest {
     }
 
     private fun assertActionSelectorDiscriminants() {
-        val video = profile.targets.getValue(AutomationAction.SELECT_VIDEO).selectors.single()
+        val video =
+            profile.targets
+                .getValue(AutomationAction.SELECT_VIDEO)
+                .selectors
+                .single()
         assertEquals("video_supermode", video.resourceId)
         assertNull(video.contentDescription)
 
         val timeLapse = profile.targets.getValue(AutomationAction.SELECT_TIME_LAPSE)
         assertEquals(2, timeLapse.selectors.size)
-        assertTrue(timeLapse.selectors.all {
-            it.resourceId == "com.google.android.GoogleCamera:id/mode_chip_text" &&
-                it.text == "Time Lapse" &&
-                !it.requiresClickable
-        })
+        assertTrue(
+            timeLapse.selectors.all {
+                it.resourceId == "com.google.android.GoogleCamera:id/mode_chip_text" &&
+                    it.text == "Time Lapse" &&
+                    !it.requiresClickable
+            },
+        )
         assertEquals(
             setOf("Switch to Time Lapse Mode", "Time Lapse"),
             timeLapse.selectors.mapTo(linkedSetOf()) { it.contentDescription },
         )
 
-        val speedControl = profile.targets
-            .getValue(AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL)
-            .selectors
-            .single()
+        val speedControl =
+            profile.targets
+                .getValue(AutomationAction.OPEN_TIME_LAPSE_SPEED_CONTROL)
+                .selectors
+                .single()
         assertEquals("Time Lapse control", speedControl.contentDescription)
         assertFalse(speedControl.requiresClickable)
 
-        val speed = profile.speedTargets.getValue(TimeLapseSpeed.X120).selectors.single()
+        val speed =
+            profile.speedTargets
+                .getValue(TimeLapseSpeed.X120)
+                .selectors
+                .single()
         assertEquals("Time Lapse 120 times speed", speed.contentDescription)
         assertEquals("120×", speed.text)
 
-        val lensAction = profile.targets
-            .getValue(AutomationAction.SELECT_REAR_MAIN_LENS)
-            .selectors
-            .single()
+        val lensAction =
+            profile.targets
+                .getValue(AutomationAction.SELECT_REAR_MAIN_LENS)
+                .selectors
+                .single()
         assertEquals("zoom_toggle_1×", lensAction.resourceId)
         assertFalse(lensAction.requiresClickable)
     }
 
     private fun assertStateSelectorDiscriminants() {
-        val lens = profile.stateSignals
-            .getValue(PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE)
-            .selectors
-            .single()
+        val lens =
+            profile.stateSignals
+                .getValue(PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE)
+                .selectors
+                .single()
         assertNull(lens.resourceId)
         assertEquals(true, lens.expectedChecked)
         assertEquals(true, lens.requiresClickable)
         assertTrue(lens.expectedRegion != null)
 
-        val recording = profile.stateSignals
-            .getValue(PixelCameraStateSignal.RECORDING_ACTIVE)
+        val recording =
+            profile.stateSignals
+                .getValue(PixelCameraStateSignal.RECORDING_ACTIVE)
         assertEquals(
             setOf("Stop video", "Stop time lapse"),
             recording.selectors.mapTo(linkedSetOf()) { it.contentDescription },
         )
         assertTrue(recording.selectors.all { it.resourceId == "ComposeShutter" })
 
-        val notRecording = profile.stateSignals
-            .getValue(PixelCameraStateSignal.NOT_RECORDING)
+        val notRecording =
+            profile.stateSignals
+                .getValue(PixelCameraStateSignal.NOT_RECORDING)
         assertEquals(160, notRecording.minimumScore)
         assertEquals(
             setOf("Take photo", "Start video", "Start time lapse"),
@@ -291,27 +317,34 @@ class KnownPixelCameraProfileCatalogTest {
             PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
         ).forEach { signal ->
             assertTrue(
-                profile.stateSignals.getValue(signal).selectors.single().expectedRegion != null,
+                profile.stateSignals
+                    .getValue(signal)
+                    .selectors
+                    .single()
+                    .expectedRegion != null,
                 "$signal must require the centered active-mode region",
             )
         }
 
-        val speedSignals = profile.stateSignals
-            .getValue(PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE)
+        val speedSignals =
+            profile.stateSignals
+                .getValue(PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE)
         assertEquals(2, speedSignals.selectors.size)
         assertEquals(40, speedSignals.minimumScore)
         assertTrue(speedSignals.selectors.any { it.expectedSelected == true })
         assertTrue(speedSignals.selectors.any { it.expectedRegion != null })
 
-        val pickerOpen = profile.stateSignals
-            .getValue(PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN)
+        val pickerOpen =
+            profile.stateSignals
+                .getValue(PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN)
         assertEquals(TimeLapseSpeed.entries.size, pickerOpen.selectors.size)
         assertTrue(pickerOpen.selectors.all { !it.requiresClickable })
     }
 
     private fun assertDialogSelectorDiscriminants() {
-        val duration = profile.dialogProfiles
-            .getValue(PixelCameraDialogKind.VIDEO_DURATION_LIMIT_REACHED)
+        val duration =
+            profile.dialogProfiles
+                .getValue(PixelCameraDialogKind.VIDEO_DURATION_LIMIT_REACHED)
         val presence = duration.presence.selectors.single()
         assertEquals("android:id/message", presence.resourceId)
         assertEquals("Video reached the duration limit.", presence.text)
@@ -324,11 +357,12 @@ class KnownPixelCameraProfileCatalogTest {
         assertEquals("android.widget.Button", recovery.role)
         assertTrue(recovery.requiresClickable)
 
-        val unknown = profile.dialogProfiles
-            .getValue(PixelCameraDialogKind.UNKNOWN)
-            .presence
-            .selectors
-            .single()
+        val unknown =
+            profile.dialogProfiles
+                .getValue(PixelCameraDialogKind.UNKNOWN)
+                .presence
+                .selectors
+                .single()
         assertEquals("android:id/message", unknown.resourceId)
         assertNull(unknown.text)
         assertEquals("android.widget.TextView", unknown.role)
@@ -337,24 +371,27 @@ class KnownPixelCameraProfileCatalogTest {
 
     @Test
     fun `catalog definition recognizes a rehearsed copy but not selector drift`() {
-        val rehearsed = profile.copy(
-            compatibility = ProfileCompatibility.VERIFIED,
-            verifiedAt = Instant.parse("2026-08-09T12:00:00Z"),
-        )
+        val rehearsed =
+            profile.copy(
+                compatibility = ProfileCompatibility.VERIFIED,
+                verifiedAt = Instant.parse("2026-08-09T12:00:00Z"),
+            )
         val changedSelector = profile.copy(targets = profile.targets - AutomationAction.STOP_RECORDING)
         val incompatible = profile.copy(compatibility = ProfileCompatibility.INCOMPATIBLE)
-        val certified = rehearsed.copy(
-            supportTier = SupportTier.CERTIFIED,
-            certification = ProfileCertification(
-                releaseTag = "v1.0.0",
-                releaseCommit = "1".repeat(40),
-                candidateRunId = 1,
-                lenswakeApkSha256 = "2".repeat(64),
-                bundleSha256 = "3".repeat(64),
-                pixel7EvidenceSha256 = "4".repeat(64),
-                pixel8ProEvidenceSha256 = "5".repeat(64),
-            ),
-        )
+        val certified =
+            rehearsed.copy(
+                supportTier = SupportTier.CERTIFIED,
+                certification =
+                    ProfileCertification(
+                        releaseTag = "v1.0.0",
+                        releaseCommit = "1".repeat(40),
+                        candidateRunId = 1,
+                        lenswakeApkSha256 = "2".repeat(64),
+                        bundleSha256 = "3".repeat(64),
+                        pixel7EvidenceSha256 = "4".repeat(64),
+                        pixel8ProEvidenceSha256 = "5".repeat(64),
+                    ),
+            )
 
         assertTrue(KnownPixelCameraProfileCatalog.containsDefinition(rehearsed))
         assertTrue(KnownPixelCameraProfileCatalog.containsDefinition(certified))

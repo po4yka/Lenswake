@@ -45,6 +45,13 @@ sealed interface PixelCameraState {
         val lens: LensSelection? = null,
     ) : PixelCameraState
 
+    /** The Auto Night Sight control row is open; [nightSightOn] mirrors the selected option. */
+    data class NightSightTimeLapseControl(
+        val nightSightOn: Boolean,
+        val recording: Boolean,
+        val lens: LensSelection? = null,
+    ) : PixelCameraState
+
     data object RecordingUnknownMode : PixelCameraState
 
     data class Dialog(
@@ -109,6 +116,8 @@ interface PixelCameraCapturePort {
     suspend fun selectTimeLapse(profileUse: ProfileUse): ActionDispatch
 
     suspend fun selectNightSightTimeLapse(profileUse: ProfileUse): ActionDispatch
+
+    suspend fun openNightSightTimeLapseControl(profileUse: ProfileUse): ActionDispatch
 
     suspend fun openTimeLapseSpeedControl(profileUse: ProfileUse): ActionDispatch
 
@@ -185,9 +194,7 @@ data class SavedRecordingEvidence(
 interface RecordingMediaPort {
     suspend fun captureBaseline(): PortResult<RecordingMediaBaseline>
 
-    suspend fun findSavedRecording(
-        baseline: RecordingMediaBaseline,
-    ): PortResult<SavedRecordingEvidence?>
+    suspend fun findSavedRecording(baseline: RecordingMediaBaseline): PortResult<SavedRecordingEvidence?>
 }
 
 fun interface AutomationSleeper {

@@ -5,7 +5,7 @@ import java.time.Instant
 const val LEGACY_UNKNOWN_FONT_SCALE: Float = -1f
 
 object PixelCameraSelectorSchema {
-    const val CURRENT_VERSION: Int = 5
+    const val CURRENT_VERSION: Int = 6
 }
 
 enum class SupportTier {
@@ -75,11 +75,12 @@ data class ProfileProvenance(
 val PixelCameraProfile.provenance: ProfileProvenance
     get() = ProfileProvenance(supportTier, source, selectorTemplate)
 
-val LEGACY_PROFILE_PROVENANCE = ProfileProvenance(
-    SupportTier.EXPERIMENTAL,
-    ProfileSource.LEGACY_UNKNOWN,
-    SelectorTemplateReference("legacy", 1),
-)
+val LEGACY_PROFILE_PROVENANCE =
+    ProfileProvenance(
+        SupportTier.EXPERIMENTAL,
+        ProfileSource.LEGACY_UNKNOWN,
+        SelectorTemplateReference("legacy", 1),
+    )
 
 enum class DisplayOrientation {
     PORTRAIT,
@@ -216,8 +217,7 @@ data class PixelCameraProfile(
                     stateSignals.values +
                     dialogProfiles.values.map(PixelCameraDialogProfile::presence) +
                     dialogProfiles.values.mapNotNull(PixelCameraDialogProfile::recoveryTarget)
-                )
-                .flatMap(UiSelectorSet::selectors)
+            ).flatMap(UiSelectorSet::selectors)
                 .all { it.packageName == environment.cameraPackage },
         ) {
             "Profile selectors must be scoped to the calibrated camera package"
@@ -228,8 +228,7 @@ data class PixelCameraProfile(
                     speedTargets.values +
                     dialogProfiles.values.map(PixelCameraDialogProfile::presence) +
                     dialogProfiles.values.mapNotNull(PixelCameraDialogProfile::recoveryTarget)
-                )
-                .flatMap(UiSelectorSet::selectors)
+            ).flatMap(UiSelectorSet::selectors)
                 .all { it.hasMeaningfulDiscriminant },
         ) {
             "Action selectors require a resource, description, text, role, or region discriminant"
@@ -252,15 +251,16 @@ data class PixelCameraProfile(
     }
 }
 
-fun PixelCameraProfile.supportedCaptureConfigurations(): Set<CaptureConfiguration> = buildSet {
-    LensSelection.entries.forEach { lens ->
-        CaptureConfiguration.Video(lens).takeIf(::supports)?.let(::add)
-        CaptureConfiguration.NightSightTimeLapse(lens).takeIf(::supports)?.let(::add)
-        TimeLapseSpeed.entries.forEach { speed ->
-            CaptureConfiguration.TimeLapse(speed, lens).takeIf(::supports)?.let(::add)
+fun PixelCameraProfile.supportedCaptureConfigurations(): Set<CaptureConfiguration> =
+    buildSet {
+        LensSelection.entries.forEach { lens ->
+            CaptureConfiguration.Video(lens).takeIf(::supports)?.let(::add)
+            CaptureConfiguration.NightSightTimeLapse(lens).takeIf(::supports)?.let(::add)
+            TimeLapseSpeed.entries.forEach { speed ->
+                CaptureConfiguration.TimeLapse(speed, lens).takeIf(::supports)?.let(::add)
+            }
         }
     }
-}
 
 fun PixelCameraProfile.supports(capture: CaptureConfiguration): Boolean {
     if (capture.zoom != null) return false
@@ -285,6 +285,7 @@ enum class AutomationAction {
     SELECT_VIDEO_FRAME_RATE_60,
     SELECT_TIME_LAPSE,
     SELECT_NIGHT_SIGHT_TIME_LAPSE,
+    OPEN_NIGHT_SIGHT_TIME_LAPSE_CONTROL,
     OPEN_TIME_LAPSE_SPEED_CONTROL,
     SELECT_TIME_LAPSE_SPEED,
     SELECT_REAR_MAIN_LENS,
@@ -306,6 +307,7 @@ enum class PixelCameraStateSignal {
     VIDEO_FRAME_RATE_60_ACTIVE,
     TIME_LAPSE_MODE_ACTIVE,
     NIGHT_SIGHT_TIME_LAPSE_MODE_ACTIVE,
+    NIGHT_SIGHT_TIME_LAPSE_CONTROL_OPEN,
     TIME_LAPSE_SPEED_AUTO_ACTIVE,
     TIME_LAPSE_SPEED_X5_ACTIVE,
     TIME_LAPSE_SPEED_X10_ACTIVE,

@@ -63,33 +63,39 @@ data class ExecutionSession(
     // A CANCELLED session with dispatched-but-unverified recording evidence still owns Pixel
     // Camera until the stop is verified or ownership is released; recovery must see it.
     val ownsPixelCamera: Boolean
-        get() = stoppedVerifiedAt == null &&
-            cameraOwnershipReleasedAt == null &&
-            (status in ACTIVE_CAMERA_OWNERSHIP_STATUSES ||
+        get() =
+            stoppedVerifiedAt == null &&
+                cameraOwnershipReleasedAt == null &&
                 (
-                    (status == SessionStatus.FAILED || status == SessionStatus.CANCELLED) &&
-                        recordActionAt != null
-                    ))
+                    status in ACTIVE_CAMERA_OWNERSHIP_STATUSES ||
+                        (
+                            (status == SessionStatus.FAILED || status == SessionStatus.CANCELLED) &&
+                                recordActionAt != null
+                        )
+                )
 
     val awaitsMediaSaveVerification: Boolean
-        get() = stoppedVerifiedAt != null &&
-            mediaSavedVerifiedAt == null &&
-            mediaBaselineGeneration != null &&
-            mediaStoreVersion != null &&
-            mediaVerificationRequired &&
-            status in setOf(
-                SessionStatus.STOPPING,
-                SessionStatus.FAILED,
-                SessionStatus.CANCELLED,
-            )
+        get() =
+            stoppedVerifiedAt != null &&
+                mediaSavedVerifiedAt == null &&
+                mediaBaselineGeneration != null &&
+                mediaStoreVersion != null &&
+                mediaVerificationRequired &&
+                status in
+                setOf(
+                    SessionStatus.STOPPING,
+                    SessionStatus.FAILED,
+                    SessionStatus.CANCELLED,
+                )
 
     private companion object {
-        val ACTIVE_CAMERA_OWNERSHIP_STATUSES = setOf(
-            SessionStatus.PENDING,
-            SessionStatus.STARTING,
-            SessionStatus.RECORDING,
-            SessionStatus.STOPPING,
-        )
+        val ACTIVE_CAMERA_OWNERSHIP_STATUSES =
+            setOf(
+                SessionStatus.PENDING,
+                SessionStatus.STARTING,
+                SessionStatus.RECORDING,
+                SessionStatus.STOPPING,
+            )
     }
 }
 
@@ -158,6 +164,8 @@ enum class AutomationStateName {
     VERIFYING_LENS,
     SELECTING_NIGHT_SIGHT_TIME_LAPSE,
     VERIFYING_NIGHT_SIGHT_TIME_LAPSE,
+    OPENING_NIGHT_SIGHT_TIME_LAPSE_CONTROL,
+    VERIFYING_NIGHT_SIGHT_TIME_LAPSE_CONTROL,
     OPENING_TIME_LAPSE_SPEED_CONTROL,
     VERIFYING_TIME_LAPSE_SPEED_CONTROL,
     SELECTING_SPEED,
@@ -194,6 +202,7 @@ enum class AutomationOperation {
     SELECT_REAR_MAIN_LENS,
     SELECT_LENS,
     SELECT_NIGHT_SIGHT_TIME_LAPSE,
+    OPEN_NIGHT_SIGHT_TIME_LAPSE_CONTROL,
     OPEN_TIME_LAPSE_SPEED_CONTROL,
     SELECT_TIME_LAPSE_SPEED,
     CLOSE_TIME_LAPSE_SPEED_CONTROL,

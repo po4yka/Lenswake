@@ -4,20 +4,20 @@ import dev.po4yka.lenswake.accessibility.AccessibilitySnapshotResult
 import dev.po4yka.lenswake.automation.ActionDispatch
 import dev.po4yka.lenswake.automation.PixelCameraCapturePort
 import dev.po4yka.lenswake.automation.PixelCameraPort
+import dev.po4yka.lenswake.automation.PixelCameraState
 import dev.po4yka.lenswake.automation.PixelCameraStatePort
 import dev.po4yka.lenswake.automation.PixelCameraVideoConfigurationPort
-import dev.po4yka.lenswake.automation.PixelCameraState
 import dev.po4yka.lenswake.automation.PortResult
 import dev.po4yka.lenswake.automation.ProfileUse
 import dev.po4yka.lenswake.automation.SelectorMatcher
+import dev.po4yka.lenswake.core.AutomationAction
 import dev.po4yka.lenswake.core.AutomationFailure
 import dev.po4yka.lenswake.core.AutomationFailureCode
-import dev.po4yka.lenswake.core.AutomationAction
 import dev.po4yka.lenswake.core.CaptureMode
 import dev.po4yka.lenswake.core.InteractionMethod
 import dev.po4yka.lenswake.core.LensSelection
-import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.PixelCameraDialogKind
+import dev.po4yka.lenswake.core.PixelCameraEnvironment
 import dev.po4yka.lenswake.core.TimeLapseSpeed
 import dev.po4yka.lenswake.platform.CameraLaunchDispatch
 import dev.po4yka.lenswake.platform.PlatformCapabilityCode
@@ -29,21 +29,26 @@ import dev.po4yka.lenswake.platform.SecurePixelCameraLauncher
  * It contains no Pixel Camera selectors. Both actions and observable state are entirely defined by
  * the persisted profile. Dispatch acceptance is returned separately from state verification.
  */
+// The class is a one-to-one adapter for the capture port interface: the member count is driven
+// by the port contract, not by this class's own design.
+@Suppress("TooManyFunctions")
 internal class PixelCameraAccessibilityControls(
     private val cameraLauncher: () -> CameraLaunchDispatch,
     selectorMatcher: SelectorMatcher,
     environmentProbe: () -> PortResult<PixelCameraEnvironment>,
     private val accessibilityGateway: PixelCameraAccessibilityGateway,
     definitionPolicy: PixelCameraProfileDefinitionPolicy,
-) : PixelCameraStatePort, PixelCameraCapturePort {
+) : PixelCameraStatePort,
+    PixelCameraCapturePort {
     val profileValidator = PixelCameraProfileValidator(definitionPolicy, environmentProbe)
     private val stateInferer = PixelCameraStateInferer(selectorMatcher)
     private val actionDispatcher = PixelCameraActionDispatcher(selectorMatcher, accessibilityGateway)
-    private val speedControlCloser = TimeLapseSpeedControlCloser(
-        selectorMatcher = selectorMatcher,
-        gateway = accessibilityGateway,
-        stateInferer = stateInferer,
-    )
+    private val speedControlCloser =
+        TimeLapseSpeedControlCloser(
+            selectorMatcher = selectorMatcher,
+            gateway = accessibilityGateway,
+            stateInferer = stateInferer,
+        )
 
     override suspend fun inspect(profileUse: ProfileUse): PortResult<PixelCameraState> =
         profileValidator.validate(profileUse)?.let { PortResult.Unavailable(it) }
@@ -52,17 +57,21 @@ internal class PixelCameraAccessibilityControls(
     override suspend fun launchSecureCamera(profileUse: ProfileUse): ActionDispatch =
         profileValidator.validate(profileUse)?.let(ActionDispatch::Rejected)
             ?: when (val result = cameraLauncher()) {
-                is CameraLaunchDispatch.Dispatched -> ActionDispatch.Dispatched(
-                    InteractionMethod.STANDARD_ANDROID_API,
-                )
+                is CameraLaunchDispatch.Dispatched -> {
+                    ActionDispatch.Dispatched(
+                        InteractionMethod.STANDARD_ANDROID_API,
+                    )
+                }
 
-                is CameraLaunchDispatch.Unavailable -> ActionDispatch.Rejected(
-                    AutomationFailure(
-                        code = result.failureCode(),
-                        message = result.capability.detail,
-                        context = mapOf("platformCapability" to result.capability.code.name),
-                    ),
-                )
+                is CameraLaunchDispatch.Unavailable -> {
+                    ActionDispatch.Rejected(
+                        AutomationFailure(
+                            code = result.failureCode(),
+                            message = result.capability.detail,
+                            context = mapOf("platformCapability" to result.capability.code.name),
+                        ),
+                    )
+                }
             }
 
     override suspend fun selectVideo(profileUse: ProfileUse): ActionDispatch =
@@ -86,52 +95,63 @@ internal class PixelCameraAccessibilityControls(
             CaptureMode.NIGHT_SIGHT_TIME_LAPSE.selectionAction,
         )
 
+    override suspend fun openNightSightTimeLapseControl(profileUse: ProfileUse): ActionDispatch =
+        actionDispatcher.dispatchValidated(
+            profileUse,
+            profileValidator,
+            openNightSightControlAction,
+        )
+
     override suspend fun openTimeLapseSpeedControl(profileUse: ProfileUse): ActionDispatch =
         actionDispatcher.dispatchValidated(profileUse, profileValidator, openSpeedControlAction)
 
     override suspend fun selectTimeLapseSpeed(
         speed: TimeLapseSpeed,
         profileUse: ProfileUse,
-    ): ActionDispatch = actionDispatcher.dispatchValidated(
-        profileUse = profileUse,
-        validator = profileValidator,
-        action = selectSpeedAction,
-        speed = speed,
-    )
+    ): ActionDispatch =
+        actionDispatcher.dispatchValidated(
+            profileUse = profileUse,
+            validator = profileValidator,
+            action = selectSpeedAction,
+            speed = speed,
+        )
 
     override suspend fun closeTimeLapseSpeedControl(
         expectedSpeed: TimeLapseSpeed?,
         profileUse: ProfileUse,
-    ): ActionDispatch = profileValidator.validate(profileUse)?.let(ActionDispatch::Rejected)
-        ?: speedControlCloser.close(expectedSpeed, profileUse.profile)
+    ): ActionDispatch =
+        profileValidator.validate(profileUse)?.let(ActionDispatch::Rejected)
+            ?: speedControlCloser.close(expectedSpeed, profileUse.profile)
 
     override suspend fun selectLens(
         lens: LensSelection,
         profileUse: ProfileUse,
-    ): ActionDispatch = actionDispatcher.dispatchValidated(
-        profileUse,
-        profileValidator,
-        lensActions.getValue(lens),
-    )
+    ): ActionDispatch =
+        actionDispatcher.dispatchValidated(
+            profileUse,
+            profileValidator,
+            lensActions.getValue(lens),
+        )
 
     override suspend fun startRecording(
         mode: CaptureMode,
         profileUse: ProfileUse,
-    ): ActionDispatch = actionDispatcher.dispatchValidated(
-        profileUse,
-        profileValidator,
-        mode.startAction,
-    )
+    ): ActionDispatch =
+        actionDispatcher.dispatchValidated(
+            profileUse,
+            profileValidator,
+            mode.startAction,
+        )
 
     override suspend fun stopRecording(
         mode: CaptureMode,
         profileUse: ProfileUse,
-    ): ActionDispatch = actionDispatcher.dispatchValidated(
-        profileUse,
-        profileValidator,
-        mode.stopAction,
-    )
-
+    ): ActionDispatch =
+        actionDispatcher.dispatchValidated(
+            profileUse,
+            profileValidator,
+            mode.stopAction,
+        )
 }
 
 internal class PixelCameraAccessibilityVideoConfiguration(
@@ -171,23 +191,26 @@ class PixelCameraAccessibilityPort private constructor(
         definitionPolicy: PixelCameraProfileDefinitionPolicy =
             CurrentPixelCameraProfileDefinitionPolicy,
     ) : this(
-        controls = PixelCameraAccessibilityControls(
-            cameraLauncher = cameraLauncher,
-            selectorMatcher = selectorMatcher,
-            environmentProbe = environmentProbe,
-            accessibilityGateway = accessibilityGateway,
-            definitionPolicy = definitionPolicy,
-        ),
-        videoConfiguration = PixelCameraAccessibilityVideoConfiguration(
-            selectorMatcher = selectorMatcher,
-            environmentProbe = environmentProbe,
-            accessibilityGateway = accessibilityGateway,
-            definitionPolicy = definitionPolicy,
-        ),
-        dialogRecoveryDispatcher = PixelCameraDialogRecoveryDispatcher(
-            selectorMatcher,
-            accessibilityGateway,
-        ),
+        controls =
+            PixelCameraAccessibilityControls(
+                cameraLauncher = cameraLauncher,
+                selectorMatcher = selectorMatcher,
+                environmentProbe = environmentProbe,
+                accessibilityGateway = accessibilityGateway,
+                definitionPolicy = definitionPolicy,
+            ),
+        videoConfiguration =
+            PixelCameraAccessibilityVideoConfiguration(
+                selectorMatcher = selectorMatcher,
+                environmentProbe = environmentProbe,
+                accessibilityGateway = accessibilityGateway,
+                definitionPolicy = definitionPolicy,
+            ),
+        dialogRecoveryDispatcher =
+            PixelCameraDialogRecoveryDispatcher(
+                selectorMatcher,
+                accessibilityGateway,
+            ),
     )
 
     constructor(
@@ -205,23 +228,31 @@ class PixelCameraAccessibilityPort private constructor(
     override suspend fun recoverDialog(
         dialog: PixelCameraDialogKind,
         profileUse: ProfileUse,
-    ): ActionDispatch = dialogRecoveryDispatcher.recover(
-        dialog,
-        profileUse,
-        controls.profileValidator,
-    )
+    ): ActionDispatch =
+        dialogRecoveryDispatcher.recover(
+            dialog,
+            profileUse,
+            controls.profileValidator,
+        )
 }
 
 private fun CameraLaunchDispatch.Unavailable.failureCode(): AutomationFailureCode =
     when (capability.code) {
-        PlatformCapabilityCode.PIXEL_CAMERA_NOT_INSTALLED ->
+        PlatformCapabilityCode.PIXEL_CAMERA_NOT_INSTALLED -> {
             AutomationFailureCode.PIXEL_CAMERA_NOT_INSTALLED
+        }
+
         PlatformCapabilityCode.SECURE_CAMERA_NOT_RESOLVABLE,
         PlatformCapabilityCode.RESOLVED_ACTIVITY_WRONG_PACKAGE,
         PlatformCapabilityCode.RESOLVED_ACTIVITY_NOT_EXPORTED,
-        -> AutomationFailureCode.PIXEL_CAMERA_RESOLUTION_FAILED
+        -> {
+            AutomationFailureCode.PIXEL_CAMERA_RESOLUTION_FAILED
+        }
+
         PlatformCapabilityCode.SECURE_CAMERA_DISPATCH_REJECTED,
         PlatformCapabilityCode.SECURE_CAMERA_DISPATCH_FAILED,
         PlatformCapabilityCode.NO_VERIFIED_WAKE_PATH,
-        -> AutomationFailureCode.PIXEL_CAMERA_LAUNCH_FAILED
+        -> {
+            AutomationFailureCode.PIXEL_CAMERA_LAUNCH_FAILED
+        }
     }

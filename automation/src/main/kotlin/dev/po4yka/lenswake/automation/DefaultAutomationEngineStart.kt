@@ -89,6 +89,17 @@ internal suspend fun EngineEnvironment.start(sessionId: SessionId): AutomationRu
         }
     }.classifyStartResult()
 
+/**
+ * The mode the machine must select to move a foreign observed mode toward [capture]. Night Sight
+ * Time Lapse captures select the shared Time Lapse mode chip first; the Night Sight toggle is a
+ * separate converging step that only exists inside that mode.
+ */
+internal fun modeTransitionTarget(capture: CaptureConfiguration): CaptureMode =
+    when (capture) {
+        is CaptureConfiguration.NightSightTimeLapse -> CaptureMode.TIME_LAPSE
+        else -> capture.mode
+    }
+
 internal suspend fun EngineEnvironment.selectCaptureMode(
         context: RunContext,
         mode: CaptureMode,

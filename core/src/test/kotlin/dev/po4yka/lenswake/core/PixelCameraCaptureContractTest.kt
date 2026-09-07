@@ -16,17 +16,30 @@ class PixelCameraCaptureContractTest {
             CaptureMode.TIME_LAPSE.pixelCameraContract.stopAction,
         )
         assertEquals(
-            PixelCameraStateSignal.NIGHT_SIGHT_TIME_LAPSE_MODE_ACTIVE,
-            CaptureMode.NIGHT_SIGHT_TIME_LAPSE.pixelCameraContract.requiredSignals.single(),
+            setOf(
+                PixelCameraStateSignal.NIGHT_SIGHT_TIME_LAPSE_CONTROL_OPEN,
+                PixelCameraStateSignal.NIGHT_SIGHT_TIME_LAPSE_MODE_ACTIVE,
+            ),
+            CaptureMode.NIGHT_SIGHT_TIME_LAPSE.pixelCameraContract.requiredSignals,
+        )
+        assertEquals(
+            setOf(
+                AutomationAction.SELECT_TIME_LAPSE,
+                AutomationAction.OPEN_NIGHT_SIGHT_TIME_LAPSE_CONTROL,
+                AutomationAction.SELECT_NIGHT_SIGHT_TIME_LAPSE,
+            ),
+            CaptureMode.NIGHT_SIGHT_TIME_LAPSE.pixelCameraContract.preparationActions,
         )
     }
 
     @Test
     fun `time lapse requirements include exact speed lens and mode routes`() {
-        val requirements = CaptureConfiguration.TimeLapse(
-            speed = TimeLapseSpeed.X30,
-            lens = LensSelection.REAR_TELEPHOTO,
-        ).pixelCameraRequirements
+        val requirements =
+            CaptureConfiguration
+                .TimeLapse(
+                    speed = TimeLapseSpeed.X30,
+                    lens = LensSelection.REAR_TELEPHOTO,
+                ).pixelCameraRequirements
 
         assertTrue(AutomationAction.SELECT_TIME_LAPSE in requirements.actions)
         assertTrue(AutomationAction.SELECT_REAR_TELEPHOTO_LENS in requirements.actions)
