@@ -71,12 +71,7 @@ private fun LazyListScope.exportAction(
 }
 
 private fun LazyListScope.diagnosticsHeader() {
-    item {
-        ScreenHeader(
-            title = stringResource(R.string.nav_diagnostics),
-            summary = stringResource(R.string.screen_diagnostics_summary),
-        )
-    }
+    item { ScreenHeader(summary = stringResource(R.string.screen_diagnostics_summary)) }
 }
 
 private fun LazyListScope.attentionItems(

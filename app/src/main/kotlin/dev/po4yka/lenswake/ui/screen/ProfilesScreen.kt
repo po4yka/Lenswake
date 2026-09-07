@@ -76,12 +76,7 @@ private fun LazyListScope.profileCertificationAction(
 }
 
 private fun LazyListScope.profilesHeader() {
-    item {
-        ScreenHeader(
-            title = stringResource(R.string.nav_profiles),
-            summary = stringResource(R.string.screen_profiles_summary),
-        )
-    }
+    item { ScreenHeader(summary = stringResource(R.string.screen_profiles_summary)) }
 }
 
 private fun LazyListScope.profileInstallAction(

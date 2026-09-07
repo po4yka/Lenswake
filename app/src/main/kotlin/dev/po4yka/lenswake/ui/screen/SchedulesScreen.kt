@@ -114,12 +114,7 @@ private fun LazyListScope.overviewItems(
     onOpenSetup: () -> Unit,
     onClearOutcome: () -> Unit,
 ) {
-    item {
-        ScreenHeader(
-            title = stringResource(R.string.nav_schedules),
-            summary = stringResource(R.string.screen_schedules_summary),
-        )
-    }
+    item { ScreenHeader(summary = stringResource(R.string.screen_schedules_summary)) }
     item { ReadinessCard(readiness = state.readiness, onOpenSetup = onOpenSetup) }
     state.activeSession?.let { activeSession ->
         item(key = "active-session-${activeSession.sessionId}") {

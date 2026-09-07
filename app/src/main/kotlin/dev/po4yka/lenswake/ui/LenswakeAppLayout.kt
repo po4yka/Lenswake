@@ -28,6 +28,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.rememberNavBackStack
 import dev.po4yka.lenswake.R
@@ -121,7 +123,7 @@ private fun LenswakeScaffold(
 ) {
     Scaffold(
         modifier = modifier,
-        topBar = { SetupTopAppBar(navigation) },
+        topBar = { LenswakeTopAppBar(navigation) },
         bottomBar = {
             if (navigationLayout == AdaptiveNavigationLayout.BOTTOM_BAR) {
                 TopLevelNavigationBar(navigation)
@@ -134,8 +136,10 @@ private fun LenswakeScaffold(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SetupTopAppBar(navigation: LenswakeNavigationState) {
-    if (navigation.currentDestination == SetupRoute) {
+private fun LenswakeTopAppBar(navigation: LenswakeNavigationState) {
+    val destination = navigation.currentDestination
+    val topLevelTitle = topLevelDestinations.firstOrNull { it.key == destination }?.labelResource
+    if (destination == SetupRoute) {
         TopAppBar(
             title = { Text(stringResource(R.string.screen_setup_title)) },
             navigationIcon = {
@@ -147,6 +151,17 @@ private fun SetupTopAppBar(navigation: LenswakeNavigationState) {
                 }
             },
             modifier = Modifier.testTag(SETUP_TOP_APP_BAR_TAG),
+        )
+    } else if (topLevelTitle != null) {
+        // The title lives in the bar instead of the list, so it stays visible while scrolling.
+        TopAppBar(
+            title = {
+                Text(
+                    text = stringResource(topLevelTitle),
+                    modifier = Modifier.semantics { heading() },
+                )
+            },
+            modifier = Modifier.testTag(TOP_LEVEL_TOP_APP_BAR_TAG),
         )
     }
 }

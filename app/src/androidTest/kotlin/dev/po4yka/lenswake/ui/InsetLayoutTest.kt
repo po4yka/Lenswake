@@ -34,18 +34,18 @@ class InsetLayoutTest {
 
     @Test
     fun ltrContentPreservesPhysicalSystemInsets() {
-        val (root, title) = renderProfileScreen(LayoutDirection.Ltr)
+        val (root, summary) = renderProfileScreen(LayoutDirection.Ltr)
 
-        assertDpEquals(root.left + 51.dp, title.left)
-        assertDpEquals(root.top + 61.dp, title.top)
+        assertDpEquals(root.left + 51.dp, summary.left)
+        assertDpEquals(root.top + 61.dp, summary.top)
     }
 
     @Test
     fun rtlContentPreservesPhysicalSystemInsets() {
-        val (root, title) = renderProfileScreen(LayoutDirection.Rtl)
+        val (root, summary) = renderProfileScreen(LayoutDirection.Rtl)
 
-        assertDpEquals(root.right - 63.dp, title.right)
-        assertDpEquals(root.top + 61.dp, title.top)
+        assertDpEquals(root.right - 63.dp, summary.right)
+        assertDpEquals(root.top + 61.dp, summary.top)
     }
 
     @Test
@@ -125,7 +125,7 @@ class InsetLayoutTest {
         }
 
         return composeRule.onNodeWithTag(ROOT_TAG).getUnclippedBoundsInRoot() to
-            composeRule.onNodeWithText("Profiles").getUnclippedBoundsInRoot()
+            composeRule.onNodeWithText(PROFILES_SUMMARY).getUnclippedBoundsInRoot()
     }
 
     private fun assertDpEquals(expected: Dp, actual: Dp) {
@@ -135,5 +135,9 @@ class InsetLayoutTest {
     private companion object {
         const val ROOT_TAG = "inset-test-root"
         const val TOLERANCE_DP = 0.6f
+
+        // The screen title moved to the app bar, so the first content item is now the summary.
+        const val PROFILES_SUMMARY =
+            "Set up and test the Pixel Camera controls used for scheduled recordings."
     }
 }

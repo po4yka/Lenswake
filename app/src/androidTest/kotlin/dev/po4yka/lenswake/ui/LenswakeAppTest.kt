@@ -4,9 +4,11 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isHeading
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -164,6 +166,22 @@ class LenswakeAppTest {
         composeRule.onNodeWithContentDescription("Back").performClick()
         composeRule.onNodeWithTag(SETUP_TOP_APP_BAR_TAG).assertDoesNotExist()
         composeRule.onNodeWithText("No schedules").assertExists()
+    }
+
+    @Test
+    fun topLevelRoutesTitleTheScreenInATopAppBarInsteadOfTheContent() {
+        setContent()
+        val inTopAppBar = hasAnyAncestor(hasTestTag(TOP_LEVEL_TOP_APP_BAR_TAG))
+
+        composeRule.onNode(hasText("Schedules") and isHeading() and inTopAppBar).assertExists()
+        composeRule.onNode(hasText("Schedules") and !inTopAppBar and !hasClickAction()).assertDoesNotExist()
+        composeRule
+            .onNodeWithText("Plan unattended Time Lapse sessions in the native Pixel Camera.")
+            .assertExists()
+        composeRule.onNodeWithTag(SETUP_TOP_APP_BAR_TAG).assertDoesNotExist()
+
+        composeRule.onNodeWithText("Profiles").performClick()
+        composeRule.onNode(hasText("Profiles") and isHeading() and inTopAppBar).assertExists()
     }
 
     @Test

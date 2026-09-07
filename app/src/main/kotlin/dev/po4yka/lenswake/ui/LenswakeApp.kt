@@ -187,6 +187,7 @@ internal const val NAVIGATION_BAR_TAG = "lenswake-navigation-bar"
 internal const val NAVIGATION_RAIL_TAG = "lenswake-navigation-rail"
 internal const val NAVIGATION_DRAWER_TAG = "lenswake-navigation-drawer"
 internal const val SETUP_TOP_APP_BAR_TAG = "lenswake-setup-top-app-bar"
+internal const val TOP_LEVEL_TOP_APP_BAR_TAG = "lenswake-top-level-top-app-bar"
 
 private val MediumWindowMinWidth = 600.dp
 private val ExpandedWindowMinWidth = 840.dp
