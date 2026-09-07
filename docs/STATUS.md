@@ -179,6 +179,23 @@ Android without rebinding the accessibility service, so the app was reporting th
 The ordering that works, and the evidence, are in
 [pixel-8-pro-august-2026-build-admission.md](research/pixel-8-pro-august-2026-build-admission.md).
 
+## First production rehearsal on the admitted August environment
+
+On 2026-09-07 a production rehearsal ran on the connected Pixel 8 Pro. The automation reached Pixel
+Camera correctly — session validated, device woken, secure camera launched through the standard
+Android API in 13 ms, camera detected as foreground, camera state inspected — and then failed closed
+at `SELECT_NIGHT_SIGHT_TIME_LAPSE` with `NIGHT_SIGHT_TIME_LAPSE_MODE_NOT_FOUND` after three bounded
+attempts, no gesture fallback and no blind click. The profile stayed `Needs test`.
+
+Live Accessibility observation showed the cause: the Night Sight Time Lapse entry point is a minibar
+item whose label is a content description with empty text, and the current selector matches on text.
+Eight other selector expectations in the profile match this build exactly. Details, the exact nodes,
+and the change the observation supports are in
+[pixel-8-pro-night-sight-time-lapse-2026-09-07.md](research/pixel-8-pro-night-sight-time-lapse-2026-09-07.md).
+
+The correction is schema-affecting and is not applied yet. No capture configuration is verified on
+this environment, so no schedule can be created from it.
+
 ## Current acceptance work
 
 1. Build one signed release APK, record its SHA-256, install that exact artifact on Pixel 7 and
