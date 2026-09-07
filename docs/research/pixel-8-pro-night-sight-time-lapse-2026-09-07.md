@@ -136,6 +136,29 @@ profiles and every rehearsal receipt bound to them. It is deliberately **not** a
 record, because it is a schema-affecting design change and because a corrected flow must then be
 re-proved by a fresh rehearsal on this device, not merely compiled.
 
+## Applied correction (same day, later)
+
+The correction documented above was applied on `main`:
+
+- selector schema bumped to v6; `PixelCameraProfileTemplateFactory`-derived profiles and installed
+  v5 profiles are invalidated by it (Room v10→v11 migration marks them `INCOMPATIBLE` and disables
+  their schedules);
+- new `OPEN_NIGHT_SIGHT_TIME_LAPSE_CONTROL` action over the observed minibar entry point
+  (`minibar_item_ext2` + "Night Sight");
+- `SELECT_NIGHT_SIGHT_TIME_LAPSE` now targets the ON option button (content description
+  "Auto Night Sight in Time Lapse on", role `android.widget.ImageButton`), and the
+  `NIGHT_SIGHT_TIME_LAPSE_MODE_ACTIVE` signal observes that button with `expectedSelected = true`;
+- a new observable `NIGHT_SIGHT_TIME_LAPSE_CONTROL_OPEN` signal (either option button present) backs
+  a dedicated converging control-row state, mirroring the Time Lapse speed-picker flow, including an
+  idempotent opener with bounded retries;
+- the engine reaches Time Lapse mode through Video exactly like plain Time Lapse captures, then
+  opens the control row, selects ON, and only then converges lens and recording.
+
+Verified by the host gate and both ordinary connected suites on the target device. The flow itself
+remains unproved until a fresh production rehearsal on this device; whether Pixel Camera keeps the
+control row open during recording is still unobserved, and the engine accepts the postcondition in
+either shape.
+
 ## Evidence boundary
 
 Confirmed here:

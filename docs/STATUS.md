@@ -193,8 +193,13 @@ Eight other selector expectations in the profile match this build exactly. Detai
 and the change the observation supports are in
 [pixel-8-pro-night-sight-time-lapse-2026-09-07.md](research/pixel-8-pro-night-sight-time-lapse-2026-09-07.md).
 
-The correction is schema-affecting and is not applied yet. No capture configuration is verified on
-this environment, so no schedule can be created from it.
+The correction is schema-affecting and is now applied (selector schema v6): the flow opens the
+minibar control first, selects the ON option by its content description and role, and the mode
+signal observes the selected option button. It adds the `OPEN_NIGHT_SIGHT_TIME_LAPSE_CONTROL`
+action, a converging control-row state, a Room v10→v11 migration that invalidates schema v5
+profiles, and a new catalog profile id. No capture configuration is verified on this environment,
+so no schedule can be created from it; the corrected flow still requires a fresh production
+rehearsal on the device before any capture is offered.
 
 ## Connected audit run on the target Pixel 8 Pro
 
