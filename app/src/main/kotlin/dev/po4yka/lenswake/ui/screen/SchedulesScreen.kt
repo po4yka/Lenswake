@@ -4,13 +4,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,9 +21,9 @@ import dev.po4yka.lenswake.ui.RehearsalTargetUiState
 import dev.po4yka.lenswake.ui.ScheduleActionUiState
 import dev.po4yka.lenswake.ui.ScheduleEditorUiState
 import dev.po4yka.lenswake.ui.ScheduleFormUiState
-import dev.po4yka.lenswake.ui.component.ActionSection
 import dev.po4yka.lenswake.ui.component.ReadinessCard
 import dev.po4yka.lenswake.ui.component.ScreenHeader
+import dev.po4yka.lenswake.ui.component.SectionHeading
 import dev.po4yka.lenswake.ui.component.SummaryCard
 import dev.po4yka.lenswake.ui.scaffoldContentViewport
 import dev.po4yka.lenswake.ui.screenContentPadding
@@ -36,7 +33,6 @@ fun SchedulesScreen(
     state: LenswakeUiState,
     contentPadding: PaddingValues,
     onOpenSetup: () -> Unit,
-    onBeginCreate: () -> Unit,
     onBeginEdit: (String) -> Unit,
     onRunRehearsal: (String) -> Unit,
     onUpdateForm: (ScheduleFormUiState) -> Unit,
@@ -54,7 +50,6 @@ fun SchedulesScreen(
         contentPadding = contentPadding,
         busyMessage = busyMessage,
         onOpenSetup = onOpenSetup,
-        onBeginCreate = onBeginCreate,
         onBeginEdit = onBeginEdit,
         onRunRehearsal = onRunRehearsal,
         onUpdateForm = onUpdateForm,
@@ -77,7 +72,6 @@ private fun SchedulesList(
     contentPadding: PaddingValues,
     busyMessage: String?,
     onOpenSetup: () -> Unit,
-    onBeginCreate: () -> Unit,
     onBeginEdit: (String) -> Unit,
     onRunRehearsal: (String) -> Unit,
     onUpdateForm: (ScheduleFormUiState) -> Unit,
@@ -92,7 +86,9 @@ private fun SchedulesList(
             .fillMaxSize()
             .scaffoldContentViewport(contentPadding)
             .imePadding(),
-        contentPadding = screenContentPadding(topMargin = 24.dp, bottomMargin = 24.dp),
+        // Scaffold leaves the floating action button out of its content padding, so the list
+        // reserves the 72.dp the button occupies on top of the usual 24.dp bottom margin.
+        contentPadding = screenContentPadding(topMargin = 24.dp, bottomMargin = 96.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         overviewItems(state, onOpenSetup, onClearOutcome)
@@ -100,7 +96,6 @@ private fun SchedulesList(
         scheduleItems(
             state = state,
             busy = busyMessage != null,
-            onBeginCreate = onBeginCreate,
             onBeginEdit = onBeginEdit,
             onRunRehearsal = onRunRehearsal,
             onSetEnabled = onSetEnabled,
@@ -163,7 +158,6 @@ private fun LazyListScope.editorItem(
 private fun LazyListScope.scheduleItems(
     state: LenswakeUiState,
     busy: Boolean,
-    onBeginCreate: () -> Unit,
     onBeginEdit: (String) -> Unit,
     onRunRehearsal: (String) -> Unit,
     onSetEnabled: (String, Boolean) -> Unit,
@@ -171,12 +165,9 @@ private fun LazyListScope.scheduleItems(
 ) {
     if (state.schedules.isEmpty()) {
         if (state.scheduleEditor is ScheduleEditorUiState.Closed) {
-            item { EmptySchedules(state, onBeginCreate) }
+            item { EmptySchedules(state) }
         }
         return
-    }
-    if (state.scheduleEditor is ScheduleEditorUiState.Closed) {
-        item { CreateScheduleAction(state, onBeginCreate) }
     }
     items(state.schedules, key = { it.id }) { schedule ->
         ScheduleCard(
@@ -195,35 +186,14 @@ private fun LazyListScope.scheduleItems(
 }
 
 @Composable
-private fun EmptySchedules(
-    state: LenswakeUiState,
-    onBeginCreate: () -> Unit,
-) {
-    ActionSection(
-        title = stringResource(R.string.schedules_empty_title),
-        detail = stringResource(R.string.schedules_empty_detail),
-        actionLabel = stringResource(R.string.action_create_schedule),
-        actionEnabled = state.actions.canCreateSchedule,
-        unavailableReason = state.actions.createScheduleUnavailableReason,
-        onAction = onBeginCreate,
-    )
-}
-
-@Composable
-private fun CreateScheduleAction(
-    state: LenswakeUiState,
-    onBeginCreate: () -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(
-            modifier = Modifier
-                .fillMaxWidth()
-                .sizeIn(minHeight = 48.dp),
-            enabled = state.actions.canCreateSchedule,
-            onClick = onBeginCreate,
-        ) {
-            Text(stringResource(R.string.action_create_schedule))
-        }
+private fun EmptySchedules(state: LenswakeUiState) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionHeading(stringResource(R.string.schedules_empty_title))
+        Text(
+            text = stringResource(R.string.schedules_empty_detail),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         if (!state.actions.canCreateSchedule) {
             Text(
                 text = state.actions.createScheduleUnavailableReason,

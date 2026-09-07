@@ -42,6 +42,7 @@ class LenswakeAppTest {
     private fun setContent(
         state: LenswakeUiState? = null,
         onInstallCandidateProfile: () -> Unit = {},
+        onBeginCreateSchedule: () -> Unit = {},
         onRunRehearsal: (String) -> Unit = {},
         onRunScheduleRehearsal: (String) -> Unit = {},
         onUpdateScheduleForm: (ScheduleFormUiState) -> Unit = {},
@@ -60,6 +61,7 @@ class LenswakeAppTest {
                 LenswakeApp(
                     state = resolvedState,
                     onInstallCandidateProfile = onInstallCandidateProfile,
+                    onBeginCreateSchedule = onBeginCreateSchedule,
                     onRunRehearsal = onRunRehearsal,
                     onRunScheduleRehearsal = onRunScheduleRehearsal,
                     onUpdateScheduleForm = onUpdateScheduleForm,
@@ -79,8 +81,34 @@ class LenswakeAppTest {
         setContent()
         composeRule.onNodeWithText("Setup required").assertExists()
         composeRule.onNodeWithText("No schedules").assertExists()
-        composeRule.onNodeWithText("Create schedule").assertIsNotEnabled()
+        composeRule.onNodeWithText("Create schedule").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Review setup").assertIsEnabled()
+        composeRule
+            .onNodeWithText("Finish Setup and test the camera profile before creating a schedule.")
+            .assertExists()
         composeRule.onNodeWithText("Ready").assertDoesNotExist()
+    }
+
+    @Test
+    fun blockedCreateActionRoutesToSetupInsteadOfDisabling() {
+        setContent()
+
+        composeRule.onNodeWithContentDescription("Review setup").assertIsEnabled().performClick()
+
+        composeRule.onNodeWithText("Readiness checks").assertExists()
+    }
+
+    @Test
+    fun enabledCreateActionOpensTheScheduleEditor() {
+        var createRequests = 0
+        setContent(
+            state = LenswakeUiState(actions = UiActionAvailability(canCreateSchedule = true)),
+            onBeginCreateSchedule = { createRequests += 1 },
+        )
+
+        composeRule.onNodeWithContentDescription("Create schedule").performClick()
+
+        composeRule.runOnIdle { assertEquals(1, createRequests) }
     }
 
     @Test
@@ -407,7 +435,8 @@ class LenswakeAppTest {
             onRunScheduleRehearsal = { rehearsedScheduleId = it },
         )
 
-        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(4)
+        composeRule.onNode(hasScrollToIndexAction())
+            .performScrollToNode(hasContentDescription("Test now, Sunset"))
         composeRule.onNodeWithContentDescription("Test now, Sunset")
             .assertIsEnabled()
             .performClick()
@@ -454,7 +483,8 @@ class LenswakeAppTest {
         composeRule.onNodeWithContentDescription("Test now, Dawn")
             .performScrollTo()
             .assertTextContains("Test now")
-        composeRule.onNode(hasScrollToIndexAction()).performScrollToIndex(5)
+        composeRule.onNode(hasScrollToIndexAction())
+            .performScrollToNode(hasContentDescription("Test now, Sunset"))
         composeRule.onNodeWithContentDescription("Test now, Sunset")
             .assertTextContains("Testing camera")
     }
@@ -551,6 +581,7 @@ class LenswakeAppTest {
             onSubmitSchedule = { submitRequests += 1 },
         )
 
+        composeRule.onNodeWithContentDescription("Create schedule").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("Activate schedule").performScrollTo().assertExists()
         composeRule.onNodeWithText("Save schedule").performScrollTo().assertIsEnabled().performClick()
         composeRule.runOnIdle { assertEquals(1, submitRequests) }

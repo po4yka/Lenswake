@@ -74,7 +74,6 @@ private fun ScheduleDestination(
         state = state,
         contentPadding = contentPadding,
         onOpenSetup = navigation::navigateToSetup,
-        onBeginCreate = actions.editor.onBeginCreate,
         onBeginEdit = actions.editor.onBeginEdit,
         onRunRehearsal = actions.onRunRehearsal,
         onUpdateForm = actions.editor.onUpdateForm,

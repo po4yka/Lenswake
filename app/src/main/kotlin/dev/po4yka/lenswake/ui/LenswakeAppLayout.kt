@@ -129,6 +129,9 @@ private fun LenswakeScaffold(
                 TopLevelNavigationBar(navigation)
             }
         },
+        floatingActionButton = {
+            CreateScheduleFab(state, navigation, actions.schedules.editor.onBeginCreate)
+        },
     ) { contentPadding ->
         LenswakeNavigationHost(state, actions, navigation, contentPadding)
     }
