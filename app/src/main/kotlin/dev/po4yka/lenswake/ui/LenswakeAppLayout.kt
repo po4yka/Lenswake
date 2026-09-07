@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -123,7 +122,9 @@ private fun LenswakeScaffold(
 ) {
     Scaffold(
         modifier = modifier,
-        topBar = { LenswakeTopAppBar(navigation) },
+        topBar = {
+            LenswakeTopAppBar(state, navigation, actions.schedules.editor.onCancel)
+        },
         bottomBar = {
             if (navigationLayout == AdaptiveNavigationLayout.BOTTOM_BAR) {
                 TopLevelNavigationBar(navigation)
@@ -139,25 +140,26 @@ private fun LenswakeScaffold(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LenswakeTopAppBar(navigation: LenswakeNavigationState) {
+private fun LenswakeTopAppBar(
+    state: LenswakeUiState,
+    navigation: LenswakeNavigationState,
+    onCancelEditor: () -> Unit,
+) {
     val destination = navigation.currentDestination
     val topLevelTitle = topLevelDestinations.firstOrNull { it.key == destination }?.labelResource
-    if (destination == SetupRoute) {
-        TopAppBar(
-            title = { Text(stringResource(R.string.screen_setup_title)) },
-            navigationIcon = {
-                IconButton(onClick = navigation::navigateBack) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_arrow_back_24),
-                        contentDescription = stringResource(R.string.action_back),
-                    )
-                }
-            },
-            modifier = Modifier.testTag(SETUP_TOP_APP_BAR_TAG),
+    when {
+        destination == SetupRoute -> BackTopAppBar(
+            titleResource = R.string.screen_setup_title,
+            testTag = SETUP_TOP_APP_BAR_TAG,
+            onBack = navigation::navigateBack,
         )
-    } else if (topLevelTitle != null) {
+        destination == ScheduleEditorRoute -> BackTopAppBar(
+            titleResource = scheduleEditorTitle(state.scheduleEditor),
+            testTag = SCHEDULE_EDITOR_TOP_APP_BAR_TAG,
+            onBack = onCancelEditor,
+        )
         // The title lives in the bar instead of the list, so it stays visible while scrolling.
-        TopAppBar(
+        topLevelTitle != null -> TopAppBar(
             title = {
                 Text(
                     text = stringResource(topLevelTitle),

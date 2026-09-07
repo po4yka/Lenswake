@@ -816,6 +816,92 @@ class LenswakeAppTest {
         composeRule.onNodeWithContentDescription("Choose start time", substring = true).performScrollTo().performClick()
         composeRule.onNodeWithText("Use time").assertExists()
     }
+
+    @Test
+    fun scheduleEditorOwnsItsDestinationAndBackDiscardsTheDraft() {
+        val state = androidx.compose.runtime.mutableStateOf(
+            LenswakeUiState(
+                profiles = listOf(
+                    ProfileSummaryUiState(
+                        id = "profile-verified",
+                        title = "Pixel 8 Pro",
+                        environment = "Android 17",
+                        compatibility = "Verified",
+                        verifiedForScheduling = true,
+                        supportedCaptures = TEST_SUPPORTED_CAPTURES,
+                    ),
+                ),
+                schedules = listOf(testSchedule(title = "Sunset")),
+                scheduleEditor = ScheduleEditorUiState.Open(
+                    mode = ScheduleEditorMode.Create,
+                    form = ScheduleFormUiState(
+                        name = "Dawn",
+                        startLocal = LocalDateTime.of(2030, 1, 1, 6, 0),
+                        stopLocal = LocalDateTime.of(2030, 1, 1, 8, 0),
+                        zoneId = ZoneId.of("Asia/Tbilisi"),
+                        profileId = "profile-verified",
+                    ),
+                ),
+                actions = UiActionAvailability(canCreateSchedule = true),
+            ),
+        )
+        composeRule.setContent {
+            LenswakeTheme {
+                LenswakeApp(
+                    state = state.value,
+                    onCancelScheduleEditor = {
+                        state.value = state.value.copy(scheduleEditor = ScheduleEditorUiState.Closed)
+                    },
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(SCHEDULE_EDITOR_TOP_APP_BAR_TAG).assertExists()
+        composeRule.onNodeWithTag(TOP_LEVEL_TOP_APP_BAR_TAG).assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Create schedule").assertDoesNotExist()
+        composeRule.onNodeWithText("Sunset").assertDoesNotExist()
+
+        composeRule.onNodeWithContentDescription("Back").performClick()
+
+        composeRule.onNodeWithTag(SCHEDULE_EDITOR_TOP_APP_BAR_TAG).assertDoesNotExist()
+        composeRule.onNodeWithTag(TOP_LEVEL_TOP_APP_BAR_TAG).assertExists()
+        composeRule.onNodeWithText("Sunset").assertExists()
+        composeRule.onNodeWithContentDescription("Create schedule").assertExists()
+    }
+
+    @Test
+    fun rejectedScheduleSaveStaysVisibleOnTheEditorDestination() {
+        val failure = "That schedule overlaps an existing one."
+        setContent(
+            state = LenswakeUiState(
+                profiles = listOf(
+                    ProfileSummaryUiState(
+                        id = "profile-verified",
+                        title = "Pixel 8 Pro",
+                        environment = "Android 17",
+                        compatibility = "Verified",
+                        verifiedForScheduling = true,
+                        supportedCaptures = TEST_SUPPORTED_CAPTURES,
+                    ),
+                ),
+                scheduleEditor = ScheduleEditorUiState.Open(
+                    mode = ScheduleEditorMode.Create,
+                    form = ScheduleFormUiState(
+                        name = "Dawn",
+                        startLocal = LocalDateTime.of(2030, 1, 1, 6, 0),
+                        stopLocal = LocalDateTime.of(2030, 1, 1, 8, 0),
+                        zoneId = ZoneId.of("Asia/Tbilisi"),
+                        profileId = "profile-verified",
+                    ),
+                ),
+                scheduleAction = ScheduleActionUiState.Failed(failure),
+            ),
+        )
+
+        composeRule.onNodeWithTag(SCHEDULE_EDITOR_TOP_APP_BAR_TAG).assertExists()
+        composeRule.onNodeWithText(failure).assertExists()
+        composeRule.onNodeWithText("Save schedule").performScrollTo().assertIsEnabled()
+    }
 }
 
 private fun testSchedule(

@@ -20,7 +20,6 @@ import dev.po4yka.lenswake.ui.RehearsalActionUiState
 import dev.po4yka.lenswake.ui.RehearsalTargetUiState
 import dev.po4yka.lenswake.ui.ScheduleActionUiState
 import dev.po4yka.lenswake.ui.ScheduleEditorUiState
-import dev.po4yka.lenswake.ui.ScheduleFormUiState
 import dev.po4yka.lenswake.ui.component.ReadinessCard
 import dev.po4yka.lenswake.ui.component.ScreenHeader
 import dev.po4yka.lenswake.ui.component.SectionHeading
@@ -35,26 +34,19 @@ fun SchedulesScreen(
     onOpenSetup: () -> Unit,
     onBeginEdit: (String) -> Unit,
     onRunRehearsal: (String) -> Unit,
-    onUpdateForm: (ScheduleFormUiState) -> Unit,
-    onSubmit: () -> Unit,
-    onCancelEditor: () -> Unit,
     onSetEnabled: (String, Boolean) -> Unit,
     onRequestDelete: (String) -> Unit,
     onCancelDelete: () -> Unit,
     onConfirmDelete: (String) -> Unit,
     onClearOutcome: () -> Unit,
 ) {
-    val busyMessage = (state.scheduleAction as? ScheduleActionUiState.Working)?.message
     SchedulesList(
         state = state,
         contentPadding = contentPadding,
-        busyMessage = busyMessage,
+        busy = state.scheduleAction is ScheduleActionUiState.Working,
         onOpenSetup = onOpenSetup,
         onBeginEdit = onBeginEdit,
         onRunRehearsal = onRunRehearsal,
-        onUpdateForm = onUpdateForm,
-        onSubmit = onSubmit,
-        onCancelEditor = onCancelEditor,
         onSetEnabled = onSetEnabled,
         onRequestDelete = onRequestDelete,
         onClearOutcome = onClearOutcome,
@@ -70,13 +62,10 @@ fun SchedulesScreen(
 private fun SchedulesList(
     state: LenswakeUiState,
     contentPadding: PaddingValues,
-    busyMessage: String?,
+    busy: Boolean,
     onOpenSetup: () -> Unit,
     onBeginEdit: (String) -> Unit,
     onRunRehearsal: (String) -> Unit,
-    onUpdateForm: (ScheduleFormUiState) -> Unit,
-    onSubmit: () -> Unit,
-    onCancelEditor: () -> Unit,
     onSetEnabled: (String, Boolean) -> Unit,
     onRequestDelete: (String) -> Unit,
     onClearOutcome: () -> Unit,
@@ -92,10 +81,9 @@ private fun SchedulesList(
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         overviewItems(state, onOpenSetup, onClearOutcome)
-        editorItem(state, busyMessage, onUpdateForm, onSubmit, onCancelEditor)
         scheduleItems(
             state = state,
-            busy = busyMessage != null,
+            busy = busy,
             onBeginEdit = onBeginEdit,
             onRunRehearsal = onRunRehearsal,
             onSetEnabled = onSetEnabled,
@@ -132,26 +120,6 @@ private fun LazyListScope.overviewItems(
                 scheduleTitle = state.schedules.firstOrNull { it.id == rehearsalScheduleId }?.title,
             )
         }
-    }
-}
-
-private fun LazyListScope.editorItem(
-    state: LenswakeUiState,
-    busyMessage: String?,
-    onUpdateForm: (ScheduleFormUiState) -> Unit,
-    onSubmit: () -> Unit,
-    onCancelEditor: () -> Unit,
-) {
-    val editor = state.scheduleEditor as? ScheduleEditorUiState.Open ?: return
-    item {
-        ScheduleEditor(
-            editor = editor,
-            profiles = state.profiles,
-            busyMessage = busyMessage,
-            onUpdateForm = onUpdateForm,
-            onSubmit = onSubmit,
-            onCancel = onCancelEditor,
-        )
     }
 }
 

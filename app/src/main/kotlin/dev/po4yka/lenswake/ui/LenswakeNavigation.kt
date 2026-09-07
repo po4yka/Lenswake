@@ -18,6 +18,9 @@ internal data object DiagnosticsRoute : LenswakeRoute
 @Serializable
 internal data object SetupRoute : LenswakeRoute
 
+@Serializable
+internal data object ScheduleEditorRoute : LenswakeRoute
+
 internal enum class LenswakeTopLevel(
     val route: LenswakeRoute,
 ) {
@@ -60,6 +63,29 @@ internal class LenswakeNavigationState(
         if (currentDestination != SetupRoute) {
             activeBackStack.add(SetupRoute)
         }
+    }
+
+    /**
+     * The schedule editor is a nested destination of Schedules, so its route belongs to that stack
+     * even when the editor state changes while another section is selected.
+     */
+    fun showScheduleEditor() {
+        val schedules = backStacks.getValue(LenswakeTopLevel.SCHEDULES)
+        if (ScheduleEditorRoute !in schedules) {
+            schedules.add(ScheduleEditorRoute)
+        }
+    }
+
+    fun hideScheduleEditor() {
+        backStacks.getValue(LenswakeTopLevel.SCHEDULES).remove(ScheduleEditorRoute)
+    }
+
+    /**
+     * Leave the current destination. The editor route mirrors the editor state, so leaving it must
+     * discard the draft; popping the route alone would strand an editor no screen renders any more.
+     */
+    fun navigateBackFrom(onCancelScheduleEditor: () -> Unit) {
+        if (currentDestination == ScheduleEditorRoute) onCancelScheduleEditor() else navigateBack()
     }
 
     /**

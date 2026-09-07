@@ -97,7 +97,6 @@ private fun ScheduleEditorContent(
         modifier = Modifier.padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        ScheduleEditorHeader(editor.mode)
         ScheduleNameField(form, validation.nameError, enabled, onUpdateForm)
         ScheduleTimingSection(form, validation.timingError, enabled, onChoosePicker)
         ScheduleCameraSection(form, profiles, validation.captureError, enabled, onUpdateForm)
@@ -107,23 +106,6 @@ private fun ScheduleEditorContent(
         ScheduleEditorError(editor.error)
         ScheduleEditorActions(editor.mode, validation.canSubmit, busyMessage, onSubmit, onCancel)
     }
-}
-
-@Composable
-private fun ScheduleEditorHeader(mode: ScheduleEditorMode) {
-    Text(
-        modifier = Modifier.semantics { heading() },
-        text = when (mode) {
-            ScheduleEditorMode.Create -> stringResource(R.string.schedule_editor_create_title)
-            is ScheduleEditorMode.Edit -> stringResource(R.string.schedule_editor_edit_title)
-        },
-        style = MaterialTheme.typography.titleLarge,
-    )
-    Text(
-        text = stringResource(R.string.schedule_editor_summary),
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
 }
 
 @Composable

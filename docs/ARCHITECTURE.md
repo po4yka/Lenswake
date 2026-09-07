@@ -350,7 +350,9 @@ Unknown required state blocks enabling a schedule. Known low charging/storage st
 warnings under current policy; battery below the configured application threshold blocks.
 
 The current Navigation 3 surface has three top-level destinations—Schedules, Profiles, and
-Diagnostics—with Setup nested from Schedules. Each top level has its own back stack and adaptive
+Diagnostics—with Setup and the schedule editor nested from Schedules. The editor route is derived
+from the editor UI state, so a refused open never leaves a route without a form and a save that
+closes the form also drops the route. Each top level has its own back stack and adaptive
 navigation changes with window width. ViewModels expose durable `StateFlow` UI state; Compose does
 not call Android services or repositories directly.
 
