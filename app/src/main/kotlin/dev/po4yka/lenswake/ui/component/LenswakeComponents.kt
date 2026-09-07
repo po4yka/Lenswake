@@ -344,7 +344,7 @@ fun StatusRow(
             Text(
                 text = status,
                 style = MaterialTheme.typography.labelLarge,
-                color = visuals.indicatorContentColor,
+                color = visuals.state.onSurfaceAccent(MaterialTheme.colorScheme),
             )
             Text(
                 text = detail,
