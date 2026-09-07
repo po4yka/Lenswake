@@ -70,6 +70,7 @@ private fun LazyListScope.profileCertificationAction(
             } else {
                 ""
             },
+            actionIsPrimary = false,
             onAction = onImportReleaseCertification,
         )
     }
@@ -100,6 +101,7 @@ private fun LazyListScope.profileInstallAction(
             actionEnabled = state.actions.canInstallCandidateProfile,
             actionInProgress = installing,
             unavailableReason = state.actions.installCandidateProfileUnavailableReason,
+            actionIsPrimary = state.profileInstall !is ProfileInstallUiState.ExperimentalConsentRequired,
             onAction = onInstallCandidateProfile,
         )
     }
@@ -234,6 +236,7 @@ private fun ProfileRehearsalAction(
         actionInProgress = inProgress,
         actionContentDescription = actionDescription,
         unavailableReason = state.actions.rehearsalUnavailableReason,
+        actionIsPrimary = false,
         onAction = onRunRehearsal,
     )
 }

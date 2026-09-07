@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -184,6 +185,7 @@ fun ActionSection(
     modifier: Modifier = Modifier,
     actionInProgress: Boolean = false,
     actionContentDescription: String? = null,
+    actionIsPrimary: Boolean = true,
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -211,6 +213,7 @@ fun ActionSection(
                     }
                 },
             enabled = actionEnabled && !actionInProgress,
+            colors = if (actionIsPrimary) ButtonDefaults.buttonColors() else ButtonDefaults.filledTonalButtonColors(),
             onClick = onAction,
         ) {
             if (actionInProgress) {
