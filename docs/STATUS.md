@@ -196,6 +196,28 @@ and the change the observation supports are in
 The correction is schema-affecting and is not applied yet. No capture configuration is verified on
 this environment, so no schedule can be created from it.
 
+## Connected audit run on the target Pixel 8 Pro
+
+On 2026-09-07, `main@fd6b64c` ran the full host gate (green) and both ordinary connected suites on
+the connected certification target. `:data` connected finished 30 tests with 3 stale-fixture
+failures (receipt-policy predicate, `execution_key` uniqueness, `schedules` foreign key). The
+`:app` connected run crashed its instrumentation process after 47 of 137 tests:
+`AutomationExecutionServiceManifestTest.bootRecoveryReceiverRemainsSafeWithoutExactAlarmAccess`
+invokes `AlarmRecoveryReceiver.onReceive` directly, `goAsync()` returns `null`, and
+`AlarmReceivers.kt:184` dereferences it in `finally` — a latent production fragility that needs a
+null guard. Four failures are deterministic androidTest fixture drift that landed after the last
+hosted instrumentation run; none is a Pixel Camera or environment product defect. Details, root
+causes, and verified cleanup are in
+[pixel-8-pro-connected-audit-2026-09-07.md](research/pixel-8-pro-connected-audit-2026-09-07.md).
+The five findings were fixed the same day: a `goAsync()` null guard in `AlarmRecoveryReceiver`
+plus an explicit rationale for the receiver's deliberate process-wide bootstrap scope, androidTest
+fixture repairs for the receipt predicate, the `execution_key` uniqueness, the `schedules` foreign
+key, and the journal marker identity, plus removal of the unused `androidx-datastore-preferences`
+dependency. Re-verified on the same device and build with the screen unlocked: host gate green,
+`:data` connected 30/30, `:app` connected 142 tests finished with 0 failures (5 opt-in physical
+fixtures skipped). This is the first complete green pass of both ordinary connected suites on this
+target.
+
 ## Current acceptance work
 
 1. Build one signed release APK, record its SHA-256, install that exact artifact on Pixel 7 and
