@@ -371,6 +371,34 @@ class LenswakeAppTest {
     }
 
     @Test
+    fun profilesRouteTruncatesFingerprintAndLabelsCopyPerProfile() {
+        setContent(
+            state = LenswakeUiState(
+                profiles = listOf(
+                    ProfileSummaryUiState(
+                        id = "profile-1",
+                        title = "Pixel 8 Pro",
+                        environment = "Android 17",
+                        compatibility = "Needs test",
+                        verifiedForScheduling = false,
+                        definitionFingerprint = TEST_PROFILE_FINGERPRINT,
+                        supportedCaptures = TEST_SUPPORTED_CAPTURES,
+                    ),
+                ),
+            ),
+        )
+
+        composeRule.onNodeWithText("Profiles").performClick()
+        val identity = hasText("Profile fingerprint: 766751cad953…", substring = true)
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToNode(identity)
+        composeRule.onNode(identity).assertExists()
+        composeRule.onNodeWithText(TEST_PROFILE_FINGERPRINT, substring = true).assertDoesNotExist()
+        composeRule.onNode(
+            hasContentDescription("Copy fingerprint, Pixel 8 Pro") and hasClickAction(),
+        ).assertExists()
+    }
+
+    @Test
     fun profilesRouteShowsRestoredRehearsalDeadlineAndDisablesTest() {
         val detail = "Session session-rehearsal-active · STOP deadline 2026-08-10T06:30:00+04:00[Asia/Tbilisi]"
         setContent(
@@ -960,3 +988,6 @@ private val TEST_SUPPORTED_CAPTURES = setOf(
     CaptureConfiguration.TimeLapse(TimeLapseSpeed.X120),
     CaptureConfiguration.Video(dev.po4yka.lenswake.core.LensSelection.FRONT),
 )
+
+private const val TEST_PROFILE_FINGERPRINT =
+    "766751cad953418b993675b7b5662ecd3e532026971ba3e36ca0a720be215d69"

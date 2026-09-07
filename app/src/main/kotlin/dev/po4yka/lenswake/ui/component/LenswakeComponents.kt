@@ -328,6 +328,9 @@ fun StatusRow(
     detail: String,
     status: String,
     modifier: Modifier = Modifier,
+    actionLabel: String? = null,
+    actionContentDescription: String? = null,
+    onAction: (() -> Unit)? = null,
 ) {
     val visuals = statusVisuals(status)
     Row(
@@ -358,6 +361,18 @@ fun StatusRow(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (actionLabel != null && onAction != null) {
+                OutlinedButton(
+                    modifier = Modifier
+                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        .semantics {
+                            actionContentDescription?.let { contentDescription = it }
+                        },
+                    onClick = onAction,
+                ) {
+                    Text(actionLabel)
+                }
+            }
         }
     }
 }

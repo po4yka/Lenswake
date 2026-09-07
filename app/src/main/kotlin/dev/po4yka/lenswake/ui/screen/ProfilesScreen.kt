@@ -124,16 +124,7 @@ private fun LazyListScope.installedProfiles(
     }
     items(state.profiles.size, key = { state.profiles[it].id }) { index ->
         val profile = state.profiles[index]
-        StatusRow(
-            title = profile.title,
-            detail = stringResource(
-                R.string.profile_identity_detail,
-                profile.supportTier.label(),
-                profile.environment,
-                profile.definitionFingerprint,
-            ),
-            status = profile.compatibility,
-        )
+        ProfileIdentityRow(profile)
         profile.captureMatrix.forEach { row ->
             StatusRow(
                 title = row.capture.label(),

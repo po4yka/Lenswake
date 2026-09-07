@@ -77,7 +77,9 @@
     <string name="profile_certification_profile_mismatch">The physical evidence does not match this exact profile definition.</string>
     <string name="profile_certification_invalid_bundle">Certification was rejected: signature, receipt, or installed APK identity did not match.</string>
     <string name="profile_certification_persistence_failed">The certified profile could not be saved and verified.</string>
-    <string name="profile_identity_detail">%1$s · %2$s\nProfile fingerprint: %3$s</string>
+    <string name="profile_identity_detail">%1$s · %2$s\nProfile fingerprint: %3$s…</string>
+    <string name="action_copy_fingerprint">Copy fingerprint</string>
+    <string name="profile_fingerprint_copy_content_description">Copy fingerprint, %1$s</string>
     <string name="profiles_test_title">Test recording</string>
     <string name="profile_test_content_description">Test recording, %1$s</string>
     <string name="profiles_test_running_detail">Pixel Camera is recording briefly. Lenswake will stop it automatically.</string>
