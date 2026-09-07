@@ -3,6 +3,7 @@ package dev.po4yka.lenswake.alarm
 import android.app.job.JobInfo
 import android.app.job.JobScheduler
 import android.content.BroadcastReceiver
+import android.content.BroadcastReceiver.PendingResult
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -173,15 +174,20 @@ class AlarmRecoveryReceiver : BroadcastReceiver() {
         val action = intent.action ?: return
         if (action !in AlarmRecoveryBootstrapCoordinator.SUPPORTED_ACTIONS) return
         // Checkpoint and journal persistence are synchronous disk writes; they run off the main
-        // thread while the broadcast stays alive through goAsync.
-        val pendingResult = goAsync()
+        // thread while the broadcast stays alive through goAsync. The receiver has no lifecycle
+        // owner that could host a scope, and the bootstrap work is fully synchronous and bounded,
+        // so this one process-wide scope is the deliberate exception.
+        // goAsync() returns null when onReceive is invoked outside a framework dispatch, for
+        // example by an instrumentation harness calling the receiver directly. There is then no
+        // broadcast bookkeeping left to finish, so the null result must not be dereferenced.
+        val pendingResult: PendingResult? = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 handleRecoveryAction(context.applicationContext, action)
             } catch (error: RuntimeException) {
                 Log.e(TAG, "Alarm recovery bootstrap failed for $action", error)
             } finally {
-                pendingResult.finish()
+                pendingResult?.finish()
             }
         }
     }

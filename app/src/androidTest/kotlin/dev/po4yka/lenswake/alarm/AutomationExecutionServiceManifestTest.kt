@@ -137,6 +137,9 @@ class AutomationExecutionServiceManifestTest {
         assumeFalse(alarmManager.canScheduleExactAlarms())
         val processId = Process.myPid()
 
+        // BOOT_COMPLETED is a protected broadcast, so the harness invokes the receiver directly.
+        // goAsync() then returns null; the receiver's null guard keeps the process alive, which
+        // is exactly what this test observes after the sleep.
         AlarmRecoveryReceiver().onReceive(context, Intent(Intent.ACTION_BOOT_COMPLETED))
         SystemClock.sleep(1_000L)
 
