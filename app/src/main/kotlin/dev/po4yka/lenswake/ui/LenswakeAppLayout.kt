@@ -17,9 +17,12 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.PermanentDrawerSheet
 import androidx.compose.material3.PermanentNavigationDrawer
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -120,6 +123,17 @@ private fun LenswakeScaffold(
     navigationLayout: AdaptiveNavigationLayout,
     modifier: Modifier,
 ) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    // A succeeded change needs no decision and the list below already shows its result, so it is
+    // announced once and expires. Working locks the whole screen and Failed carries the rollback
+    // disclosure, so both keep their card in the list until the user acts on them.
+    val succeeded = state.scheduleAction as? ScheduleActionUiState.Succeeded
+    LaunchedEffect(succeeded) {
+        if (succeeded != null) {
+            snackbarHostState.showSnackbar(succeeded.message)
+            actions.schedules.items.onClearOutcome()
+        }
+    }
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -130,6 +144,8 @@ private fun LenswakeScaffold(
                 TopLevelNavigationBar(navigation)
             }
         },
+        // Scaffold offsets the snackbar above the floating action button and the bottom bar.
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             CreateScheduleFab(state, navigation, actions.schedules.editor.onBeginCreate)
         },

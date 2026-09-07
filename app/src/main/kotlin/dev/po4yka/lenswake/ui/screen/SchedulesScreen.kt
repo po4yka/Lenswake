@@ -108,8 +108,12 @@ private fun LazyListScope.overviewItems(
             )
         }
     }
-    if (state.scheduleAction !is ScheduleActionUiState.Idle) {
-        item { ScheduleOutcome(action = state.scheduleAction, onDismiss = onClearOutcome) }
+    // Succeeded now reaches the user through the Scaffold snackbar, which expires on its own.
+    // Working disables every control on this screen and Failed carries the rollback disclosure,
+    // so both stay on screen until the user dismisses them.
+    val outcome = state.scheduleAction
+    if (outcome is ScheduleActionUiState.Working || outcome is ScheduleActionUiState.Failed) {
+        item { ScheduleOutcome(action = outcome, onDismiss = onClearOutcome) }
     }
     val rehearsalScheduleId =
         (state.rehearsalTarget as? RehearsalTargetUiState.Schedule)?.scheduleId

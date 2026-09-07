@@ -589,6 +589,15 @@ class LenswakeAppTest {
     }
 
     @Test
+    fun scheduleSuccessIsAnnouncedInASnackbarInsteadOfADismissibleCard() {
+        val message = "Schedule created. Start and end times are set."
+        setContent(state = LenswakeUiState(scheduleAction = ScheduleActionUiState.Succeeded(message)))
+
+        composeRule.onNodeWithText(message).assertExists()
+        composeRule.onNode(hasText("Dismiss") and hasClickAction()).assertDoesNotExist()
+    }
+
+    @Test
     fun scheduleSaveShowsProgressInTheSubmitButton() {
         val busyMessage = "Saving schedule…"
         setContent(
