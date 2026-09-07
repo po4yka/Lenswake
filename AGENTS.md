@@ -14,6 +14,8 @@ artifacts remain in their established language.
   observation; an explicitly authorized target-device calibration observation; current official
   Android/AOSP documentation; reproducible serial-pinned ADB evidence; dated repository research;
   assumptions.
+- Repository skills live in `.agents/skills/` and are read directly by Codex; Claude Code sees
+  them through the `.claude/skills/` symlinks. Use `material-3` for Material Design 3 UI work.
 - If sources disagree materially, surface and resolve the drift. Do not silently encode an assumption
   or transfer evidence from another commit, APK, device, package split, locale, or profile schema.
 
