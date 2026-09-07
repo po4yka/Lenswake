@@ -1,5 +1,6 @@
 package dev.po4yka.lenswake.ui.screen
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -30,6 +31,10 @@ import dev.po4yka.lenswake.ui.component.SummaryCard
 import dev.po4yka.lenswake.ui.scaffoldContentViewport
 import dev.po4yka.lenswake.ui.screenContentPadding
 
+/**
+ * Sessions own their timeline: the list adds no arrangement spacing, so each top-level section pads
+ * its own top by 20dp while a session's timeline rows sit flush under their card.
+ */
 @Composable
 fun DiagnosticsScreen(
     state: LenswakeUiState,
@@ -45,7 +50,6 @@ fun DiagnosticsScreen(
             topMargin = 24.dp,
             bottomMargin = 24.dp,
         ),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         diagnosticsHeader()
         exportAction(state, onExportDiagnostics)
@@ -62,7 +66,9 @@ private fun LazyListScope.exportAction(
 
     item {
         OutlinedButton(
-            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+            modifier = Modifier
+                .padding(top = 20.dp)
+                .sizeIn(minWidth = 48.dp, minHeight = 48.dp),
             onClick = onExportDiagnostics,
         ) {
             Text(stringResource(R.string.action_export_diagnostics))
@@ -82,9 +88,17 @@ private fun LazyListScope.attentionItems(
         state.profilePersistenceIssues.isNotEmpty()
     if (!hasAttentionItems) return
 
-    item { SectionHeading(stringResource(R.string.status_needs_attention)) }
     item {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionHeading(
+            text = stringResource(R.string.status_needs_attention),
+            modifier = Modifier.padding(top = 20.dp),
+        )
+    }
+    item {
+        Column(
+            modifier = Modifier.padding(top = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             state.alarmTransportIncidents.forEach { incident ->
                 val opensPixelCamera = incident.action == AlarmTransportIncidentUiAction.OPEN_PIXEL_CAMERA
                 SummaryCard(
@@ -115,10 +129,16 @@ private fun LazyListScope.attentionItems(
 }
 
 private fun LazyListScope.diagnosticSessions(state: LenswakeUiState) {
-    item { SectionHeading(stringResource(R.string.diagnostics_sessions_section)) }
+    item {
+        SectionHeading(
+            text = stringResource(R.string.diagnostics_sessions_section),
+            modifier = Modifier.padding(top = 20.dp),
+        )
+    }
     if (state.diagnosticSessions.isEmpty()) {
         item {
             ListItem(
+                modifier = Modifier.padding(top = 20.dp),
                 headlineContent = {
                     Text(stringResource(R.string.diagnostics_no_activity_title))
                 },
@@ -131,22 +151,25 @@ private fun LazyListScope.diagnosticSessions(state: LenswakeUiState) {
     }
     state.diagnosticSessions.forEach { session ->
         item(key = "diagnostic-session-${session.id}") {
-            DiagnosticSessionCard(session)
+            DiagnosticSessionCard(
+                session = session,
+                modifier = Modifier.padding(top = 20.dp),
+            )
         }
         session.timeline.forEach { event ->
             item(key = "diagnostic-event-${session.id}-${event.id}") {
-                DiagnosticTimelineRow(
-                    event = event,
-                    modifier = Modifier.padding(start = 16.dp),
-                )
+                DiagnosticTimelineRow(event)
             }
         }
     }
 }
 
 @Composable
-private fun DiagnosticSessionCard(session: DiagnosticSessionUiState) {
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+private fun DiagnosticSessionCard(
+    session: DiagnosticSessionUiState,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedCard(modifier = modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(vertical = 8.dp)) {
             Column(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -251,7 +274,10 @@ private fun DiagnosticTimelineRow(
         }
     }
     ListItem(
-        modifier = modifier,
+        modifier = modifier
+            .padding(start = 16.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant)
+            .padding(start = 2.dp),
         headlineContent = { Text(event.title) },
         supportingContent = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
