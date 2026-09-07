@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Lenswake" parent="android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:fontFamily">sans</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
+    <!-- Only the window Android draws before Compose reads this; MainActivity.enableEdgeToEdge()
+         owns the bars from onCreate onwards. DayNight is Theme.DeviceDefault.Light in values/ and
+         Theme.DeviceDefault in values-night/, and isLightTheme is true/false on those two branches,
+         so the bar flags follow whichever the framework picked. -->
+    <style name="Theme.Lenswake" parent="android:style/Theme.DeviceDefault.DayNight">
+        <item name="android:windowLightStatusBar">?android:attr/isLightTheme</item>
+        <item name="android:windowLightNavigationBar">?android:attr/isLightTheme</item>
+        <item name="android:windowActionBar">false</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:windowNoTitle">true</item>
     </style>
