@@ -3,6 +3,7 @@ package dev.po4yka.lenswake.alarm
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import dev.po4yka.lenswake.core.ScheduleId
 import dev.po4yka.lenswake.core.SessionId
 import java.time.Instant
 import org.junit.Assert.assertEquals
@@ -59,16 +60,18 @@ class AlarmJournalReconcilerTest {
     @Test
     fun exhaustedDeliveriesAreNotRearmedDuringRecovery() {
         withJournal { journal, _ ->
-            val schedule = testSchedule()
+            // The exhausted delivery needs its own schedule identity: the journal keeps one
+            // winner per markerId, and markerId deliberately excludes the delivery attempt.
+            val exhaustedSchedule = testSchedule().copy(id = ScheduleId("alarm-rearm-exhausted"))
             requireNotNull(
                 journal.persist(
                     AlarmContract.triggerIntent(
                         context,
                         AlarmTrigger(
                             kind = AlarmKind.STOP,
-                            scheduleId = schedule.id,
-                            scheduleUpdatedAt = schedule.updatedAt,
-                            expectedAt = schedule.stopAt,
+                            scheduleId = exhaustedSchedule.id,
+                            scheduleUpdatedAt = exhaustedSchedule.updatedAt,
+                            expectedAt = exhaustedSchedule.stopAt,
                             deliveryAttempt = MAX_ALARM_DELIVERY_ATTEMPTS,
                         ),
                     ),
