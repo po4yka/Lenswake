@@ -227,15 +227,30 @@ class LenswakeAppTest {
                         required = true,
                         remediation = SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION,
                     ),
+                    CapabilityUiState(
+                        name = "Exact alarms",
+                        status = CapabilityStatus.BLOCKED,
+                        detail = "Exact-alarm access is required.",
+                        required = true,
+                        remediation = SetupRemediationAction.OPEN_EXACT_ALARM_SETTINGS,
+                    ),
                 ),
             ),
             onRemediate = { dispatched = it },
         )
 
         composeRule.onNodeWithText("Review setup").performClick()
-        composeRule.onNodeWithText("Resolve").performClick()
+        val notificationsResolve = hasContentDescription("Resolve, Notifications")
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToNode(notificationsResolve)
+        composeRule.onNode(notificationsResolve).performClick()
         composeRule.runOnIdle {
             assertEquals(SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION, dispatched)
+        }
+        val exactAlarmsResolve = hasContentDescription("Resolve, Exact alarms")
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToNode(exactAlarmsResolve)
+        composeRule.onNode(exactAlarmsResolve).performClick()
+        composeRule.runOnIdle {
+            assertEquals(SetupRemediationAction.OPEN_EXACT_ALARM_SETTINGS, dispatched)
         }
     }
 

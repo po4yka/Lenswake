@@ -245,6 +245,7 @@
     <string name="capability_profile_unavailable">No verified profile is configured for this environment.</string>
     <string name="capability_test_required">Run a successful test recording on this device.</string>
     <string name="capability_privileged_unchecked">Optional privileged capabilities have not been checked.</string>
+    <string name="capability_resolve_content_description">Resolve, %1$s</string>
 
     <string name="preflight_pixel_camera_installed">Pixel Camera version %1$d is installed on %2$s.</string>
     <string name="preflight_pixel_camera_check_failed">Pixel Camera availability could not be checked.</string>

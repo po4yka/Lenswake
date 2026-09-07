@@ -158,8 +158,12 @@ fun CapabilityRow(
                 style = MaterialTheme.typography.bodyMedium,
             )
             capability.remediation?.let { action ->
+                val resolveDescription =
+                    stringResource(R.string.capability_resolve_content_description, capability.name)
                 OutlinedButton(
-                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                    modifier = Modifier
+                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        .semantics { contentDescription = resolveDescription },
                     onClick = { onRemediate(action) },
                 ) {
                     Text(stringResource(R.string.action_resolve))
