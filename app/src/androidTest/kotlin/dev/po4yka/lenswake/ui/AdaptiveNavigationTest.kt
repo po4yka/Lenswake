@@ -6,6 +6,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -13,6 +14,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpRect
 import androidx.compose.ui.unit.dp
 import dev.po4yka.lenswake.ui.theme.LenswakeTheme
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -63,6 +65,26 @@ class AdaptiveNavigationTest {
         )
     }
 
+    @Test
+    fun expandedWindowCapsAndCentresTheContentColumn() {
+        renderApp(width = 1400.dp, height = 700.dp)
+        val pane = composeRule.onNodeWithTag(TOP_LEVEL_TOP_APP_BAR_TAG).getUnclippedBoundsInRoot()
+        val viewport = composeRule.onNode(hasScrollToIndexAction()).getUnclippedBoundsInRoot()
+
+        assertEquals(
+            "Content column was not capped at the readable maximum: $viewport",
+            MAX_CONTENT_WIDTH.value,
+            (viewport.right - viewport.left).value,
+            TOLERANCE_DP,
+        )
+        assertEquals(
+            "Capped content column was not centred in the content pane: $viewport",
+            (viewport.left - pane.left).value,
+            (pane.right - viewport.right).value,
+            TOLERANCE_DP,
+        )
+    }
+
     private fun renderApp(width: Dp, height: Dp): Pair<DpRect, DpRect> {
         composeRule.setContent {
             LenswakeTheme(dynamicColor = false) {
@@ -83,6 +105,7 @@ class AdaptiveNavigationTest {
 
     private companion object {
         const val ROOT_TAG = "adaptive-navigation-test-root"
+        const val TOLERANCE_DP = 0.6f
     }
 }
 
