@@ -37,3 +37,6 @@ google-services.json
 
 # oh-my-claudecode
 .omc/
+
+# Local agent state
+.omo/
