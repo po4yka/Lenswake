@@ -63,6 +63,11 @@ jobs:
     name: release-build
     needs: host
     uses: ./.github/workflows/signed-release-apk.yml
+    secrets:
+      LENSWAKE_RELEASE_KEYSTORE_BASE64: ${{ secrets.LENSWAKE_RELEASE_KEYSTORE_BASE64 }}
+      LENSWAKE_RELEASE_STORE_PASSWORD: ${{ secrets.LENSWAKE_RELEASE_STORE_PASSWORD }}
+      LENSWAKE_RELEASE_KEY_ALIAS: ${{ secrets.LENSWAKE_RELEASE_KEY_ALIAS }}
+      LENSWAKE_RELEASE_KEY_PASSWORD: ${{ secrets.LENSWAKE_RELEASE_KEY_PASSWORD }}
     permissions:
       contents: read
       attestations: write # Permit the shared build job to store APK provenance.

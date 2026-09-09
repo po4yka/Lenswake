@@ -2,6 +2,15 @@ name: Signed release APK
 
 on:
   workflow_call:
+    secrets:
+      LENSWAKE_RELEASE_KEYSTORE_BASE64:
+        required: false
+      LENSWAKE_RELEASE_STORE_PASSWORD:
+        required: false
+      LENSWAKE_RELEASE_KEY_ALIAS:
+        required: false
+      LENSWAKE_RELEASE_KEY_PASSWORD:
+        required: false
     inputs:
       version-name:
         required: true
