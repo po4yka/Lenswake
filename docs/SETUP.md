@@ -69,9 +69,17 @@ Blocking checks include exact alarms, notifications, media access, full-screen i
 secure launch, device wake, Accessibility enabled/connected, profile availability/compatibility,
 current rehearsal, battery, and unknown resource state.
 
-Known lack of charging and known storage below the current advisory threshold are warnings. Battery
-below the application threshold blocks. Shizuku/privileged fallback remains an optional warning
-because it is not part of the supported standard path.
+Disconnected external power and known storage below the current advisory threshold are warnings,
+not blockers. External power is read from Android's plugged-in state, so adaptive charging pauses
+and a full battery do not create a false warning; connecting or disconnecting power refreshes Setup.
+Battery below the application threshold blocks. Shizuku/privileged fallback is informational under
+**Optional features**: this build does not include it, and no setup action is required.
+
+Failed profile and Camera test checks offer **Resolve**, which opens **Profiles**. A newly installed
+exact profile explicitly asks for its first test rather than claiming that the camera environment
+changed. Install or update the profile when needed, then use **Test recording** before the capture
+matrix. Opening Profiles does not start recording; the test still requires an explicit action and
+all existing prerequisites. Release certification is a separate optional section after local testing.
 
 ## Environment mismatch
 

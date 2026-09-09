@@ -7,6 +7,19 @@ import org.junit.jupiter.api.Test
 
 class AndroidResourcePreflightObservationTest {
     @Test
+    fun externalPowerRemainsAvailableWhenBatteryChargingIsPaused() {
+        listOf(
+            BatteryManager.BATTERY_PLUGGED_AC,
+            BatteryManager.BATTERY_PLUGGED_USB,
+            BatteryManager.BATTERY_PLUGGED_WIRELESS,
+            BatteryManager.BATTERY_PLUGGED_DOCK,
+        ).forEach { plugged ->
+            assertEquals(PreflightStatus.PASSED, externalPowerObservation(plugged).status)
+        }
+        assertEquals(PreflightStatus.FAILED, externalPowerObservation(0).status)
+    }
+
+    @Test
     fun batteryUsesDocumentedThirtyPercentMinimumAndRejectsInvalidReadings() {
         assertEquals(PreflightStatus.FAILED, batteryObservation(29).status)
         assertEquals(PreflightStatus.PASSED, batteryObservation(30).status)
@@ -16,28 +29,10 @@ class AndroidResourcePreflightObservationTest {
     }
 
     @Test
-    fun chargingDistinguishesConnectedDisconnectedAndUnknownStates() {
-        assertEquals(
-            PreflightStatus.PASSED,
-            chargingObservation(BatteryManager.BATTERY_STATUS_CHARGING).status,
-        )
-        assertEquals(
-            PreflightStatus.PASSED,
-            chargingObservation(BatteryManager.BATTERY_STATUS_FULL).status,
-        )
-        assertEquals(
-            PreflightStatus.FAILED,
-            chargingObservation(BatteryManager.BATTERY_STATUS_DISCHARGING).status,
-        )
-        assertEquals(
-            PreflightStatus.FAILED,
-            chargingObservation(BatteryManager.BATTERY_STATUS_NOT_CHARGING).status,
-        )
-        assertEquals(
-            PreflightStatus.UNKNOWN,
-            chargingObservation(BatteryManager.BATTERY_STATUS_UNKNOWN).status,
-        )
-        assertEquals(PreflightStatus.UNKNOWN, chargingObservation(null).status)
+    fun externalPowerRejectsMissingAndInvalidReadings() {
+        assertEquals(PreflightStatus.UNKNOWN, externalPowerObservation(null).status)
+        assertEquals(PreflightStatus.UNKNOWN, externalPowerObservation(-1).status)
+        assertEquals(PreflightStatus.UNKNOWN, externalPowerObservation(16).status)
     }
 
     @Test

@@ -127,6 +127,8 @@ fun CapabilityRow(
         CapabilityStatus.UNKNOWN -> stringResource(R.string.status_unknown)
         CapabilityStatus.AVAILABLE -> stringResource(R.string.status_available)
         CapabilityStatus.BLOCKED -> stringResource(R.string.status_blocked)
+        CapabilityStatus.WARNING -> stringResource(R.string.status_needs_attention)
+        CapabilityStatus.NOT_USED -> stringResource(R.string.status_not_used)
     }
     Row(
         modifier = modifier

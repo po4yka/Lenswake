@@ -63,6 +63,7 @@ enum class SetupRemediationAction {
     OPEN_EXACT_ALARM_SETTINGS,
     OPEN_ACCESSIBILITY_SETTINGS,
     OPEN_FULL_SCREEN_INTENT_SETTINGS,
+    OPEN_PROFILES,
 }
 
 enum class PreflightSeverity {

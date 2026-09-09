@@ -338,6 +338,7 @@ private fun SetupRemediationAction.remediationLabel(strings: UiStringProvider): 
         SetupRemediationAction.OPEN_NOTIFICATION_SETTINGS -> R.string.remediation_notification_settings
         SetupRemediationAction.OPEN_EXACT_ALARM_SETTINGS -> R.string.remediation_exact_alarm_settings
         SetupRemediationAction.OPEN_ACCESSIBILITY_SETTINGS -> R.string.remediation_accessibility_settings
+        SetupRemediationAction.OPEN_PROFILES -> R.string.nav_profiles
         SetupRemediationAction.OPEN_FULL_SCREEN_INTENT_SETTINGS ->
             R.string.remediation_full_screen_intent_settings
     },

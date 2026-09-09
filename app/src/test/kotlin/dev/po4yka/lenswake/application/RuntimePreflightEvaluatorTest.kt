@@ -24,10 +24,46 @@ import dev.po4yka.lenswake.ui.TestUiStringProvider
 import java.time.Instant
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 
 class RuntimePreflightEvaluatorTest {
     private val evaluator = RuntimePreflightEvaluator(TestUiStringProvider)
+
+    @Test
+    fun newlyInstalledExactProfileExplainsFirstTestAndOffersResolution() {
+        val environment = environment()
+        val untested = profile(environment).copy(
+            compatibility = ProfileCompatibility.NEEDS_REHEARSAL,
+            verifiedAt = null,
+        )
+        val checks = evaluator.evaluate(
+            observation(cameraEnvironment = environment),
+            listOf(untested),
+        ).checks.associateBy { it.type }
+        val compatibility = checks.getValue(PreflightCheckType.PROFILE_COMPATIBILITY)
+        assertEquals(PreflightStatus.FAILED, compatibility.status)
+        assertFalse(compatibility.message.contains("changed"))
+        assertEquals(SetupRemediationAction.OPEN_PROFILES, compatibility.remediation)
+        assertEquals(
+            SetupRemediationAction.OPEN_PROFILES,
+            checks.getValue(PreflightCheckType.REHEARSAL_CURRENT).remediation,
+        )
+    }
+
+    @Test
+    fun missingProfileOffersAResolutionAndUnimplementedFallbackIsInformational() {
+        val checks = evaluator.evaluate(observation(), emptyList()).checks.associateBy { it.type }
+        assertEquals(
+            SetupRemediationAction.OPEN_PROFILES,
+            checks.getValue(PreflightCheckType.PROFILE_AVAILABLE).remediation,
+        )
+        assertEquals(
+            SetupRemediationAction.OPEN_PROFILES,
+            checks.getValue(PreflightCheckType.PROFILE_COMPATIBILITY).remediation,
+        )
+        assertEquals(PreflightSeverity.INFO, checks.getValue(PreflightCheckType.PRIVILEGED_FALLBACK).severity)
+    }
 
     @Test
     fun preservesPlatformFailureAndUnknownStatesFailClosed() {

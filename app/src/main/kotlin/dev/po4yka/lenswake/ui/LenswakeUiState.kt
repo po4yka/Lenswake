@@ -205,6 +205,8 @@ enum class CapabilityStatus {
     UNKNOWN,
     AVAILABLE,
     BLOCKED,
+    WARNING,
+    NOT_USED,
 }
 
 @Immutable

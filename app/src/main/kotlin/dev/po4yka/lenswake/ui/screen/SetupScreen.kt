@@ -31,7 +31,8 @@ fun SetupScreen(
     onRemediate: (SetupRemediationAction) -> Unit,
     onClearRemediationMessage: () -> Unit,
 ) {
-    val (satisfied, outstanding) = state.capabilities.partition {
+    val (informational, checks) = state.capabilities.partition { it.status == CapabilityStatus.NOT_USED }
+    val (satisfied, outstanding) = checks.partition {
         it.status == CapabilityStatus.AVAILABLE
     }
     LazyColumn(
@@ -71,6 +72,10 @@ fun SetupScreen(
             item { SectionHeading(stringResource(R.string.section_readiness_satisfied)) }
         }
         capabilityRows(satisfied, onRemediate)
+        if (informational.isNotEmpty()) {
+            item { SectionHeading(stringResource(R.string.section_optional_features)) }
+            capabilityRows(informational, onRemediate)
+        }
     }
 }
 
