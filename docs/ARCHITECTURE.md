@@ -403,6 +403,12 @@ and requires matching APK SHA-256 plus content-addressed physical-acceptance rec
 and Pixel 8 Pro before a second protected-environment approval can publish the unchanged bytes.
 Emulators validate Android framework boundaries only and cannot satisfy this physical gate.
 
+The manual `release-build.yml` workflow also exposes a separate signed APK build from `main`, after
+the host gate and instrumentation APK compilation. It shares `signed-release-apk.yml` with the
+tag candidate job and requires the same protected `release` environment approval. That environment
+allows only `main` and `v*` tags. Manual artifacts include a verified APK, checksum, and provenance;
+they cannot enter the tag-candidate publication path and do not imply physical acceptance.
+
 Exact dependency versions live in `gradle/libs.versions.toml`; do not duplicate them into agent
 instructions.
 

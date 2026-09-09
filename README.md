@@ -135,6 +135,10 @@ The current repository passes the full local gate shown above. Android-test APK 
 separately; connected and opt-in physical suites were not run for this documentation update. See
 [docs/STATUS.md](docs/STATUS.md).
 
+The separate **Release build** workflow manually builds a signed, minified APK from `main` after
+host checks and approval of the protected `release` environment. Its downloadable artifact does not
+publish a release or certify device reliability.
+
 GitHub Actions repeats the host gate, runs ordinary instrumentation on Android emulators, and keeps
 those results separate from physical Pixel evidence. Release tags build and retain a signed candidate
 without publication permission. A separate protected workflow can publish only that exact candidate

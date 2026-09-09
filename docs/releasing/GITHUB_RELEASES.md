@@ -6,8 +6,8 @@ construction from publication so no tag-triggered run can publish an untested re
 
 ## Permanent signing identity
 
-The release keystore is deliberately outside the repository. Its passwords are stored in the
-maintainer's password manager, and the protected GitHub `release` environment contains:
+The release keystore is deliberately outside the repository. Store its passwords in the
+maintainer's password manager. The protected GitHub `release` environment contains:
 
 - `LENSWAKE_RELEASE_KEYSTORE_BASE64`;
 - `LENSWAKE_RELEASE_STORE_PASSWORD`;
@@ -23,6 +23,28 @@ backup.
 
 Never commit, print, upload as a workflow artifact, or place the keystore in a project-local Gradle
 property file. To rotate it, treat the new certificate as a distribution-breaking identity change.
+
+## Build a signed APK without publishing
+
+Run **Actions → Release build → Run workflow** with branch `main`. The `host` job runs the host
+checks and compiles Android instrumentation APKs. After it passes, approve the protected `release`
+environment to start the separate `release-build / signed-release-apk` job.
+
+The environment must allow exactly branch `main` and tags matching `v*`, retain its required
+reviewer, and contain all four signing secrets listed above. No additional repository secrets or
+variables are required: version information comes from `version.properties`, and the expected
+certificate comes from `release-signing-certificate.sha256`.
+
+The build produces a minified, signed `Lenswake-<version>.apk`, `SHA256SUMS.txt`, and GitHub build
+provenance. Download the `lenswake-release-<commit>-<run-id>-<attempt>` artifact from the run page
+within 30 days. APK verification checks the certificate, application ID, version, and forbidden
+permissions before upload. Signing material is removed even on failure. Gradle configuration caching
+and shared caches are disabled for signing, and pull requests cannot run this job.
+
+This manual workflow does not publish a GitHub Release or produce physical certification. It
+compiles instrumentation tests but does not run them on a device. The tag-triggered candidate and
+physical acceptance process below remains required for publication; a manual-build artifact cannot
+be supplied as its candidate. Both paths use the same reusable `signed-release-apk.yml` build job.
 
 ## Prepare a release
 

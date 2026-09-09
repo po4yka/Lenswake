@@ -1,0 +1,73 @@
+name: Release build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  host:
+    name: host
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      version-name: ${{ steps.version.outputs.VERSION_NAME }}
+      version-code: ${{ steps.version.outputs.VERSION_CODE }}
+    steps:
+      - name: Check out main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read release version
+        id: version
+        run: scripts/ci/read-version.sh >>"$GITHUB_OUTPUT"
+      - name: Set up JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-disabled: true
+      - name: Verify CI and release contracts
+        run: |
+          scripts/ci/test-build-contract.sh
+          scripts/ci/test-release-contract.sh
+      - name: Repeat host release gate
+        run: >-
+          ./gradlew
+          check
+          assembleDebug
+          :app:assembleDebugAndroidTest
+          :data:assembleDebugAndroidTest
+          --console=plain
+      - name: Upload failure reports
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-build-host-failure-reports
+          path: |
+            **/build/reports/**
+            **/build/test-results/**
+          if-no-files-found: ignore
+          retention-days: 14
+
+  release-build:
+    name: release-build
+    needs: host
+    uses: ./.github/workflows/signed-release-apk.yml
+    permissions:
+      contents: read
+      attestations: write # Permit the shared build job to store APK provenance.
+      id-token: write # Permit the shared build job to sign provenance through OIDC.
+    with:
+      version-name: ${{ needs.host.outputs.version-name }}
+      version-code: ${{ needs.host.outputs.version-code }}
+      artifact-name: lenswake-release-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}

@@ -29,12 +29,14 @@ if [[ -z "$apksigner_bin" ]]; then
   apksigner_bin="$(command -v apksigner)"
 fi
 
+# apksigner labels signers by signature scheme in Build Tools 37. Read the certificate field
+# independently of that label, and reject any additional signer with a different certificate.
 actual_fingerprint="$(
   "$apksigner_bin" verify --print-certs "$apk" |
-    sed -n 's/^Signer #1 certificate SHA-256 digest: //p' |
-    head -n 1 |
-    tr -d '[:space:]:' |
-    tr '[:lower:]' '[:upper:]'
+    sed -n 's/^.*certificate SHA-256 digest: //p' |
+    tr -d '[:blank:]\r:' |
+    tr '[:lower:]' '[:upper:]' |
+    sort -u
 )"
 
 [[ "$actual_fingerprint" == "$expected_fingerprint" ]] || {
