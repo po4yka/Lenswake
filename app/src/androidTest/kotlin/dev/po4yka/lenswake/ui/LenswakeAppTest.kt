@@ -302,6 +302,36 @@ class LenswakeAppTest {
     }
 
     @Test
+    fun setupProfileResolutionNavigatesToProfilesWithoutStartingCameraOrOpeningSettings() {
+        var settingsRequests = 0
+        var recordingRequests = 0
+        setContent(
+            state = LenswakeUiState(
+                capabilities = listOf(
+                    CapabilityUiState(
+                        name = "Camera test",
+                        status = CapabilityStatus.BLOCKED,
+                        detail = "Run Camera test in Profiles.",
+                        required = true,
+                        remediation = SetupRemediationAction.OPEN_PROFILES,
+                    ),
+                ),
+            ),
+            onRemediate = { settingsRequests++ },
+            onRunRehearsal = { recordingRequests++ },
+        )
+        composeRule.onNodeWithText("Review setup").performClick()
+        val resolve = hasContentDescription("Resolve, Camera test")
+        composeRule.onNode(hasScrollToIndexAction()).performScrollToNode(resolve)
+        composeRule.onNode(resolve).performClick()
+        composeRule.onNodeWithText("Install camera profile").assertExists()
+        composeRule.runOnIdle {
+            assertEquals(0, settingsRequests)
+            assertEquals(0, recordingRequests)
+        }
+    }
+
+    @Test
     fun setupSeparatesOutstandingChecksFromSatisfiedOnes() {
         setContent(
             state = LenswakeUiState(

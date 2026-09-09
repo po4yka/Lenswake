@@ -91,7 +91,7 @@ class RuntimePreflightEvaluator(
             rehearsalCurrentCheck(observation, profiles),
             PreflightCheck(
                 type = PreflightCheckType.PRIVILEGED_FALLBACK,
-                severity = PreflightSeverity.WARNING,
+                severity = PreflightSeverity.INFO,
                 status = PreflightStatus.UNKNOWN,
                 message = strings.get(R.string.preflight_privileged_fallback_unchecked),
             ),
@@ -128,6 +128,7 @@ class RuntimePreflightEvaluator(
             type = PreflightCheckType.PROFILE_AVAILABLE,
             severity = PreflightSeverity.BLOCKING,
             status = if (profiles.isNotEmpty()) PreflightStatus.PASSED else PreflightStatus.FAILED,
+            remediation = if (profiles.isEmpty()) SetupRemediationAction.OPEN_PROFILES else null,
             message = if (profiles.isEmpty()) {
                 strings.get(R.string.preflight_profile_none)
             } else {
@@ -149,6 +150,7 @@ class RuntimePreflightEvaluator(
                 severity = PreflightSeverity.BLOCKING,
                 status = PreflightStatus.UNKNOWN,
                 message = strings.get(R.string.preflight_profile_environment_unknown),
+                remediation = SetupRemediationAction.OPEN_PROFILES,
             )
         }
         if (!isSupportedPixelCameraRuntime(currentEnvironment)) {
@@ -157,11 +159,13 @@ class RuntimePreflightEvaluator(
                 severity = PreflightSeverity.BLOCKING,
                 status = PreflightStatus.FAILED,
                 message = strings.get(R.string.preflight_profile_unavailable),
+                remediation = SetupRemediationAction.OPEN_PROFILES,
             )
         }
-        val best = profiles
+        val candidates = profiles
             .filter { it.isSupportedRuntimeProfile() }
             .filter { it.targetsCurrentDeviceFamily(currentEnvironment) }
+        val best = candidates
             .map { it.compatibilityFor(currentEnvironment) }
             .minByOrNull(ProfileCompatibility::ordinal)
         return PreflightCheck(
@@ -178,11 +182,16 @@ class RuntimePreflightEvaluator(
                     R.string.preflight_profile_probably_compatible,
                 )
                 ProfileCompatibility.NEEDS_REHEARSAL -> strings.get(
-                    R.string.preflight_profile_needs_rehearsal,
+                    if (candidates.any { it.environment == currentEnvironment }) {
+                        R.string.preflight_profile_untested
+                    } else {
+                        R.string.preflight_profile_needs_rehearsal
+                    },
                 )
                 ProfileCompatibility.INCOMPATIBLE -> strings.get(R.string.preflight_profile_incompatible)
                 null -> strings.get(R.string.preflight_profile_unavailable)
             },
+            remediation = if (best == ProfileCompatibility.VERIFIED) null else SetupRemediationAction.OPEN_PROFILES,
         )
     }
 
@@ -196,6 +205,7 @@ class RuntimePreflightEvaluator(
                 severity = PreflightSeverity.BLOCKING,
                 status = PreflightStatus.UNKNOWN,
                 message = strings.get(R.string.preflight_rehearsal_environment_unknown),
+                remediation = SetupRemediationAction.OPEN_PROFILES,
             )
         observation.rehearsalEvidenceFailure?.let { failure ->
             return PreflightCheck(
@@ -203,13 +213,15 @@ class RuntimePreflightEvaluator(
                 severity = PreflightSeverity.BLOCKING,
                 status = PreflightStatus.UNKNOWN,
                 message = failure.resolve(strings),
+                remediation = SetupRemediationAction.OPEN_PROFILES,
             )
         }
 
-        val exactVerifiedProfiles = profiles.filter { profile ->
-            profile.isSupportedRuntimeProfile() &&
-            profile.environment == currentEnvironment &&
-                profile.compatibilityFor(currentEnvironment) == ProfileCompatibility.VERIFIED
+        val exactProfiles = profiles.filter { profile ->
+            profile.isSupportedRuntimeProfile() && profile.environment == currentEnvironment
+        }
+        val exactVerifiedProfiles = exactProfiles.filter { profile ->
+            profile.compatibilityFor(currentEnvironment) == ProfileCompatibility.VERIFIED
         }
         val qualifying = exactVerifiedProfiles.firstNotNullOfOrNull { profile ->
             observation.successfulRehearsals[profile.id]
@@ -227,10 +239,13 @@ class RuntimePreflightEvaluator(
             type = PreflightCheckType.REHEARSAL_CURRENT,
             severity = PreflightSeverity.BLOCKING,
             status = if (qualifying != null) PreflightStatus.PASSED else PreflightStatus.FAILED,
+            remediation = if (qualifying == null) SetupRemediationAction.OPEN_PROFILES else null,
             message = if (qualifying != null) {
                 strings.get(R.string.preflight_rehearsal_verified)
-            } else if (exactVerifiedProfiles.isEmpty()) {
+            } else if (exactProfiles.isEmpty()) {
                 strings.get(R.string.preflight_rehearsal_profile_missing)
+            } else if (exactVerifiedProfiles.isEmpty()) {
+                strings.get(R.string.preflight_rehearsal_required)
             } else {
                 strings.get(R.string.preflight_rehearsal_unlinked)
             },

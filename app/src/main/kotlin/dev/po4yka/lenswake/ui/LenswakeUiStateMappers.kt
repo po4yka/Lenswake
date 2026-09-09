@@ -262,10 +262,12 @@ internal object LenswakeReadinessUiMapper {
 
     fun capability(check: PreflightCheck, strings: UiStringProvider): CapabilityUiState = CapabilityUiState(
         name = strings.get(capabilityNames.getValue(check.type)),
-        status = when (check.status) {
-            PreflightStatus.PASSED -> CapabilityStatus.AVAILABLE
-            PreflightStatus.FAILED -> CapabilityStatus.BLOCKED
-            PreflightStatus.UNKNOWN -> CapabilityStatus.UNKNOWN
+        status = when {
+            check.status == PreflightStatus.PASSED -> CapabilityStatus.AVAILABLE
+            check.severity == PreflightSeverity.INFO -> CapabilityStatus.NOT_USED
+            check.severity == PreflightSeverity.WARNING -> CapabilityStatus.WARNING
+            check.status == PreflightStatus.FAILED -> CapabilityStatus.BLOCKED
+            else -> CapabilityStatus.UNKNOWN
         },
         detail = check.message,
         required = check.severity == PreflightSeverity.BLOCKING,

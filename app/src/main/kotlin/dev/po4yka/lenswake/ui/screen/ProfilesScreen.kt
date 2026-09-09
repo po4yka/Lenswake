@@ -46,11 +46,11 @@ fun ProfilesScreen(
     ) {
         profilesHeader()
         profileInstallAction(state, onInstallCandidateProfile)
-        profileCertificationAction(state, onImportReleaseCertification)
         installedProfiles(state, onRunRehearsal)
         profileInstallOutcome(state.profileInstall, onConfirmExperimentalProfileInstallation)
         activeRehearsal(state)
         rehearsalOutcome(state)
+        profileCertificationAction(state, onImportReleaseCertification)
     }
 }
 
@@ -125,6 +125,12 @@ private fun LazyListScope.installedProfiles(
     items(state.profiles.size, key = { state.profiles[it].id }) { index ->
         val profile = state.profiles[index]
         ProfileIdentityRow(profile)
+        ProfileRehearsalAction(
+            state = state,
+            profileId = profile.id,
+            profileTitle = profile.title,
+            onRunRehearsal = { onRunRehearsal(profile.id) },
+        )
         profile.captureMatrix.forEach { row ->
             StatusRow(
                 title = row.capture.label(),
@@ -139,12 +145,6 @@ private fun LazyListScope.installedProfiles(
                 ),
             )
         }
-        ProfileRehearsalAction(
-            state = state,
-            profileId = profile.id,
-            profileTitle = profile.title,
-            onRunRehearsal = { onRunRehearsal(profile.id) },
-        )
         if (index < state.profiles.lastIndex) {
             HorizontalDivider()
         }

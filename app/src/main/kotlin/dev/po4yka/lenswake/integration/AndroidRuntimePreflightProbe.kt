@@ -3,7 +3,10 @@ package dev.po4yka.lenswake.integration
 import android.app.AlarmManager
 import android.app.NotificationManager
 import android.content.ComponentName
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.BatteryManager
 import android.os.storage.StorageManager
@@ -34,7 +37,10 @@ import dev.po4yka.lenswake.ui.AndroidUiStringProvider
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.withContext
 import java.util.concurrent.CancellationException
 
@@ -56,8 +62,10 @@ class AndroidRuntimePreflightProbe(
     private val batteryManager = applicationContext.getSystemService(BatteryManager::class.java)
     private val storageManager = applicationContext.getSystemService(StorageManager::class.java)
 
-    override val invalidations: Flow<Unit> = PixelCameraAccessibilityRuntime.connectionState
-        .map { }
+    override val invalidations: Flow<Unit> = merge(
+        PixelCameraAccessibilityRuntime.connectionState.map { },
+        powerConnectionInvalidations(applicationContext),
+    )
 
     override suspend fun inspect(profiles: List<PixelCameraProfile>): PreflightReport =
         inspect(profiles, requiredCapture = null)
@@ -92,9 +100,10 @@ class AndroidRuntimePreflightProbe(
                         batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
                     }.getOrNull(),
                 ),
-                charging = chargingObservation(
+                charging = externalPowerObservation(
                     runCatching {
-                        batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS)
+                        applicationContext.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                            ?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1)
                     }.getOrNull(),
                 ),
                 storage = androidStorageObservation(storageManager),
@@ -366,17 +375,18 @@ internal fun batteryObservation(percent: Int?): RuntimeCapabilityObservation {
     )
 }
 
-internal fun chargingObservation(status: Int?): RuntimeCapabilityObservation = when (status) {
-    BatteryManager.BATTERY_STATUS_CHARGING,
-    BatteryManager.BATTERY_STATUS_FULL,
+/** Plugged power remains available when adaptive charging pauses or the battery is full. */
+internal fun externalPowerObservation(plugged: Int?): RuntimeCapabilityObservation = when (plugged) {
+    BatteryManager.BATTERY_PLUGGED_AC,
+    BatteryManager.BATTERY_PLUGGED_USB,
+    BatteryManager.BATTERY_PLUGGED_WIRELESS,
+    BatteryManager.BATTERY_PLUGGED_DOCK,
     -> RuntimeCapabilityObservation(
         status = PreflightStatus.PASSED,
         message = localizedText(R.string.preflight_charging),
     )
 
-    BatteryManager.BATTERY_STATUS_DISCHARGING,
-    BatteryManager.BATTERY_STATUS_NOT_CHARGING,
-    -> RuntimeCapabilityObservation(
+    0 -> RuntimeCapabilityObservation(
         status = PreflightStatus.FAILED,
         message = localizedText(R.string.preflight_not_charging),
     )
@@ -385,6 +395,21 @@ internal fun chargingObservation(status: Int?): RuntimeCapabilityObservation = w
         status = PreflightStatus.UNKNOWN,
         message = localizedText(R.string.preflight_charging_unknown),
     )
+}
+
+internal fun powerConnectionInvalidations(context: Context): Flow<Unit> = callbackFlow {
+    val receiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            trySend(Unit)
+        }
+    }
+    context.registerReceiver(
+        receiver,
+        IntentFilter(Intent.ACTION_POWER_CONNECTED).apply { addAction(Intent.ACTION_POWER_DISCONNECTED) },
+        Context.RECEIVER_NOT_EXPORTED,
+    )
+    trySend(Unit)
+    awaitClose { context.unregisterReceiver(receiver) }
 }
 
 internal fun storageObservation(

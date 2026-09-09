@@ -3,6 +3,10 @@ package dev.po4yka.lenswake.integration
 import android.app.AlarmManager
 import android.app.NotificationManager
 import android.content.pm.PackageManager
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.BroadcastReceiver
+import android.content.ContextWrapper
 import android.os.BatteryManager
 import android.os.StatFs
 import androidx.test.core.app.ApplicationProvider
@@ -27,6 +31,27 @@ import kotlinx.coroutines.withTimeout
 
 @RunWith(AndroidJUnit4::class)
 class AndroidRuntimePreflightProbeTest {
+    @Test
+    fun powerObservationUnregistersReceiverWhenCollectionEnds() = runBlocking {
+        val application = ApplicationProvider.getApplicationContext<LenswakeApplication>()
+        var registrations = 0
+        var unregistrations = 0
+        val context = object : ContextWrapper(application) {
+            override fun registerReceiver(receiver: BroadcastReceiver?, filter: IntentFilter, flags: Int): Intent? {
+                registrations++
+                return super.registerReceiver(receiver, filter, flags)
+            }
+
+            override fun unregisterReceiver(receiver: BroadcastReceiver) {
+                super.unregisterReceiver(receiver)
+                unregistrations++
+            }
+        }
+        withTimeout(1_000) { powerConnectionInvalidations(context).first() }
+        assertEquals(1, registrations)
+        assertEquals(1, unregistrations)
+    }
+
     @Test
     fun connectionInvalidationEmitsCurrentStateToLateCollectors() = runBlocking {
         val application = ApplicationProvider.getApplicationContext<LenswakeApplication>()
@@ -142,13 +167,14 @@ class AndroidRuntimePreflightProbeTest {
             checks.getValue(PreflightCheckType.BATTERY).status,
         )
         assertEquals(
-            when (batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS)) {
-                BatteryManager.BATTERY_STATUS_CHARGING,
-                BatteryManager.BATTERY_STATUS_FULL,
+            when (application.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                ?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1)) {
+                BatteryManager.BATTERY_PLUGGED_AC,
+                BatteryManager.BATTERY_PLUGGED_USB,
+                BatteryManager.BATTERY_PLUGGED_WIRELESS,
+                BatteryManager.BATTERY_PLUGGED_DOCK,
                 -> PreflightStatus.PASSED
-                BatteryManager.BATTERY_STATUS_DISCHARGING,
-                BatteryManager.BATTERY_STATUS_NOT_CHARGING,
-                -> PreflightStatus.FAILED
+                0 -> PreflightStatus.FAILED
                 else -> PreflightStatus.UNKNOWN
             },
             checks.getValue(PreflightCheckType.CHARGING).status,

@@ -62,6 +62,9 @@ internal object TestUiStringProvider : UiStringProvider {
         R.string.profile_compatibility_verified to "Verified for scheduling",
         R.string.preflight_profile_probably_compatible to
             "The closest profile requires a current-device rehearsal.",
+        R.string.preflight_profile_untested to
+            "This profile matches the current camera setup but has not been tested yet. " +
+            "Open Profiles and tap Test recording.",
         R.string.preflight_profile_needs_rehearsal to
             "The Pixel Camera environment changed; rehearsal is required.",
         R.string.preflight_profile_incompatible to

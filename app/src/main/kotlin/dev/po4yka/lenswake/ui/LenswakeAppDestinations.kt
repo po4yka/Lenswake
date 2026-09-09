@@ -13,6 +13,7 @@ import dev.po4yka.lenswake.ui.screen.ProfilesScreen
 import dev.po4yka.lenswake.ui.screen.ScheduleEditorScreen
 import dev.po4yka.lenswake.ui.screen.SchedulesScreen
 import dev.po4yka.lenswake.ui.screen.SetupScreen
+import dev.po4yka.lenswake.core.SetupRemediationAction
 
 @Composable
 internal fun LenswakeNavigationHost(
@@ -61,7 +62,13 @@ internal fun LenswakeNavigationHost(
                 SetupScreen(
                     state = state,
                     contentPadding = contentPadding,
-                    onRemediate = actions.setup.onRemediate,
+                    onRemediate = { action ->
+                        if (action == SetupRemediationAction.OPEN_PROFILES) {
+                            navigation.navigateToTopLevel(LenswakeTopLevel.PROFILES)
+                        } else {
+                            actions.setup.onRemediate(action)
+                        }
+                    },
                     onClearRemediationMessage = actions.setup.onClearRemediationMessage,
                 )
             }

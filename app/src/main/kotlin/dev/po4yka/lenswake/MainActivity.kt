@@ -124,6 +124,7 @@ class MainActivity : ComponentActivity() {
 
             SetupRemediationAction.REQUEST_NOTIFICATION_PERMISSION,
             SetupRemediationAction.REQUEST_MEDIA_VIDEO_PERMISSION,
+            SetupRemediationAction.OPEN_PROFILES,
             -> return
         }
         try {
