@@ -48,6 +48,7 @@ internal fun missingActionFailure(action: AutomationAction): AutomationFailure =
     AutomationFailure(
         code =
             when (action) {
+                AutomationAction.OPEN_VIDEO_SETTINGS,
                 AutomationAction.SELECT_VIDEO -> {
                     AutomationFailureCode.VIDEO_MODE_NOT_FOUND
                 }
@@ -62,6 +63,7 @@ internal fun missingActionFailure(action: AutomationAction): AutomationFailure =
                     AutomationFailureCode.TIME_LAPSE_MODE_NOT_FOUND
                 }
 
+                AutomationAction.SELECT_NIGHT_SIGHT_TIME_LAPSE_OFF,
                 AutomationAction.SELECT_NIGHT_SIGHT_TIME_LAPSE,
                 AutomationAction.OPEN_NIGHT_SIGHT_TIME_LAPSE_CONTROL,
                 -> {

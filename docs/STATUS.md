@@ -77,9 +77,12 @@ base-APK, signer, resources, and DEX identity. The resulting
 [selector provenance record](research/pixel-6-10a-template-provenance.md) maps every new 4K/60,
 Time Lapse speed, lens, and Night Sight candidate to its exact resource and code construction where
 available. It also corrected the 60 FPS candidate to visible text `60` plus content description
-`60 FPS`. The telephoto template remains static version 2. The independent standard template is now
-version 3 and uses the live Pixel 7 observations recorded in
+`60 FPS`. The 2026-09-09 target UI correction supersedes those static label assumptions: selection
+and selected-state evidence come from the ImageButton, not its separate text label. Telephoto
+version 3 and standard version 4 use explicit settings-panel preparation; the standard template
+retains the live Pixel 7 observations recorded in
 [pixel-7-beta-template-calibration-2026-08-12.md](research/pixel-7-beta-template-calibration-2026-08-12.md).
+See [the target correction record](research/pixel-8-pro-capture-corrections-2026-09-09.md).
 It is still Experimental calibration evidence: exact stable-environment exposure, combination
 availability, saved-media verification, and reliability remain subject to fresh rehearsals.
 

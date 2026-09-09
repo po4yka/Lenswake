@@ -15,22 +15,22 @@ class PixelCameraSelectorProvenanceContractTest {
         assertAction(
             AutomationAction.SELECT_VIDEO_RESOLUTION_4K,
             description = "4K Ultra HD",
-            text = "4K (Ultra HD)",
+            role = "android.widget.ImageButton",
         )
         assertAction(
             AutomationAction.SELECT_VIDEO_FRAME_RATE_60,
             description = "60 FPS",
-            text = "60",
+            role = "android.widget.ImageButton",
         )
         assertSignal(
             PixelCameraStateSignal.VIDEO_RESOLUTION_4K_ACTIVE,
             description = "4K Ultra HD",
-            text = "4K (Ultra HD)",
+            role = "android.widget.ImageButton",
         )
         assertSignal(
             PixelCameraStateSignal.VIDEO_FRAME_RATE_60_ACTIVE,
             description = "60 FPS",
-            text = "60",
+            role = "android.widget.ImageButton",
         )
     }
 
@@ -58,14 +58,18 @@ class PixelCameraSelectorProvenanceContractTest {
 
     @Test
     fun `lens and night selectors match the version-pinned APK resources`() {
-        assertAction(AutomationAction.SELECT_REAR_ULTRAWIDE_LENS, description = "Ultrawide")
-        assertAction(AutomationAction.SELECT_REAR_TELEPHOTO_LENS, description = "Tele")
+        assertEquals(setOf("zoom_toggle_.5", "zoom_toggle_.5×"),
+            profile.targets.getValue(AutomationAction.SELECT_REAR_ULTRAWIDE_LENS)
+                .selectors.map { it.resourceId }.toSet())
+        assertEquals(setOf("zoom_toggle_5", "zoom_toggle_5×"),
+            profile.targets.getValue(AutomationAction.SELECT_REAR_TELEPHOTO_LENS)
+                .selectors.map { it.resourceId }.toSet())
         assertAction(AutomationAction.SELECT_FRONT_LENS, description = "Switch to front camera")
         assertSignal(PixelCameraStateSignal.FRONT_LENS_ACTIVE, description = "Switch to back camera")
         assertAction(
             AutomationAction.OPEN_NIGHT_SIGHT_TIME_LAPSE_CONTROL,
-            description = "Night Sight",
-            resource = "minibar_item_ext2",
+            description = "Time Lapse settings",
+            resource = "com.google.android.GoogleCamera:id/options_entry_button",
         )
         assertAction(
             AutomationAction.SELECT_NIGHT_SIGHT_TIME_LAPSE,
@@ -77,15 +81,15 @@ class PixelCameraSelectorProvenanceContractTest {
             description = "Auto Night Sight in Time Lapse on",
             role = "android.widget.ImageButton",
         )
-        // The control-open signal matches either option button; the row container is a plain View.
+        // A single option anchors the open panel even when both option buttons are visible.
         val controlOpen =
             profile.stateSignals.getValue(PixelCameraStateSignal.NIGHT_SIGHT_TIME_LAPSE_CONTROL_OPEN)
         assertEquals(
-            listOf("Auto Night Sight in Time Lapse off", "Auto Night Sight in Time Lapse on"),
+            listOf("Auto Night Sight in Time Lapse on"),
             controlOpen.selectors.map(UiSelector::contentDescription),
         )
         assertEquals(
-            listOf("android.widget.ImageButton", "android.widget.ImageButton"),
+            listOf("android.widget.ImageButton"),
             controlOpen.selectors.map(UiSelector::role),
         )
     }

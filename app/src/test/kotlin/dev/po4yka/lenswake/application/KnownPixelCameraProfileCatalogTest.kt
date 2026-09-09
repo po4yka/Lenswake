@@ -37,9 +37,9 @@ class KnownPixelCameraProfileCatalogTest {
         assertEquals(ProfileSource.PHYSICAL_TEMPLATE, standard.source)
         assertEquals(SupportTier.EXPERIMENTAL, standard.supportTier)
         assertEquals(PixelCameraTemplateKind.SEMANTIC_STANDARD.reference, standard.selectorTemplate)
-        assertEquals(3, standard.selectorTemplate.version)
+        assertEquals(4, standard.selectorTemplate.version)
         assertEquals(
-            "9c01bafb25750d834a27f7d377cf626227c9ebc72f8dc0bb52af3feaeaad417c",
+            "d9127603488ec3d9af2d0a7d81adf967908d4635b2e184c7bd3d2b46b8960767",
             standard.definitionFingerprint(),
         )
         assertFalse(AutomationAction.SELECT_REAR_TELEPHOTO_LENS in standard.targets)
@@ -277,7 +277,7 @@ class KnownPixelCameraProfileCatalogTest {
             profile.targets
                 .getValue(AutomationAction.SELECT_REAR_MAIN_LENS)
                 .selectors
-                .single()
+                .single { it.resourceId == "zoom_toggle_1×" }
         assertEquals("zoom_toggle_1×", lensAction.resourceId)
         assertFalse(lensAction.requiresClickable)
     }
@@ -288,10 +288,10 @@ class KnownPixelCameraProfileCatalogTest {
                 .getValue(PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE)
                 .selectors
                 .single()
-        assertNull(lens.resourceId)
-        assertEquals(true, lens.expectedChecked)
-        assertEquals(true, lens.requiresClickable)
-        assertTrue(lens.expectedRegion != null)
+        assertEquals("zoom_toggle_1×", lens.resourceId)
+        assertEquals("1×", lens.text)
+        assertFalse(lens.requiresClickable)
+        assertNull(lens.expectedRegion)
 
         val recording =
             profile.stateSignals
@@ -337,7 +337,7 @@ class KnownPixelCameraProfileCatalogTest {
         val pickerOpen =
             profile.stateSignals
                 .getValue(PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN)
-        assertEquals(TimeLapseSpeed.entries.size, pickerOpen.selectors.size)
+        assertEquals(1, pickerOpen.selectors.size)
         assertTrue(pickerOpen.selectors.all { !it.requiresClickable })
     }
 

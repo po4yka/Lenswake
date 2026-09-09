@@ -1,6 +1,7 @@
 package dev.po4yka.lenswake.automation
 
 import dev.po4yka.lenswake.core.AutomationFailure
+import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.CaptureMode
 import dev.po4yka.lenswake.core.InteractionMethod
 import dev.po4yka.lenswake.core.LensSelection
@@ -147,6 +148,11 @@ interface PixelCameraCapturePort {
     ): ActionDispatch
 }
 
+/** Verifies settings on their visible panel, closes it and rechecks the requested idle lens/mode. */
+interface PixelCameraPreparationPort {
+    suspend fun prepareCapture(capture: CaptureConfiguration, profileUse: ProfileUse): PortResult<CaptureConfiguration>
+}
+
 interface PixelCameraVideoConfigurationPort {
     suspend fun selectVideoResolution4k(profileUse: ProfileUse): ActionDispatch
 
@@ -165,6 +171,7 @@ interface PixelCameraDialogPort {
 interface PixelCameraPort :
     PixelCameraStatePort,
     PixelCameraCapturePort,
+    PixelCameraPreparationPort,
     PixelCameraVideoConfigurationPort,
     PixelCameraDialogPort
 

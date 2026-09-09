@@ -212,6 +212,23 @@ state, visibility, hierarchy context, and bounds. Immediately before action disp
 takes a fresh bounded snapshot and re-resolves that fingerprint. A stale node path cannot authorize
 a click on a new control occupying the same hierarchy position.
 
+### Visible capture preparation
+
+After mode/lens/speed convergence and before the durable Record checkpoint, the Android adapter
+prepares the exact capture on Pixel Camera's visible settings panel. Video requires simultaneously
+selected 4K and 60 FPS buttons; Night Sight requires an explicitly selected ON option. Ordinary
+Time Lapse explicitly turns Night Sight off where supported. Pixel Camera's native unavailable
+setting is accepted only for ordinary Time Lapse and rejected for a Night Sight request.
+
+Each selection is followed by bounded observation. Back is bound to a freshly resolved panel,
+settings are rechecked before dismissal, and idle mode/lens/speed are inspected again after closing.
+The engine records preparation success separately from Record dispatch and recording verification.
+No cached settings are injected into subsequent UI snapshots. A write-ahead Record checkpoint
+implies preparation completed; uncertain dispatch recovery observes without reopening settings.
+Front-camera facing evidence is separate from the shared 1x zoom label. Rear zoom selection follows
+verified camera-facing selection. Closed speed labels and open selected picker options are distinct
+profile signals, and a panel-presence selector binds one unique marker rather than every option.
+
 ### Profiles and selectors
 
 A profile binds selectors and normalized gestures to:
@@ -321,7 +338,9 @@ Recovery responds to locked boot, normal boot, user unlock, time/timezone change
 replacement, and exact-alarm access changes.
 
 - Locked boot stores a device-protected checkpoint; it never opens Room or launches Pixel Camera.
-- After unlock, future schedules and durable rehearsal STOP alarms are reconstructed.
+- After unlock, future schedules and durable rehearsal STOP alarms are reconstructed. Recovery
+  reports alarm transport results only; absent camera rehearsal/profile evidence is not a transport
+  failure, including when no schedules exist. Scheduled START retains its full preflight gate.
 - Overdue STOP delivery is retained and handed to reconciliation instead of deleted.
 - Retry and rearm work is exact-alarm-bound and finite; loss of exact-alarm access moves recovery to
   the `JobService` path rather than starting a now-ineligible system-exempted foreground service.

@@ -23,11 +23,12 @@ import dev.po4yka.lenswake.platform.SUPPORTED_PIXEL_CAMERA_IDENTITY
  * `docs/research/pixel-6-10a-template-provenance.md`.
  *
  * The standard definition comes from an explicitly authorized live Pixel 7 beta calibration; the
- * telephoto definition remains version-pinned static APK evidence. Neither is physical
- * certification. A catalog entry is offered only for an admitted exact stable environment, and
+ * telephoto definition includes target Pixel 8 Pro UI observations from 2026-09-09. Neither is
+ * physical certification. A catalog entry is offered only for an admitted exact stable environment, and
  * production use still requires a successful rehearsal of the exact capture configuration there.
  */
 object KnownPixelCameraProfileCatalog {
+    private val CLOSED_SPEED_REGION = NormalizedBounds(0.80f, 0.88f, 1f, 0.96f)
     private val ACTIVE_MODE_REGION = NormalizedBounds(0.35f, 0.80f, 0.65f, 0.90f)
 
     /** Resource ID (100) plus role (20); a text-less dialog message can score no more. */
@@ -62,6 +63,14 @@ object KnownPixelCameraProfileCatalog {
             selectorTemplate = PixelCameraTemplateKind.SEMANTIC_TELEPHOTO.reference,
             targets =
                 mapOf(
+                    AutomationAction.OPEN_VIDEO_SETTINGS to actionSelector(
+                        resourceId = "$PIXEL_CAMERA_PACKAGE:id/options_entry_button",
+                        contentDescription = "Video settings", minimumScore = 170,
+                    ),
+                    AutomationAction.SELECT_NIGHT_SIGHT_TIME_LAPSE_OFF to actionSelector(
+                        contentDescription = "Auto Night Sight in Time Lapse off",
+                        role = "android.widget.ImageButton", minimumScore = 90,
+                    ),
                     AutomationAction.SELECT_VIDEO to
                         actionSelector(
                             resourceId = "video_supermode",
@@ -70,13 +79,13 @@ object KnownPixelCameraProfileCatalog {
                     AutomationAction.SELECT_VIDEO_RESOLUTION_4K to
                         actionSelector(
                             contentDescription = "4K Ultra HD",
-                            text = "4K (Ultra HD)",
+                            role = "android.widget.ImageButton",
                             minimumScore = 90,
                         ),
                     AutomationAction.SELECT_VIDEO_FRAME_RATE_60 to
                         actionSelector(
                             contentDescription = "60 FPS",
-                            text = "60",
+                            role = "android.widget.ImageButton",
                             minimumScore = 90,
                         ),
                     AutomationAction.SELECT_TIME_LAPSE to
@@ -104,14 +113,13 @@ object KnownPixelCameraProfileCatalog {
                             minimumScore = 60,
                             requiresClickable = false,
                         ),
-                    // The minibar entry point carries the label only as a content description;
-                    // the resource ID plus description identify it exactly (observed 2026-09-07,
-                    // see docs/research/pixel-8-pro-night-sight-time-lapse-2026-09-07.md).
+                    // The full settings panel also exposes an explicit disabled state on lenses
+                    // where the minibar omits Night Sight. Observed on the target 2026-09-09.
                     AutomationAction.OPEN_NIGHT_SIGHT_TIME_LAPSE_CONTROL to
                         actionSelector(
-                            resourceId = "minibar_item_ext2",
-                            contentDescription = "Night Sight",
-                            minimumScore = 160,
+                            resourceId = "$PIXEL_CAMERA_PACKAGE:id/options_entry_button",
+                            contentDescription = "Time Lapse settings",
+                            minimumScore = 170,
                         ),
                     // The ON option button is an ImageButton; the row container shares the
                     // description but is a plain View, so the role discriminates the two
@@ -127,30 +135,19 @@ object KnownPixelCameraProfileCatalog {
                                 ),
                             minimumScore = 85,
                         ),
-                    AutomationAction.SELECT_REAR_ULTRAWIDE_LENS to
-                        actionSelector(
-                            contentDescription = "Ultrawide",
-                            minimumScore = 60,
-                            requiresClickable = false,
-                        ),
-                    AutomationAction.SELECT_REAR_TELEPHOTO_LENS to
-                        actionSelector(
-                            contentDescription = "Tele",
-                            minimumScore = 60,
-                            requiresClickable = false,
-                        ),
+                    AutomationAction.SELECT_REAR_ULTRAWIDE_LENS to zoomAction(".5"),
+                    AutomationAction.SELECT_REAR_TELEPHOTO_LENS to zoomAction("5"),
                     AutomationAction.SELECT_FRONT_LENS to
                         actionSelector(
                             contentDescription = "Switch to front camera",
                             minimumScore = 60,
                         ),
-                    AutomationAction.SELECT_REAR_MAIN_LENS to
-                        actionSelector(
-                            resourceId = "zoom_toggle_1×",
-                            text = "1×",
-                            minimumScore = 130,
-                            requiresClickable = false,
-                        ),
+                    AutomationAction.SELECT_REAR_MAIN_LENS to zoomAction("1").let { zoom ->
+                        zoom.copy(selectors = zoom.selectors + cameraSelector(
+                            resourceId = "$PIXEL_CAMERA_PACKAGE:id/camera_switch_button",
+                            contentDescription = "Switch to back camera",
+                        ))
+                    },
                     AutomationAction.START_RECORDING to
                         actionSelector(
                             resourceId = "ComposeShutter",
@@ -244,6 +241,18 @@ object KnownPixelCameraProfileCatalog {
                 ),
             stateSignals =
                 mapOf(
+                    PixelCameraStateSignal.TIME_LAPSE_SETTINGS_OPEN to stateSelector(
+                        resourceId = "$PIXEL_CAMERA_PACKAGE:id/pinned_panel",
+                        contentDescription = "Time Lapse settings", minimumScore = 160,
+                    ),
+                    PixelCameraStateSignal.NIGHT_SIGHT_TIME_LAPSE_UNAVAILABLE to stateSelector(
+                        contentDescription = "Options unavailable", text = "Unavailable",
+                        role = "android.widget.TextView", minimumScore = 110,
+                    ),
+                    PixelCameraStateSignal.VIDEO_SETTINGS_OPEN to stateSelector(
+                        resourceId = "$PIXEL_CAMERA_PACKAGE:id/pinned_panel",
+                        contentDescription = "Video settings", minimumScore = 160,
+                    ),
                     PixelCameraStateSignal.PHOTO_MODE_ACTIVE to
                         stateSelector(
                             resourceId = "$PIXEL_CAMERA_PACKAGE:id/mode_chip_text",
@@ -263,16 +272,16 @@ object KnownPixelCameraProfileCatalog {
                     PixelCameraStateSignal.VIDEO_RESOLUTION_4K_ACTIVE to
                         stateSelector(
                             contentDescription = "4K Ultra HD",
-                            text = "4K (Ultra HD)",
-                            expectedChecked = true,
-                            minimumScore = 105,
+                            role = "android.widget.ImageButton",
+                            expectedSelected = true,
+                            minimumScore = 95,
                         ),
                     PixelCameraStateSignal.VIDEO_FRAME_RATE_60_ACTIVE to
                         stateSelector(
                             contentDescription = "60 FPS",
-                            text = "60",
-                            expectedChecked = true,
-                            minimumScore = 105,
+                            role = "android.widget.ImageButton",
+                            expectedSelected = true,
+                            minimumScore = 95,
                         ),
                     PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE to
                         stateSelector(
@@ -283,26 +292,9 @@ object KnownPixelCameraProfileCatalog {
                             expectedRegion = ACTIVE_MODE_REGION,
                             minimumScore = 215,
                         ),
-                    PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE to
-                        UiSelectorSet(
-                            selectors =
-                                listOf(
-                                    UiSelector(
-                                        packageName = PIXEL_CAMERA_PACKAGE,
-                                        contentDescription = "Time Lapse 120 times speed",
-                                        text = "120×",
-                                        expectedSelected = true,
-                                        requiresClickable = false,
-                                    ),
-                                    UiSelector(
-                                        packageName = PIXEL_CAMERA_PACKAGE,
-                                        text = "120×",
-                                        expectedRegion = NormalizedBounds(0.65f, 0.80f, 1f, 1f),
-                                        requiresClickable = false,
-                                    ),
-                                ),
-                            minimumScore = 40,
-                        ),
+                    PixelCameraStateSignal.TIME_LAPSE_SPEED_X120_ACTIVE to speedStateSelector(
+                        "Time Lapse 120 times speed", "120×",
+                    ),
                     PixelCameraStateSignal.TIME_LAPSE_SPEED_AUTO_ACTIVE to
                         speedStateSelector(
                             "Time Lapse auto speed",
@@ -323,42 +315,13 @@ object KnownPixelCameraProfileCatalog {
                             "Time Lapse 30 times speed",
                             "30×",
                         ),
-                    PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN to
-                        UiSelectorSet(
-                            selectors =
-                                listOf(
-                                    cameraSelector(
-                                        contentDescription = "Time Lapse auto speed",
-                                        requiresClickable = false,
-                                    ),
-                                    cameraSelector(
-                                        contentDescription = "Time Lapse 5 times speed",
-                                        requiresClickable = false,
-                                    ),
-                                    cameraSelector(
-                                        contentDescription = "Time Lapse 10 times speed",
-                                        requiresClickable = false,
-                                    ),
-                                    cameraSelector(
-                                        contentDescription = "Time Lapse 30 times speed",
-                                        requiresClickable = false,
-                                    ),
-                                    cameraSelector(
-                                        contentDescription = "Time Lapse 120 times speed",
-                                        requiresClickable = false,
-                                    ),
-                                ),
-                            minimumScore = 60,
-                        ),
+                    PixelCameraStateSignal.TIME_LAPSE_SPEED_PICKER_OPEN to stateSelector(
+                        contentDescription = "Time Lapse auto speed", minimumScore = 60,
+                    ),
                     PixelCameraStateSignal.NIGHT_SIGHT_TIME_LAPSE_CONTROL_OPEN to
                         UiSelectorSet(
                             selectors =
                                 listOf(
-                                    cameraSelector(
-                                        contentDescription = "Auto Night Sight in Time Lapse off",
-                                        role = "android.widget.ImageButton",
-                                        requiresClickable = false,
-                                    ),
                                     cameraSelector(
                                         contentDescription = "Auto Night Sight in Time Lapse on",
                                         role = "android.widget.ImageButton",
@@ -380,18 +343,18 @@ object KnownPixelCameraProfileCatalog {
                                 ),
                             minimumScore = 85,
                         ),
-                    PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE to
-                        stateSelector(
-                            expectedChecked = true,
-                            expectedRegion = NormalizedBounds(0.40f, 0.60f, 0.50f, 0.68f),
-                            minimumScore = 35,
-                            requiresClickable = true,
-                        ),
-                    PixelCameraStateSignal.REAR_ULTRAWIDE_LENS_ACTIVE to
-                        lensStateSelector(
-                            "Ultrawide",
-                        ),
-                    PixelCameraStateSignal.REAR_TELEPHOTO_LENS_ACTIVE to lensStateSelector("Tele"),
+                    PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE to stateSelector(
+                        resourceId = "zoom_toggle_1×", text = "1×", minimumScore = 130,
+                    ),
+                    PixelCameraStateSignal.REAR_ULTRAWIDE_LENS_ACTIVE to stateSelector(
+                        resourceId = "zoom_toggle_.5×", text = ".5×", minimumScore = 130,
+                    ),
+                    PixelCameraStateSignal.REAR_TELEPHOTO_LENS_ACTIVE to stateSelector(
+                        resourceId = "zoom_toggle_5×", text = "5×", minimumScore = 130,
+                    ),
+                    PixelCameraStateSignal.REAR_CAMERA_ACTIVE to stateSelector(
+                        contentDescription = "Switch to front camera", minimumScore = 60,
+                    ),
                     PixelCameraStateSignal.FRONT_LENS_ACTIVE to
                         stateSelector(
                             contentDescription = "Switch to back camera",
@@ -484,35 +447,28 @@ object KnownPixelCameraProfileCatalog {
             minimumScore = 90,
         )
 
-    private fun speedStateSelector(
-        description: String,
-        text: String,
-    ): UiSelectorSet =
-        UiSelectorSet(
-            selectors =
-                listOf(
-                    cameraSelector(
-                        contentDescription = description,
-                        text = text,
-                        expectedSelected = true,
-                        requiresClickable = false,
-                    ),
-                ),
-            minimumScore = 105,
-        )
+    private fun speedStateSelector(description: String, text: String): UiSelectorSet = UiSelectorSet(
+        selectors = listOf(
+            cameraSelector(contentDescription = description, text = text,
+                expectedSelected = true, requiresClickable = false),
+            cameraSelector(text = text, expectedRegion = CLOSED_SPEED_REGION,
+                requiresClickable = false),
+        ),
+        minimumScore = 40,
+    )
 
-    private fun lensStateSelector(description: String): UiSelectorSet =
-        stateSelector(
-            contentDescription = description,
-            expectedChecked = true,
-            minimumScore = 75,
-            requiresClickable = false,
-        )
+    private fun zoomAction(value: String) = UiSelectorSet(
+        selectors = listOf(value, "$value×").map { label ->
+            cameraSelector(resourceId = "zoom_toggle_$label", text = label, requiresClickable = false)
+        },
+        minimumScore = 130,
+    )
 
     private fun actionSelector(
         resourceId: String? = null,
         contentDescription: String? = null,
         text: String? = null,
+        role: String? = null,
         minimumScore: Int,
         requiresClickable: Boolean = true,
     ): UiSelectorSet =
@@ -520,6 +476,7 @@ object KnownPixelCameraProfileCatalog {
             resourceId = resourceId,
             contentDescription = contentDescription,
             text = text,
+            role = role,
             minimumScore = minimumScore,
             requiresClickable = requiresClickable,
         )
@@ -528,6 +485,7 @@ object KnownPixelCameraProfileCatalog {
         resourceId: String? = null,
         contentDescription: String? = null,
         text: String? = null,
+        role: String? = null,
         expectedSelected: Boolean? = null,
         expectedChecked: Boolean? = null,
         expectedRegion: NormalizedBounds? = null,
@@ -538,6 +496,7 @@ object KnownPixelCameraProfileCatalog {
             resourceId = resourceId,
             contentDescription = contentDescription,
             text = text,
+            role = role,
             expectedSelected = expectedSelected,
             expectedChecked = expectedChecked,
             expectedRegion = expectedRegion,
@@ -583,6 +542,7 @@ object KnownPixelCameraProfileCatalog {
         resourceId: String?,
         contentDescription: String?,
         text: String?,
+        role: String? = null,
         expectedSelected: Boolean? = null,
         expectedChecked: Boolean? = null,
         expectedRegion: NormalizedBounds? = null,
@@ -596,6 +556,7 @@ object KnownPixelCameraProfileCatalog {
                         resourceId = resourceId,
                         contentDescription = contentDescription,
                         text = text,
+                        role = role,
                         expectedSelected = expectedSelected,
                         expectedChecked = expectedChecked,
                         expectedRegion = expectedRegion,

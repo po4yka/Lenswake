@@ -111,7 +111,10 @@ private fun defaultEventName(
         "automation.state.${state.name.lowercase()}"
     }
 
-internal fun PixelCameraState.isConfirmedRecording(capture: CaptureConfiguration): Boolean =
+internal fun PixelCameraState.isConfirmedRecording(
+    capture: CaptureConfiguration,
+    settingsPrepared: Boolean = false,
+): Boolean =
     when (capture) {
         is CaptureConfiguration.Video -> {
             this is PixelCameraState.Video && recording && lens == capture.lens
@@ -124,7 +127,8 @@ internal fun PixelCameraState.isConfirmedRecording(capture: CaptureConfiguration
                 lens == capture.lens
         }
 
-        is CaptureConfiguration.NightSightTimeLapse -> confirmsNightSightRecording(capture)
+        is CaptureConfiguration.NightSightTimeLapse -> confirmsNightSightRecording(capture) ||
+            (settingsPrepared && this is PixelCameraState.TimeLapse && recording && lens == capture.lens)
     }
 
 private fun PixelCameraState.confirmsNightSightRecording(

@@ -363,6 +363,7 @@ class PixelCameraAccessibilityStateTest : PixelCameraAccessibilityPortTestFixtur
                     speedTargets = emptyMap(),
                     stateSignals =
                         setOf(
+                            PixelCameraStateSignal.REAR_CAMERA_ACTIVE,
                             PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
                             PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
                             PixelCameraStateSignal.FRONT_LENS_ACTIVE,
@@ -400,6 +401,7 @@ class PixelCameraAccessibilityStateTest : PixelCameraAccessibilityPortTestFixtur
                     speedTargets = emptyMap(),
                     stateSignals =
                         setOf(
+                            PixelCameraStateSignal.REAR_CAMERA_ACTIVE,
                             PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
                             PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
                             PixelCameraStateSignal.FRONT_LENS_ACTIVE,
@@ -457,6 +459,7 @@ class PixelCameraAccessibilityStateTest : PixelCameraAccessibilityPortTestFixtur
             speedTargets = emptyMap(),
             stateSignals =
                 setOf(
+                    PixelCameraStateSignal.REAR_CAMERA_ACTIVE,
                     PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
                     PixelCameraStateSignal.NIGHT_SIGHT_TIME_LAPSE_MODE_ACTIVE,
                     PixelCameraStateSignal.REAR_ULTRAWIDE_LENS_ACTIVE,
@@ -524,6 +527,7 @@ class PixelCameraAccessibilityStateTest : PixelCameraAccessibilityPortTestFixtur
             speedTargets = emptyMap(),
             stateSignals =
                 setOf(
+                    PixelCameraStateSignal.REAR_CAMERA_ACTIVE,
                     PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
                     PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
                     PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
@@ -596,6 +600,7 @@ class PixelCameraAccessibilityStateTest : PixelCameraAccessibilityPortTestFixtur
                     speedTargets = emptyMap(),
                     stateSignals =
                         setOf(
+                            PixelCameraStateSignal.REAR_CAMERA_ACTIVE,
                             PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
                             PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
                             PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
@@ -1356,6 +1361,7 @@ abstract class PixelCameraAccessibilityPortTestFixture {
     protected fun profile(): PixelCameraProfile {
         val requiredSignals =
             setOf(
+                PixelCameraStateSignal.REAR_CAMERA_ACTIVE,
                 PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
                 PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
                 PixelCameraStateSignal.TIME_LAPSE_MODE_ACTIVE,
@@ -1405,7 +1411,12 @@ abstract class PixelCameraAccessibilityPortTestFixture {
 
     protected fun activeSignals(
         vararg signals: PixelCameraStateSignal,
-    ): List<UiNodeSnapshot> = signals.map { node(it.name) }
+    ): List<UiNodeSnapshot> = (signals.toList() +
+        if (signals.any { it in setOf(PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
+                PixelCameraStateSignal.REAR_ULTRAWIDE_LENS_ACTIVE,
+                PixelCameraStateSignal.REAR_TELEPHOTO_LENS_ACTIVE) }) {
+            listOf(PixelCameraStateSignal.REAR_CAMERA_ACTIVE)
+        } else emptyList()).distinct().map { node(it.name) }
 
     protected fun selectorSet(resourceId: String): UiSelectorSet =
         UiSelectorSet(

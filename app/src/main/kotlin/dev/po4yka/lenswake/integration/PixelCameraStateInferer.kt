@@ -208,6 +208,10 @@ private class PixelCameraModeStateInferer {
     ): PortResult<PixelCameraState> {
         val activeLenses = activeLensValues(active)
         return when {
+            PixelCameraStateSignal.FRONT_LENS_ACTIVE in active &&
+                PixelCameraStateSignal.REAR_CAMERA_ACTIVE in active -> {
+                unavailableConflictingState("camera facing", setOf("front", "rear"))
+            }
             activeLenses.size > 1 -> {
                 unavailableConflictingState("lens", activeLenses)
             }
@@ -384,7 +388,7 @@ private class PixelCameraModeStateInferer {
                 unavailableConflictingState("timeLapseSpeed", activeSpeeds)
             }
 
-            recording && (speed == null || lens == null) -> {
+            recording && lens == null -> {
                 PortResult.Observed(PixelCameraState.RecordingUnknownMode)
             }
 
@@ -453,7 +457,13 @@ private fun activeSpeedValues(active: Set<PixelCameraStateSignal>): Set<TimeLaps
     speedSignals.filterKeys(active::contains).values.toSet()
 
 private fun activeLensValues(active: Set<PixelCameraStateSignal>): Set<LensSelection> =
-    lensSignals.filterKeys(active::contains).values.toSet()
+    if (PixelCameraStateSignal.FRONT_LENS_ACTIVE in active) {
+        setOf(LensSelection.FRONT)
+    } else if (PixelCameraStateSignal.REAR_CAMERA_ACTIVE in active) {
+        lensSignals.filterKeys(active::contains).values.toSet()
+    } else {
+        emptySet()
+    }
 
 private fun inferLens(active: Set<PixelCameraStateSignal>): LensSelection? = activeLensValues(active).singleOrNull()
 

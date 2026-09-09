@@ -280,6 +280,8 @@ private fun PixelCameraProfile.hasAction(action: AutomationAction): Boolean =
     action in targets || action in fallbackGestures
 
 enum class AutomationAction {
+    OPEN_VIDEO_SETTINGS,
+    SELECT_NIGHT_SIGHT_TIME_LAPSE_OFF,
     SELECT_VIDEO,
     SELECT_VIDEO_RESOLUTION_4K,
     SELECT_VIDEO_FRAME_RATE_60,
@@ -301,6 +303,10 @@ enum class AutomationAction {
 }
 
 enum class PixelCameraStateSignal {
+    REAR_CAMERA_ACTIVE,
+    VIDEO_SETTINGS_OPEN,
+    TIME_LAPSE_SETTINGS_OPEN,
+    NIGHT_SIGHT_TIME_LAPSE_UNAVAILABLE,
     PHOTO_MODE_ACTIVE,
     VIDEO_MODE_ACTIVE,
     VIDEO_RESOLUTION_4K_ACTIVE,

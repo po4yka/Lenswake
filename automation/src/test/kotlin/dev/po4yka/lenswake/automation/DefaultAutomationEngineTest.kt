@@ -219,9 +219,8 @@ class DefaultAutomationEngineTest {
                 listOf(
                     "launch",
                     "selectVideo",
-                    "selectVideoResolution4k",
-                    "selectVideoFrameRate60",
                     "selectLens:FRONT",
+                    "prepareVideo",
                     "startRecording",
                 ),
                 camera.calls,
@@ -1728,9 +1727,8 @@ class DefaultAutomationEngineNightSightTest {
                     "launch",
                     "selectVideo",
                     "selectTimeLapse",
-                    "openNightSightTimeLapseControl",
-                    "selectNightSightTimeLapse",
                     "selectLens:REAR_ULTRAWIDE",
+                    "prepareNightSight",
                     "startRecording",
                 ),
                 camera.calls,
@@ -2268,3 +2266,35 @@ private class FakeExecutionRepository(
 }
 
 private val NOW: Instant = Instant.parse("2026-08-09T12:00:00Z")
+
+class DefaultAutomationEnginePreparationTest {
+    @Test
+    fun `failed visible settings verification cannot dispatch or checkpoint Record`() = runTest {
+        val capture = CaptureConfiguration.Video(lens = LensSelection.FRONT)
+        val session = session(status = SessionStatus.PENDING, capture = capture)
+        val repository = FakeExecutionRepository(session)
+        val failure = AutomationFailure(AutomationFailureCode.CAMERA_STATE_UNKNOWN, "60 FPS was not selected")
+        val camera = FakePixelCamera(PixelCameraState.Video(false, LensSelection.FRONT), preparationFailure = failure)
+
+        val result = engine(repository, FakeDeviceControl(interactive = true), camera).start(session.id)
+
+        val failed = assertInstanceOf(AutomationRunResult.Failed::class.java, result)
+        assertEquals(failure, failed.failure)
+        assertNull(failed.session.recordActionAt)
+        assertTrue("startRecording" !in camera.calls)
+    }
+
+    @Test
+    fun `settings preparation occurs after lens selection and before Record`() = runTest {
+        val capture = CaptureConfiguration.Video(lens = LensSelection.FRONT)
+        val session = session(status = SessionStatus.PENDING, capture = capture)
+        val repository = FakeExecutionRepository(session)
+        val camera = FakePixelCamera(PixelCameraState.Photo)
+
+        val result = engine(repository, FakeDeviceControl(interactive = true), camera).start(session.id)
+
+        assertInstanceOf(AutomationRunResult.Succeeded::class.java, result)
+        assertTrue(camera.calls.indexOf("selectLens:FRONT") < camera.calls.indexOf("prepareVideo"))
+        assertTrue(camera.calls.indexOf("prepareVideo") < camera.calls.indexOf("startRecording"))
+    }
+}

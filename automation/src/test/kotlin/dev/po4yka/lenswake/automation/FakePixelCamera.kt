@@ -1,6 +1,7 @@
 package dev.po4yka.lenswake.automation
 
 import dev.po4yka.lenswake.core.AutomationFailure
+import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.CaptureMode
 import dev.po4yka.lenswake.core.PixelCameraDialogKind
 import dev.po4yka.lenswake.core.InteractionMethod
@@ -12,6 +13,7 @@ import kotlinx.coroutines.awaitCancellation
 
 internal class FakePixelCamera(
         private var state: PixelCameraState,
+        private val preparationFailure: AutomationFailure? = null,
         private val confirmStart: Boolean = true,
         private val confirmStop: Boolean = true,
         private val confirmLens: Boolean = true,
@@ -50,6 +52,24 @@ internal class FakePixelCamera(
             get() = receivedProfileUses.map(ProfileUse::profile)
         var lensWasRearMainWhenRecordStarted: Boolean = false
         private var lensBeforeSpeedPicker: LensSelection? = null
+
+        override suspend fun prepareCapture(
+            capture: CaptureConfiguration,
+            profileUse: ProfileUse,
+        ): PortResult<CaptureConfiguration> {
+            receivedProfileUses += profileUse
+            trace += "prepareCapture"
+            preparationFailure?.let { return PortResult.Unavailable(it) }
+            if (capture is CaptureConfiguration.Video) {
+                calls += "prepareVideo"
+                state = (state as PixelCameraState.Video).copy(resolution4k = true, frameRate60 = true)
+            }
+            if (capture is CaptureConfiguration.NightSightTimeLapse) {
+                calls += "prepareNightSight"
+                state = PixelCameraState.NightSightTimeLapse(recording = false, lens = capture.lens)
+            }
+            return PortResult.Observed(capture)
+        }
 
         override suspend fun inspect(profileUse: ProfileUse): PortResult<PixelCameraState> {
             receivedProfileUses += profileUse

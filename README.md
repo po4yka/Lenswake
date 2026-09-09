@@ -45,6 +45,7 @@ automation, and physical proof for one APK does not automatically transfer to la
 - Dynamically resolve and launch the secure Pixel Camera activity; no camera Activity is hard-coded.
 - Converge Pixel Camera through explicit START and STOP state machines with finite timeouts,
   operation-specific retries, selector scoring, ambiguity rejection, and postcondition checks.
+- Verify 4K/60 and Night Sight settings on their visible panels, then close them before Record.
 - Keep action dispatch separate from success. Record and Stop clicks never count as verified state.
 - Persist write-ahead recording ownership so process death cannot silently lose responsibility for STOP.
 - Capture a MediaStore baseline before Record and complete only after exactly one new, published,

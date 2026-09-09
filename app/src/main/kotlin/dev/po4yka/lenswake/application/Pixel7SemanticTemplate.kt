@@ -25,6 +25,11 @@ internal object Pixel7SemanticTemplate {
         TimeLapseSpeed.X120 to "120",
     )
 
+    private val videoSettingsOpener = selectors.action(
+        resourceId = "$PIXEL_CAMERA_PACKAGE:id/options_entry_button",
+        contentDescription = "Video settings", minimumScore = 170,
+    )
+
     val profile: PixelCameraProfile = PixelCameraProfile(
         id = ProfileId("pixel-7-beta-cp41-260717-006-physical-template-v5"),
         environment = environment(),
@@ -56,6 +61,7 @@ internal object Pixel7SemanticTemplate {
     )
 
     private fun actionTargets(): Map<AutomationAction, UiSelectorSet> = mapOf(
+        AutomationAction.OPEN_VIDEO_SETTINGS to videoSettingsOpener,
         AutomationAction.SELECT_VIDEO to selectors.action(resourceId = "video_supermode", minimumScore = 110),
         AutomationAction.SELECT_VIDEO_RESOLUTION_4K to selectors.action(
             contentDescription = "4K Ultra HD",
@@ -127,6 +133,13 @@ internal object Pixel7SemanticTemplate {
     )
 
     private fun modeAndSpeedStateSignals(): Map<PixelCameraStateSignal, UiSelectorSet> = mapOf(
+        PixelCameraStateSignal.VIDEO_SETTINGS_OPEN to selectors.state(
+            resourceId = "$PIXEL_CAMERA_PACKAGE:id/pinned_panel",
+            contentDescription = "Video settings", minimumScore = 160,
+        ),
+        PixelCameraStateSignal.REAR_CAMERA_ACTIVE to selectors.state(
+            contentDescription = "Switch to front camera", minimumScore = 60,
+        ),
         PixelCameraStateSignal.PHOTO_MODE_ACTIVE to modeState("Photo"),
         PixelCameraStateSignal.VIDEO_MODE_ACTIVE to modeState("Video"),
         PixelCameraStateSignal.VIDEO_RESOLUTION_4K_ACTIVE to selectors.state(

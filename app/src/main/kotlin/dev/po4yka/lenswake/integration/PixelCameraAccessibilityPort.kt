@@ -13,6 +13,7 @@ import dev.po4yka.lenswake.automation.SelectorMatcher
 import dev.po4yka.lenswake.core.AutomationAction
 import dev.po4yka.lenswake.core.AutomationFailure
 import dev.po4yka.lenswake.core.AutomationFailureCode
+import dev.po4yka.lenswake.core.CaptureConfiguration
 import dev.po4yka.lenswake.core.CaptureMode
 import dev.po4yka.lenswake.core.InteractionMethod
 import dev.po4yka.lenswake.core.LensSelection
@@ -43,6 +44,7 @@ internal class PixelCameraAccessibilityControls(
     val profileValidator = PixelCameraProfileValidator(definitionPolicy, environmentProbe)
     private val stateInferer = PixelCameraStateInferer(selectorMatcher)
     private val actionDispatcher = PixelCameraActionDispatcher(selectorMatcher, accessibilityGateway)
+    private val lensSelector = PixelCameraLensSelector(selectorMatcher, accessibilityGateway, profileValidator)
     private val speedControlCloser =
         TimeLapseSpeedControlCloser(
             selectorMatcher = selectorMatcher,
@@ -127,11 +129,7 @@ internal class PixelCameraAccessibilityControls(
         lens: LensSelection,
         profileUse: ProfileUse,
     ): ActionDispatch =
-        actionDispatcher.dispatchValidated(
-            profileUse,
-            profileValidator,
-            lensActions.getValue(lens),
-        )
+        lensSelector.select(lens, profileUse)
 
     override suspend fun startRecording(
         mode: CaptureMode,
@@ -179,6 +177,7 @@ class PixelCameraAccessibilityPort private constructor(
     private val controls: PixelCameraAccessibilityControls,
     videoConfiguration: PixelCameraAccessibilityVideoConfiguration,
     private val dialogRecoveryDispatcher: PixelCameraDialogRecoveryDispatcher,
+    private val preparer: PixelCameraCapturePreparer,
 ) : PixelCameraPort,
     PixelCameraStatePort by controls,
     PixelCameraCapturePort by controls,
@@ -206,6 +205,10 @@ class PixelCameraAccessibilityPort private constructor(
                 accessibilityGateway = accessibilityGateway,
                 definitionPolicy = definitionPolicy,
             ),
+        preparer = PixelCameraCapturePreparer(
+            selectorMatcher, accessibilityGateway,
+            PixelCameraProfileValidator(definitionPolicy, environmentProbe),
+        ),
         dialogRecoveryDispatcher =
             PixelCameraDialogRecoveryDispatcher(
                 selectorMatcher,
@@ -224,6 +227,11 @@ class PixelCameraAccessibilityPort private constructor(
         accessibilityGateway = RuntimePixelCameraAccessibilityGateway,
         definitionPolicy = CurrentPixelCameraProfileDefinitionPolicy,
     )
+
+    override suspend fun prepareCapture(
+        capture: CaptureConfiguration,
+        profileUse: ProfileUse,
+    ): PortResult<CaptureConfiguration> = preparer.prepare(capture, profileUse)
 
     override suspend fun recoverDialog(
         dialog: PixelCameraDialogKind,

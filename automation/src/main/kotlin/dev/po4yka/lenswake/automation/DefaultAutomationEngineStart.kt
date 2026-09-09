@@ -206,7 +206,9 @@ internal suspend fun EngineEnvironment.dispatchConfiguredLens(
         ) {
             !it.isRecording() &&
                 it.observedLens() == capture.lens &&
-                it.observedMode() == capture.mode
+                (it.observedMode() == capture.mode ||
+                    capture is CaptureConfiguration.NightSightTimeLapse &&
+                    it.observedMode() == CaptureMode.TIME_LAPSE)
         }
     }
 
@@ -223,6 +225,7 @@ internal suspend fun EngineEnvironment.startAndVerifyRecording(
                 ),
             )
         }
+        prepareCapture(context, capture)
         dispatchRecordingStart(context)
         observeCamera(
             context = context,
@@ -230,7 +233,7 @@ internal suspend fun EngineEnvironment.startAndVerifyRecording(
             state = AutomationStateName.VERIFYING_RECORDING,
             failureCode = AutomationFailureCode.RECORDING_NOT_CONFIRMED,
             failureMessage = "Pixel Camera did not confirm ${capture.mode} recording",
-        ) { it.isConfirmedRecording(capture) }
+        ) { it.isConfirmedRecording(capture, settingsPrepared = true) }
         return markRecordingVerified(context)
     }
 
@@ -281,7 +284,7 @@ internal suspend fun EngineEnvironment.reconcileUncertainStart(
         observed: PixelCameraState,
     ): AutomationRunResult {
         val capture = context.current.capture
-        return if (observed.isConfirmedRecording(capture)) {
+        return if (observed.isConfirmedRecording(capture, settingsPrepared = context.current.recordActionAt != null)) {
             markRecordingVerified(context)
         } else {
             fail(

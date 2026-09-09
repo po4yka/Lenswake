@@ -32,12 +32,14 @@ val CaptureMode.pixelCameraContract: PixelCameraModeContract
                     preparationActions =
                         setOf(
                             AutomationAction.SELECT_VIDEO,
+                            AutomationAction.OPEN_VIDEO_SETTINGS,
                             AutomationAction.SELECT_VIDEO_RESOLUTION_4K,
                             AutomationAction.SELECT_VIDEO_FRAME_RATE_60,
                         ),
                     requiredSignals =
                         setOf(
                             PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
+                            PixelCameraStateSignal.VIDEO_SETTINGS_OPEN,
                             PixelCameraStateSignal.VIDEO_RESOLUTION_4K_ACTIVE,
                             PixelCameraStateSignal.VIDEO_FRAME_RATE_60_ACTIVE,
                         ),

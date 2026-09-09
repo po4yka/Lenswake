@@ -84,6 +84,8 @@ data class AutomationConfig(
                 },
                 operationTimeouts = AutomationOperation.entries.associateWith { operation ->
                     when (operation) {
+                        AutomationOperation.SELECT_LENS -> 5.seconds
+                        AutomationOperation.PREPARE_CAPTURE -> 20.seconds
                         AutomationOperation.LAUNCH_CAMERA -> 8.seconds
                         AutomationOperation.VERIFY_RECORDING,
                         AutomationOperation.VERIFY_STOPPED,

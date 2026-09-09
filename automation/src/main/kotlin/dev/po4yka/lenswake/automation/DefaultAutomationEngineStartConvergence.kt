@@ -104,76 +104,14 @@ private suspend fun EngineEnvironment.convergeVideo(
     observed: PixelCameraState.Video,
 ): AutomationRunResult? =
     if (capture is CaptureConfiguration.Video) {
-        when {
-            observed.recording && (!observed.resolution4k || !observed.frameRate60) -> {
-                fail(
-                    context,
-                    failure(
-                        AutomationFailureCode.CAMERA_STATE_UNKNOWN,
-                        "Pixel Camera is already recording without verified 4K 60 FPS settings",
-                    ),
-                )
-            }
-
-            !observed.resolution4k -> {
-                selectVideoResolution4k(context)
-                null
-            }
-
-            !observed.frameRate60 -> {
-                selectVideoFrameRate60(context)
-                null
-            }
-
-            else -> {
-                convergeSimpleCapture(context, capture, observed.recording, observed.lens)
-            }
-        }
+        // Settings are only observable inside the panel. Verify them after lens convergence,
+        // immediately before the write-ahead Record checkpoint, then close the panel safely.
+        convergeSimpleCapture(context, capture, observed.recording, observed.lens)
     } else {
         refuseModeSwitchWhileRecording(context, observed.recording)
         selectCaptureMode(context, modeTransitionTarget(capture))
         null
     }
-
-private suspend fun EngineEnvironment.selectVideoResolution4k(context: RunContext) {
-    dispatchAndVerify(
-        context = context,
-        operation = AutomationOperation.SELECT_VIDEO,
-        actionState = AutomationStateName.SELECTING_VIDEO,
-        verificationState = AutomationStateName.VERIFYING_VIDEO,
-        dispatchFailure =
-            failure(
-                AutomationFailureCode.VIDEO_MODE_NOT_FOUND,
-                "Pixel Camera could not select 4K video resolution",
-            ),
-        verificationFailure =
-            failure(
-                AutomationFailureCode.VIDEO_MODE_NOT_VERIFIED,
-                "Pixel Camera did not confirm 4K video resolution",
-            ),
-        action = { pixelCamera.selectVideoResolution4k(context.profileUse) },
-    ) { it is PixelCameraState.Video && it.resolution4k && !it.recording }
-}
-
-private suspend fun EngineEnvironment.selectVideoFrameRate60(context: RunContext) {
-    dispatchAndVerify(
-        context = context,
-        operation = AutomationOperation.SELECT_VIDEO,
-        actionState = AutomationStateName.SELECTING_VIDEO,
-        verificationState = AutomationStateName.VERIFYING_VIDEO,
-        dispatchFailure =
-            failure(
-                AutomationFailureCode.VIDEO_MODE_NOT_FOUND,
-                "Pixel Camera could not select 60 FPS",
-            ),
-        verificationFailure =
-            failure(
-                AutomationFailureCode.VIDEO_MODE_NOT_VERIFIED,
-                "Pixel Camera did not confirm 60 FPS",
-            ),
-        action = { pixelCamera.selectVideoFrameRate60(context.profileUse) },
-    ) { it is PixelCameraState.Video && it.frameRate60 && !it.recording }
-}
 
 private suspend fun EngineEnvironment.convergeNightSight(
     context: RunContext,
@@ -195,11 +133,8 @@ private suspend fun EngineEnvironment.convergeTimeLapse(
     observed: PixelCameraState.TimeLapse,
 ): AutomationRunResult? {
     if (capture is CaptureConfiguration.NightSightTimeLapse) {
-        // The Night Sight control row only exists inside Time Lapse mode; open it before the
-        // option can be selected. Lens and recording converge once Night Sight is confirmed.
-        refuseModeSwitchWhileRecording(context, observed.recording)
-        openNightSightControl(context)
-        return null
+        // The setting is verified on its panel by prepareCapture immediately before Record.
+        return convergeSimpleCapture(context, capture, observed.recording, observed.lens)
     }
     if (capture !is CaptureConfiguration.TimeLapse) {
         refuseModeSwitchWhileRecording(context, observed.recording)

@@ -3,8 +3,8 @@ package dev.po4yka.lenswake.application
 import dev.po4yka.lenswake.core.SelectorTemplateReference
 import dev.po4yka.lenswake.core.SupportTier
 
-private const val STANDARD_TEMPLATE_VERSION = 3
-private const val TELEPHOTO_TEMPLATE_VERSION = 2
+private const val STANDARD_TEMPLATE_VERSION = 4
+private const val TELEPHOTO_TEMPLATE_VERSION = 3
 
 enum class PixelCameraTemplateKind(
     val reference: SelectorTemplateReference,

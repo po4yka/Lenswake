@@ -85,6 +85,7 @@ class PixelCameraProfileTest {
 
     private fun videoTargets(): Map<AutomationAction, UiSelectorSet> = listOf(
         AutomationAction.SELECT_VIDEO,
+        AutomationAction.OPEN_VIDEO_SETTINGS,
         AutomationAction.SELECT_VIDEO_RESOLUTION_4K,
         AutomationAction.SELECT_VIDEO_FRAME_RATE_60,
         AutomationAction.SELECT_REAR_MAIN_LENS,
@@ -97,6 +98,7 @@ class PixelCameraProfileTest {
     private fun videoSignals(): Map<PixelCameraStateSignal, UiSelectorSet> = listOf(
         PixelCameraStateSignal.PHOTO_MODE_ACTIVE,
         PixelCameraStateSignal.VIDEO_MODE_ACTIVE,
+        PixelCameraStateSignal.VIDEO_SETTINGS_OPEN,
         PixelCameraStateSignal.VIDEO_RESOLUTION_4K_ACTIVE,
         PixelCameraStateSignal.VIDEO_FRAME_RATE_60_ACTIVE,
         PixelCameraStateSignal.REAR_MAIN_LENS_ACTIVE,
