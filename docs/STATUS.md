@@ -20,6 +20,12 @@ and proof boundaries. The support and historical capture evidence below are not 
 
 ## Current support claim
 
+The subsequent signed rebuild from `2714728` was installed and verified byte-for-byte on Pixel 8 Pro.
+Schedules, Setup, Profiles and Diagnostics passed a UI smoke check. Toggling the existing
+Accessibility service did not restore its binding; Android continued reporting its system service
+connection limit, and Test recording remained disabled. This is not a capture acceptance result.
+See the [release installation smoke check](research/pixel-8-pro-release-smoke-2026-09-09.md).
+
 The implementation now recognizes exactly 17 non-folding models: Pixel 6/6 Pro/6a, 7/7 Pro/7a,
 8/8 Pro/8a, 9/9 Pro/9 Pro XL/9a and 10/10 Pro/10 Pro XL/10a. Fold, Pro Fold, Tablet, Pixel 5a,
 unknown and future models are rejected. Selector schema is v5 and persistence is Room v10.
