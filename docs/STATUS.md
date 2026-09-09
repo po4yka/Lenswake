@@ -7,6 +7,17 @@
 This file distinguishes implemented behavior, local validation, Android integration evidence, and
 physical Pixel proof. It is a snapshot, not the source of implementation truth.
 
+## 2026-09-09 readiness update
+
+Commit `398a97d207d886861ce39f1f8f613ee3180cbbab` corrected external-power observation, first-test
+profile messages, optional capability status, and Setup-to-Profiles remediation. The full local gate
+and both Android-test APK assemblies passed; all 396 host tests passed. The signed release was
+installed on Pixel 8 Pro and its installed APK digest matched. UI checks confirmed the corrected
+power state and resolution routes. The device separately exhibited system service-binding failures,
+so Accessibility reconnection and actual camera rehearsal remain unverified. See the
+[dated readiness observation](research/pixel-8-pro-readiness-2026-09-09.md) for exact artifact identity
+and proof boundaries. The support and historical capture evidence below are not promoted by this UI check.
+
 ## Current support claim
 
 The implementation now recognizes exactly 17 non-folding models: Pixel 6/6 Pro/6a, 7/7 Pro/7a,

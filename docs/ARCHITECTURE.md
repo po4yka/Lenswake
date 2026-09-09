@@ -341,13 +341,20 @@ The runtime preflight reports typed status, severity, message, and remediation f
 - Pixel Camera installation and secure intent resolution;
 - device wake capability;
 - Accessibility enabled and connected state;
-- battery, charging, and storage observations;
+- battery, external power, and storage observations;
 - profile availability and exact compatibility;
 - current qualifying rehearsal;
 - optional privileged fallback status.
 
-Unknown required state blocks enabling a schedule. Known low charging/storage states remain visible
-warnings under current policy; battery below the configured application threshold blocks.
+Unknown required state blocks enabling a schedule. Disconnected external power and known low storage
+remain visible warnings; battery below the configured application threshold blocks. External power
+uses `ACTION_BATTERY_CHANGED` / `EXTRA_PLUGGED`, independently of charging activity. A collection-scoped
+receiver invalidates readiness on power connection changes and unregisters when collection ends.
+The unimplemented privileged provider is informational and explicitly does not require setup.
+
+Failed profile checks carry `OPEN_PROFILES`, handled by Navigation 3 without starting a recording or
+opening Android settings. Exact untested profiles are distinguished from environment drift; Test
+recording is shown before the capture matrix. Optional warnings never use the blocked UI status.
 
 The current Navigation 3 surface has three top-level destinations—Schedules, Profiles, and
 Diagnostics—with Setup and the schedule editor nested from Schedules. The editor route is derived

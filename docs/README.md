@@ -19,6 +19,7 @@ artifact and environment it names; it does not silently update when `main` chang
 
 | Document | Evidence | Applicability |
 | --- | --- | --- |
+| [Pixel 8 Pro readiness, 2026-09-09](research/pixel-8-pro-readiness-2026-09-09.md) | Signed APK installation, power-state accuracy, profile remediation, and a separate Android binding failure | Setup/UI evidence only; no camera rehearsal or release acceptance |
 | [Pixel 8 Pro baseline, 2026-08-09](research/pixel-8-pro-baseline-2026-08-09.md) | Physical wake, rehearsal, locked/Doze schedule, reboot recovery for named historical APKs | Historical; not current selector-schema-v4 HEAD acceptance |
 | [Pixel Camera dialog recovery](research/pixel-camera-dialog-recovery.md) | Pixel 7 package/resource inspection for candidate typed dialogs | Implementation input; Pixel 8 Pro physical recovery remains open |
 | [Pixel 6-10a template provenance](research/pixel-6-10a-template-provenance.md) | Read-only Pixel Camera resource and signing-certificate inspection | Static selector candidates only; no physical certification |

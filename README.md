@@ -114,6 +114,8 @@ On the device, complete Setup in this order:
 7. Enable the future schedule only after Setup reports no blocking readiness checks.
 
 Detailed remediation paths and expected blockers are in [Setup](docs/SETUP.md).
+Setup links profile checks directly to Profiles and Test recording. Connected external power remains
+available when charging is paused or complete; optional recommendations are distinct from blockers.
 
 ## Development
 
