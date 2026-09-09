@@ -26,6 +26,13 @@ Accessibility service did not restore its binding; Android continued reporting i
 connection limit, and Test recording remained disabled. This is not a capture acceptance result.
 See the [release installation smoke check](research/pixel-8-pro-release-smoke-2026-09-09.md).
 
+An explicitly authorized reboot and manual unlock subsequently restored the Accessibility binding.
+The production Test recording matrix then ran but failed: recent diagnostics showed low-confidence
+Video selection, unverified lens changes, and missing Night Sight Time Lapse controls. No new video
+was found in the bounded MediaStore check. Cleanup found no active camera clients or Lenswake alarms.
+An ongoing scheduled-alarm recovery warning also remained. The same smoke-check record contains
+this follow-up; recording remains unverified on the installed APK.
+
 The implementation now recognizes exactly 17 non-folding models: Pixel 6/6 Pro/6a, 7/7 Pro/7a,
 8/8 Pro/8a, 9/9 Pro/9 Pro XL/9a and 10/10 Pro/10 Pro XL/10a. Fold, Pro Fold, Tablet, Pixel 5a,
 unknown and future models are rejected. Selector schema is v5 and persistence is Room v10.
