@@ -6,7 +6,7 @@ import dev.po4yka.lenswake.alarm.AlarmManagerRecordingScheduler
 import dev.po4yka.lenswake.alarm.AlarmManagerRehearsalStopScheduler
 import dev.po4yka.lenswake.alarm.InterruptedScheduledSessionRecovery
 import dev.po4yka.lenswake.alarm.MutexAlarmRecoveryScheduler
-import dev.po4yka.lenswake.alarm.PreflightAlarmRecoveryReadiness
+import dev.po4yka.lenswake.alarm.PreflightScheduledStartReadiness
 import dev.po4yka.lenswake.alarm.RehearsalStopTriggerCoordinator
 import dev.po4yka.lenswake.alarm.SchedulerAlarmRecoveryCoordinator
 import dev.po4yka.lenswake.application.DefaultAlarmTriggerCoordinator
@@ -176,7 +176,7 @@ class ApplicationGraph(application: Application) {
             if (profile == null) {
                 Result.failure(IllegalStateException("Selected Pixel Camera profile is missing"))
             } else {
-                PreflightAlarmRecoveryReadiness {
+                PreflightScheduledStartReadiness {
                     runtimePreflightProbe.inspectForCapture(listOf(profile), session.capture)
                 }.check()
             }
@@ -194,9 +194,6 @@ class ApplicationGraph(application: Application) {
                 executionRepository.reconcileInterruptedScheduledSessions(clock.now())
                 Unit
             }
-        },
-        readiness = PreflightAlarmRecoveryReadiness {
-            runtimePreflightProbe.inspect(profileRepository.observeProfiles().first())
         },
     )
 }

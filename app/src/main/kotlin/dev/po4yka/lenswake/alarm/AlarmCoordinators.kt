@@ -51,15 +51,15 @@ fun interface InterruptedScheduledSessionRecovery {
     suspend fun reconcile(): Result<Unit>
 }
 
-fun interface AlarmRecoveryReadiness {
+fun interface ScheduledStartReadiness {
     suspend fun check(): Result<Unit>
 }
 
-class AlarmRecoveryReadinessException(message: String) : IllegalStateException(message)
+class ScheduledStartReadinessException(message: String) : IllegalStateException(message)
 
-class PreflightAlarmRecoveryReadiness(
+class PreflightScheduledStartReadiness(
     private val inspect: suspend () -> PreflightReport,
-) : AlarmRecoveryReadiness {
+) : ScheduledStartReadiness {
     override suspend fun check(): Result<Unit> = runCatching {
         val checks = inspect().checks.associateBy { it.type }
         val blockers = REQUIRED_CHECKS.mapNotNull { type ->
@@ -72,8 +72,8 @@ class PreflightAlarmRecoveryReadiness(
             }
         }
         if (blockers.isNotEmpty()) {
-            throw AlarmRecoveryReadinessException(
-                "Alarm recovery runtime readiness is blocked: ${blockers.joinToString("; ")}",
+            throw ScheduledStartReadinessException(
+                "Scheduled START runtime readiness is blocked: ${blockers.joinToString("; ")}",
             )
         }
     }
@@ -110,7 +110,6 @@ class SchedulerAlarmRecoveryCoordinator(
     private val scheduler: RecordingScheduler,
     private val additionalSchedulers: List<AlarmRecoveryScheduler> = emptyList(),
     private val interruptedSessionRecovery: InterruptedScheduledSessionRecovery? = null,
-    private val readiness: AlarmRecoveryReadiness? = null,
 ) : AlarmRecoveryCoordinator {
     override suspend fun restoreFutureSchedules(
         reconcileInterruptedSessions: Boolean,
@@ -126,7 +125,6 @@ class SchedulerAlarmRecoveryCoordinator(
         for (additionalScheduler in additionalSchedulers) {
             results += additionalScheduler.restoreAll()
         }
-        readiness?.let { results += it.check() }
         return results.firstOrNull(Result<Unit>::isFailure) ?: Result.success(Unit)
     }
 }

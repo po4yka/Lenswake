@@ -36,7 +36,7 @@ class AlarmRecoveryCorrectnessTest {
     @Test
     fun transientAccessibilityDisconnectDoesNotBlockRestoredAlarms() = runBlocking {
         val scheduler = RecoveryRecordingScheduler()
-        val readiness = PreflightAlarmRecoveryReadiness {
+        val readiness = PreflightScheduledStartReadiness {
             readyReport().replace(
                 PreflightCheckType.ACCESSIBILITY_CONNECTED,
                 PreflightStatus.FAILED,
@@ -45,19 +45,19 @@ class AlarmRecoveryCorrectnessTest {
         }
         val coordinator = SchedulerAlarmRecoveryCoordinator(
             scheduler = scheduler,
-            readiness = readiness,
         )
 
         val result = coordinator.restoreFutureSchedules(false)
 
         assertTrue(result.isSuccess)
+        assertTrue(readiness.check().isSuccess)
         assertEquals(1, scheduler.restoreCalls)
     }
 
     @Test
-    fun disabledAccessibilityRetainsRecoveryFailureAfterAlarmsAreRestored() = runBlocking {
+    fun disabledAccessibilityBlocksStartButDoesNotFailAlarmRestoration() = runBlocking {
         val scheduler = RecoveryRecordingScheduler()
-        val readiness = PreflightAlarmRecoveryReadiness {
+        val readiness = PreflightScheduledStartReadiness {
             readyReport().replace(
                 PreflightCheckType.ACCESSIBILITY_ENABLED,
                 PreflightStatus.FAILED,
@@ -66,19 +66,18 @@ class AlarmRecoveryCorrectnessTest {
         }
         val coordinator = SchedulerAlarmRecoveryCoordinator(
             scheduler = scheduler,
-            readiness = readiness,
         )
 
         val result = coordinator.restoreFutureSchedules(false)
 
-        assertTrue(result.exceptionOrNull() is AlarmRecoveryReadinessException)
-        assertTrue(result.exceptionOrNull()?.message?.contains("Accessibility") == true)
+        assertTrue(result.isSuccess)
+        assertTrue(readiness.check().exceptionOrNull() is ScheduledStartReadinessException)
         assertEquals(1, scheduler.restoreCalls)
     }
 
     @Test
     fun missingVerifiedProfileOrRehearsalEvidenceFailsClosed() = runBlocking {
-        val readiness = PreflightAlarmRecoveryReadiness {
+        val readiness = PreflightScheduledStartReadiness {
             readyReport().copy(
                 checks = readyReport().checks.filterNot {
                     it.type == PreflightCheckType.REHEARSAL_CURRENT
@@ -94,7 +93,7 @@ class AlarmRecoveryCorrectnessTest {
 
     @Test
     fun unknownBatteryStateBlocksAlarmTimeAdmission() = runBlocking {
-        val readiness = PreflightAlarmRecoveryReadiness {
+        val readiness = PreflightScheduledStartReadiness {
             readyReport().replace(
                 PreflightCheckType.BATTERY,
                 PreflightStatus.UNKNOWN,
@@ -110,7 +109,7 @@ class AlarmRecoveryCorrectnessTest {
 
     @Test
     fun knownResourceWarningDoesNotBlockAlarmTimeAdmission() = runBlocking {
-        val readiness = PreflightAlarmRecoveryReadiness {
+        val readiness = PreflightScheduledStartReadiness {
             readyReport().copy(
                 checks = readyReport().checks.map { check ->
                     if (check.type == PreflightCheckType.CHARGING) {
