@@ -43,15 +43,16 @@ class PixelCameraFreshSelectorInstrumentationTest {
                 val port = port(profile, gateway)
                 val profileUse = ProfileUse(profile, ProfileUse.Kind.UNATTENDED)
 
-                assertTrue(case.dispatch(port, profileUse) is ActionDispatch.Dispatched)
-                assertTrue(case.dispatch(port, profileUse) is ActionDispatch.Dispatched)
-
-                assertEquals(case.name, 2, gateway.snapshotCalls)
-                assertEquals(
-                    case.name,
-                    listOf("${case.name}-snapshot-1", "${case.name}-snapshot-2"),
-                    gateway.clickedNodes.map(UiNodeSnapshot::id),
-                )
+                repeat(2) { index ->
+                    val dispatchCount = index + 1
+                    assertTrue(case.name, case.dispatch(port, profileUse) is ActionDispatch.Dispatched)
+                    assertEquals(case.name, dispatchCount * case.snapshotsPerDispatch, gateway.snapshotCalls)
+                    assertEquals(
+                        case.name,
+                        (1..dispatchCount).map { "${case.name}-snapshot-${it * case.snapshotsPerDispatch}" },
+                        gateway.clickedNodes.map(UiNodeSnapshot::id),
+                    )
+                }
 
                 val changedGateway =
                     FreshNodeGateway(
@@ -152,8 +153,14 @@ class PixelCameraFreshSelectorInstrumentationTest {
                 },
             )
             LensSelection.entries.forEach { lens ->
+                // Rear lenses observe camera facing before resolving the action target.
+                // That observation must not authorize a click from the earlier snapshot.
                 add(
-                    actionCase("lens-${lens.name.lowercase()}", lensActions.getValue(lens)) { port, use ->
+                    actionCase(
+                        "lens-${lens.name.lowercase()}",
+                        lensActions.getValue(lens),
+                        snapshotsPerDispatch = if (lens == LensSelection.FRONT) 1 else 2,
+                    ) { port, use ->
                         port.selectLens(lens, use)
                     },
                 )
@@ -185,11 +192,13 @@ class PixelCameraFreshSelectorInstrumentationTest {
     private fun actionCase(
         name: String,
         action: AutomationAction,
+        snapshotsPerDispatch: Int = 1,
         dispatch: suspend (PixelCameraAccessibilityPort, ProfileUse) -> ActionDispatch,
     ) = RoutingCase(
         name = name,
         resourceId = actionResource(action),
         target = RoutingTarget.Action(action),
+        snapshotsPerDispatch = snapshotsPerDispatch,
         dispatch = dispatch,
     )
 
@@ -232,6 +241,7 @@ class PixelCameraFreshSelectorInstrumentationTest {
         val name: String,
         val resourceId: String,
         val target: RoutingTarget,
+        val snapshotsPerDispatch: Int = 1,
         val dispatch: suspend (PixelCameraAccessibilityPort, ProfileUse) -> ActionDispatch,
     )
 
