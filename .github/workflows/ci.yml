@@ -48,7 +48,7 @@ jobs:
       - name: Compile unsigned release build
         # R8, resource shrinking, and proguard rules otherwise stay invisible until tag time;
         # signing stays optional by design, so this compiles without release secrets.
-        if: github.event_name == 'schedule'
+        if: github.event_name == 'schedule' || github.event_name == 'pull_request'
         run: ./gradlew :app:assembleRelease --console=plain
       - name: Upload failure reports
         if: failure()
