@@ -1936,6 +1936,14 @@
             <sha256 value="050aea875aebcbd3a7ac4aa61888262e0d81a2c5d21209c2997df23884110c4f" origin="Verified against Google Maven artifact and published SHA-256"/>
          </artifact>
       </component>
+      <component group="com.android.tools.androidtest" name="android-test-engine" version="1.0.8">
+         <artifact name="android-test-engine-1.0.8.jar">
+            <sha256 value="17a742a259841df91f36487e7e208755981fa9a8cf2a4d694af8a7f0ab32a42e" origin="Verified against Google Maven artifact and published SHA-256"/>
+         </artifact>
+         <artifact name="android-test-engine-1.0.8.pom">
+            <sha256 value="9c10beaa08541d5c69ec6bf2589e7833f4b7f17fdfb45e1c42478fd6faa8e546" origin="Verified against Google Maven artifact and published SHA-256"/>
+         </artifact>
+      </component>
       <component group="com.android.tools.androidtest" name="android-test-engine-result-listener" version="1.0.1">
          <artifact name="android-test-engine-result-listener-1.0.1.jar">
             <sha256 value="04b58c956dcd1a0df87ceb30eff45412c531f3ca0ab26da19a386365386f8c03" origin="Verified against Google Maven artifact and published SHA-256"/>
@@ -1950,6 +1958,14 @@
          </artifact>
          <artifact name="android-test-engine-result-listener-1.0.7.pom">
             <sha256 value="8fa9f83ab9d3218c9c627d280a00c00a2f0cc8e4cbb52fccd53d87bcd1782489" origin="Verified against Google Maven artifact and published SHA-256"/>
+         </artifact>
+      </component>
+      <component group="com.android.tools.androidtest" name="android-test-engine-result-listener" version="1.0.8">
+         <artifact name="android-test-engine-result-listener-1.0.8.jar">
+            <sha256 value="4e2e3cc2c420abce8dd6ef2867f235fe868290c274906857058da5099e624398" origin="Verified against Google Maven artifact and published SHA-256"/>
+         </artifact>
+         <artifact name="android-test-engine-result-listener-1.0.8.pom">
+            <sha256 value="47eabc56a9ad140fda7cb273186904ac6efde6d112928d6d6fb393123f967c10" origin="Verified against Google Maven artifact and published SHA-256"/>
          </artifact>
       </component>
       <component group="com.android.tools.androidtest" name="test-result-event-proto" version="1.0.1">
@@ -1968,6 +1984,14 @@
             <sha256 value="ba6e252f477c52836c1d6f424a33a09689174f4f6edaa05b11e490176662d909" origin="Verified against Google Maven artifact and published SHA-256"/>
          </artifact>
       </component>
+      <component group="com.android.tools.androidtest" name="test-result-event-proto" version="1.0.8">
+         <artifact name="test-result-event-proto-1.0.8.jar">
+            <sha256 value="5dcfcac19e3c42202baa1a589f81561700f725adcc4be7753f86e0da1325d77c" origin="Verified against Google Maven artifact and published SHA-256"/>
+         </artifact>
+         <artifact name="test-result-event-proto-1.0.8.pom">
+            <sha256 value="7cd94abfa54bb814bac01326b48787e333a2ca6012a1b54d6a5981ea5064f9fe" origin="Verified against Google Maven artifact and published SHA-256"/>
+         </artifact>
+      </component>
       <component group="com.android.tools.androidtest" name="test-result-proto" version="1.0.1">
          <artifact name="test-result-proto-1.0.1.jar">
             <sha256 value="37a7afee799f634997381a3ff5771a58b3639955ef9fb20e04840dfff1734879" origin="Verified against Google Maven artifact and published SHA-256"/>
@@ -1982,6 +2006,14 @@
          </artifact>
          <artifact name="test-result-proto-1.0.7.pom">
             <sha256 value="65962d4f680e150f584e4bc1e48f073308b48b22cd322ceb9a73ada5720ff75a" origin="Verified against Google Maven artifact and published SHA-256"/>
+         </artifact>
+      </component>
+      <component group="com.android.tools.androidtest" name="test-result-proto" version="1.0.8">
+         <artifact name="test-result-proto-1.0.8.jar">
+            <sha256 value="8da965c75860f133ee1f52c4b64622fa3cafa9fbe312c5a475598b95baf5d7eb" origin="Verified against Google Maven artifact and published SHA-256"/>
+         </artifact>
+         <artifact name="test-result-proto-1.0.8.pom">
+            <sha256 value="5646537594b9832ca4f6fd0418ecea4e98d41e017ddf95c9c5ff5ec7e7208dad" origin="Verified against Google Maven artifact and published SHA-256"/>
          </artifact>
       </component>
       <component group="com.android.tools.build" name="aapt2" version="9.3.1-15703166">
