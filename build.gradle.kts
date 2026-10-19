@@ -27,8 +27,8 @@ subprojects {
     // https://issuetracker.google.com/issues/563732801 (1.0.7 also fixes 1.0.6's concurrency issue)
     configurations.configureEach {
         resolutionStrategy.force(
-            "com.android.tools.androidtest:android-test-engine:1.0.7",
-            "com.android.tools.androidtest:android-test-engine-result-listener:1.0.7",
+            "com.android.tools.androidtest:android-test-engine:1.0.8",
+            "com.android.tools.androidtest:android-test-engine-result-listener:1.0.8",
         )
     }
 
