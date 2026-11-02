@@ -1,5 +1,5 @@
 [versions]
-agp = "9.4.1"
+agp = "9.5.0"
 androidxActivity = "1.13.0"
 androidxCore = "1.19.1"
 androidxLifecycle = "2.11.0"
@@ -15,7 +15,7 @@ kotlin = "2.4.21"
 ksp = "2.3.12"
 navigation3 = "1.1.5"
 room = "2.8.5"
-serialization = "1.11.0"
+serialization = "1.12.0"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidxActivity" }
